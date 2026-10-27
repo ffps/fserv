@@ -92,10 +92,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build APK
-        run: >
-          ./gradlew --no-daemon :app:assembleRelease
-          -PappVersionName=${{ steps.ver.outputs.version }}
-          -PappVersionCode=${{ steps.ver.outputs.code }}
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon :app:assembleRelease \
+            -PappVersionName=${{ steps.ver.outputs.version }} \
+            -PappVersionCode=${{ steps.ver.outputs.code }} 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            # Главное из лога выводим аннотацией, чтобы причину было видно без скачивания логов.
+            { grep -E '^e: |^w: .*error|error:' build.log | head -30
+              sed -n '/^\* What went wrong/,/^\* Try/p' build.log | head -40; } > build-errors.txt
+            MSG=$(head -c 6000 build-errors.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=Gradle build failed::${MSG}"
+          fi
+          exit "$rc"
 
       - name: Name, verify and describe APK
         id: apk
