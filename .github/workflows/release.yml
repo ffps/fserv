@@ -46,6 +46,8 @@ jobs:
               echo "::warning::Tag '$RAW' is not X.Y.Z, versionCode falls back to the run number ($CODE) and may be lower than the installed version."
             fi
           fi
+          # Android требует положительный versionCode (для сборок 0.0.x берём номер запуска).
+          if [ "$CODE" -le 0 ]; then CODE="${GITHUB_RUN_NUMBER}"; fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "code=$CODE"   >> "$GITHUB_OUTPUT"
           echo "APK name: fServe-$VER.apk (versionCode $CODE)"
