@@ -51,4 +51,6 @@ android {
 }
 
 dependencies {
+    // Встроенный HTTP-сервер (веб-интерфейс и API)
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
