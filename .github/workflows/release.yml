@@ -30,13 +30,21 @@ jobs:
         id: ver
         shell: bash
         run: |
+          # Релиз выпускается либо по тегу, либо коммитом в main с пометкой [release vX.Y.Z]
+          # в сообщении (тогда тег и релиз создаст сам workflow).
+          MSG="$(git log -1 --format=%B)"
+          PAT='\[release v?([0-9]+\.[0-9]+\.[0-9]+)\]'
+          REL=false
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            RAW="${GITHUB_REF_NAME}"
+            RAW="${GITHUB_REF_NAME}"; REL=true
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ] && [[ "$MSG" =~ $PAT ]]; then
+            RAW="${BASH_REMATCH[1]}"; REL=true
           elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             RAW="${{ github.event.inputs.version }}"
           else
             RAW="0.0.0-dev.${GITHUB_RUN_NUMBER}"
           fi
+          echo "release=$REL" >> "$GITHUB_OUTPUT"
           VER="${RAW#v}"; VER="${VER#V}"
           if [[ "$VER" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
             CODE=$(( ${BASH_REMATCH[1]} * 1000000 + ${BASH_REMATCH[2]} * 1000 + ${BASH_REMATCH[3]} ))
@@ -71,6 +79,7 @@ jobs:
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
           KS_ALIAS: ${{ secrets.KEY_ALIAS }}
           KS_KEYPASS: ${{ secrets.KEY_PASSWORD }}
+          IS_RELEASE: ${{ steps.ver.outputs.release }}
         run: |
           KS="$RUNNER_TEMP/release.jks"
           if [ -n "$KS_B64" ]; then
@@ -79,8 +88,8 @@ jobs:
               echo "KEY_ALIAS=$KS_ALIAS"; echo "KEY_PASSWORD=${KS_KEYPASS:-$KS_PASS}"; } >> "$GITHUB_ENV"
             echo "Signing with the permanent release key (alias from secrets)."
           else
-            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-              echo "::error::Release tag build but KEYSTORE_BASE64 secret is not set. Refusing to publish an APK signed with a temporary key."
+            if [ "$IS_RELEASE" = "true" ]; then
+              echo "::error::Release build but KEYSTORE_BASE64 secret is not set. Refusing to publish an APK signed with a temporary key."
               exit 1
             fi
             P="tmp$(openssl rand -hex 8)"
@@ -144,9 +153,12 @@ jobs:
             version.json
 
       - name: Publish GitHub Release
-        if: github.ref_type == 'tag'
+        if: steps.ver.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: fServe ${{ steps.ver.outputs.version }}
           files: |
             ${{ steps.apk.outputs.file }}
             ${{ steps.apk.outputs.file }}.sha256
