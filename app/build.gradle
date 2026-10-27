@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Passed by CI:  -PappVersionName=1.2.3 -PappVersionCode=1002003
+def vName = project.findProperty('appVersionName') ?: '0.0.0-dev'
+def vCode = (project.findProperty('appVersionCode') ?: '1') as int
+
+android {
+    namespace 'com.ffps.fserv'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.ffps.fserv'
+        minSdk 29
+        targetSdk 34
+        versionCode vCode
+        versionName vName
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // R8 пока выключен: меньше сюрпризов на первых сборках. Включим, когда проект устоится.
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    buildFeatures { buildConfig true }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+
+    lint { abortOnError false; checkReleaseBuilds false }
+}
+
+dependencies {
+}

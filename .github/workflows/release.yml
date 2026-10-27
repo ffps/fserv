@@ -1,0 +1,141 @@
+name: Build APK
+
+# Push a tag (e.g. v1.2.3) -> signed release APK "fServe-1.2.3.apk" is built and attached
+# to a GitHub Release together with fServe-1.2.3.apk.sha256 and version.json.
+# Push to main / manual run -> the APK is built and kept as a workflow artifact only.
+on:
+  push:
+    tags:
+      - '**'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for a manual test build (without "v")'
+        required: false
+        default: '0.0.0-test'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            RAW="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            RAW="${{ github.event.inputs.version }}"
+          else
+            RAW="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          VER="${RAW#v}"; VER="${VER#V}"
+          if [[ "$VER" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+            CODE=$(( ${BASH_REMATCH[1]} * 1000000 + ${BASH_REMATCH[2]} * 1000 + ${BASH_REMATCH[3]} ))
+          else
+            CODE="${GITHUB_RUN_NUMBER}"
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              echo "::warning::Tag '$RAW' is not X.Y.Z, versionCode falls back to the run number ($CODE) and may be lower than the installed version."
+            fi
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE"   >> "$GITHUB_OUTPUT"
+          echo "APK name: fServe-$VER.apk (versionCode $CODE)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - name: Prepare signing key
+        shell: bash
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_KEYPASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/release.jks"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$KS"
+            { echo "KEYSTORE_FILE=$KS"; echo "KEYSTORE_PASSWORD=$KS_PASS"
+              echo "KEY_ALIAS=$KS_ALIAS"; echo "KEY_PASSWORD=${KS_KEYPASS:-$KS_PASS}"; } >> "$GITHUB_ENV"
+            echo "Signing with the permanent release key (alias from secrets)."
+          else
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              echo "::error::Release tag build but KEYSTORE_BASE64 secret is not set. Refusing to publish an APK signed with a temporary key."
+              exit 1
+            fi
+            P="tmp$(openssl rand -hex 8)"
+            keytool -genkeypair -keystore "$KS" -storepass "$P" -keypass "$P" -alias fserv \
+              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=fServe temporary build key"
+            { echo "KEYSTORE_FILE=$KS"; echo "KEYSTORE_PASSWORD=$P"
+              echo "KEY_ALIAS=fserv"; echo "KEY_PASSWORD=$P"; } >> "$GITHUB_ENV"
+            echo "::warning::No KEYSTORE_BASE64 secret: APK signed with a temporary key. Updating over a previous build will require uninstalling it first."
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        run: >
+          ./gradlew --no-daemon :app:assembleRelease
+          -PappVersionName=${{ steps.ver.outputs.version }}
+          -PappVersionCode=${{ steps.ver.outputs.code }}
+
+      - name: Name, verify and describe APK
+        id: apk
+        shell: bash
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          CODE="${{ steps.ver.outputs.code }}"
+          OUT="fServe-${VER}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$OUT"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          "$BT/apksigner" verify --verbose "$OUT" | head -8
+          "$BT/aapt2" dump badging "$OUT" | grep -E "^package|sdkVersion|targetSdk"
+          ls -l "$OUT"
+          SHA=$(sha256sum "$OUT" | cut -d' ' -f1)
+          echo "$SHA  $OUT" > "$OUT.sha256"
+          cat > version.json <<EOF
+          {
+            "versionName": "$VER",
+            "versionCode": $CODE,
+            "apk": "$OUT",
+            "sha256": "$SHA"
+          }
+          EOF
+          cat version.json
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: |
+            ${{ steps.apk.outputs.file }}
+            ${{ steps.apk.outputs.file }}.sha256
+            version.json
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.apk.outputs.file }}
+            ${{ steps.apk.outputs.file }}.sha256
+            version.json
+          generate_release_notes: true
