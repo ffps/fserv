@@ -16,7 +16,7 @@ object Util {
     fun iso(ms: Long = System.currentTimeMillis()): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date(ms))
 
-    /** IPv4-адреса планшета в локальной сети. */
+    /** IPv4-адреса устройства в локальной сети. */
     fun ips(): List<String> {
         val res = ArrayList<String>()
         try {

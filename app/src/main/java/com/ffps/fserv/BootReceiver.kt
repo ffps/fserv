@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-/** Поднимает службу после включения планшета (если стоит галочка) и после обновления приложения. */
+/** Поднимает службу после включения устройства (если стоит галочка) и после обновления приложения. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
@@ -12,7 +12,7 @@ class BootReceiver : BroadcastReceiver() {
                 if (Settings.autostart && Settings.isConfigured) {
                     Settings.setServiceEnabled(true)
                     FLog.i("boot", "автозапуск после включения")
-                    Journal.add("service", "Служба запущена автоматически после включения планшета")
+                    Journal.add("service", "Служба запущена автоматически после включения устройства")
                     ServerService.start(ctx)
                 }
             }

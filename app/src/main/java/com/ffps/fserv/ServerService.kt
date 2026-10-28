@@ -103,6 +103,7 @@ class ServerService : Service() {
                 val s = WebServer(applicationContext, Settings.webPort)
                 s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                 server = s
+                serverStartedAt = System.currentTimeMillis()
                 FLog.i("web", "веб-сервер запущен на порту ${Settings.webPort}")
             } catch (e: IOException) {
                 fail(e.message ?: "cannot open port ${Settings.webPort}")
@@ -147,7 +148,8 @@ class ServerService : Service() {
     /** Мягкий перезапуск: сервер и планировщик поднимаются заново (с новым портом), процесс остаётся. */
     fun softRestart() {
         Thread {
-            FLog.i("service", "мягкий перезапуск")
+            restarts++
+            FLog.i("service", "мягкий перезапуск №$restarts")
             stopServer()
             startAll()
             MainActivity.reloadKiosk()
@@ -180,6 +182,13 @@ class ServerService : Service() {
 
         @Volatile
         var instance: ServerService? = null
+
+        /** Когда последний раз поднимался веб-сервер, и сколько было мягких перезапусков с начала процесса. */
+        @Volatile
+        var serverStartedAt: Long = 0L
+
+        @Volatile
+        var restarts: Int = 0
 
         /** Одна строка статуса: Stopped / Running: http://... / Fail: ... */
         fun statusLine(): String = when (state) {

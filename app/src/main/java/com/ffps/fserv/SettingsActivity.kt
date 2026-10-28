@@ -73,6 +73,8 @@ class SettingsActivity : Activity() {
         pass = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine(true)
+            // setSingleLine заменяет способ отображения текста, поэтому маскирование задаём после него
+            transformationMethod = PasswordTransformationMethod.getInstance()
             setText(Settings.password)
         }
         root.addView(pass, full())

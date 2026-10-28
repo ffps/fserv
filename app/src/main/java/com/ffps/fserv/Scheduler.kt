@@ -42,7 +42,7 @@ class Scheduler(private val ctx: Context) {
         val minute = System.currentTimeMillis() / 60000
         if (due("reboot", Settings.rebootCron, minute)) {
             Settings.setLastFired("reboot", minute)
-            Journal.add("power", "Перезагрузка планшета по расписанию (${Settings.rebootCron})")
+            Journal.add("power", "Перезагрузка устройства по расписанию (${Settings.rebootCron})")
             val err = Power.reboot(ctx)
             if (err != null) {
                 FLog.w("sched", "reboot по расписанию невозможен: $err")

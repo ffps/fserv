@@ -10,6 +10,8 @@
   /* нижние 24% экрана отданы под кнопку вызова */
   .wrap { height: 100%; box-sizing: border-box; padding-bottom: 24vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
   #time { font-weight: 100; font-size: min(32vw, 34vh); line-height: 1; letter-spacing: -0.02em; }
+  #time .c { display: inline-block; animation: colon 2s ease-in-out infinite; }
+  @keyframes colon { 0%, 100% { opacity: 1; } 50% { opacity: .12; } }
   #date { font-weight: 300; font-size: min(7vw, 8vh); margin-top: 3vh; opacity: .9; }
   #day  { font-weight: 300; font-size: min(7vw, 8vh); margin-top: 1vh; opacity: .9; }
   #call { position: fixed; left: 50%; bottom: 5vh; transform: translateX(-50%);
@@ -20,7 +22,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div id="time">--:--</div>
+  <div id="time"><span id="hh">--</span><span class="c">:</span><span id="mm">--</span></div>
   <div id="date"></div>
   <div id="day"></div>
 </div>
@@ -31,13 +33,14 @@
 </button>
 
 <script>
-  // Названия заданы явно: не зависим от языка и ICU планшета.
+  // Названия заданы явно: не зависим от языка и ICU устройства.
   var MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   var DAYS = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"];
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
   function tick() {
     var d = new Date();
-    document.getElementById("time").textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+    document.getElementById("hh").textContent = pad(d.getHours());
+    document.getElementById("mm").textContent = pad(d.getMinutes());
     document.getElementById("date").textContent = d.getDate() + " " + MONTHS[d.getMonth()];
     document.getElementById("day").textContent = DAYS[d.getDay()];
   }

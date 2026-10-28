@@ -15,7 +15,7 @@ object Power {
         "/system/sbin/su", "/vendor/bin/su", "/system_ext/bin/su", "/data/adb/magisk/su"
     )
 
-    /** "device-owner", "root" или null, если перезагрузить планшет программно нельзя. */
+    /** "device-owner", "root" или null, если перезагрузить устройство программно нельзя. */
     fun rebootMethod(ctx: Context): String? {
         try {
             val dpm = ctx.getSystemService(DevicePolicyManager::class.java)
@@ -46,7 +46,7 @@ object Power {
                 "не удалось выполнить su -c reboot: ${e.message}"
             }
             else -> "нет прав на перезагрузку: нужен Device Owner " +
-                "(adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver на сброшенном планшете) или root"
+                "(adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver на сброшенном устройстве) или root"
         }
     }
 

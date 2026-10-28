@@ -47,6 +47,12 @@
   .f input[type=text], .f input[type=number], .f input[type=password], .f input:not([type]), .f select { width:100%; }
   code { background:var(--code); padding:1px 5px; border-radius:4px; }
   a { color:var(--acc-d); }
+  .cw { position:relative; }
+  .cp { position:absolute; top:6px; right:6px; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.9); border:1px solid #cdd2e0; border-radius:6px; color:var(--dim); cursor:pointer; z-index:2; }
+  .cp:hover { color:var(--acc); border-color:var(--acc); background:var(--acc-soft); }
+  .cp svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .cp.done { color:var(--good); border-color:var(--good); } .cp.fail { color:var(--bad); border-color:var(--bad); }
+  .msg.flash { animation:fl .5s ease-out; } @keyframes fl { from { background:var(--acc-soft); } to { background:transparent; } }
   details summary { cursor:pointer; color:var(--dim); }
 </style>
 </head>
@@ -72,8 +78,7 @@
   <div class="grid" id="cards"></div>
   <details>
     <summary>Ответ /api/info целиком</summary>
-    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-copy="#infoRaw">Копировать</button></div>
-    <pre id="infoRaw"></pre>
+        <pre id="infoRaw"></pre>
   </details>
 </section>
 
@@ -84,7 +89,6 @@
     <label>Строк <input id="logLines" type="number" value="300" min="10" max="5000" style="width:90px"></label>
     <button class="btn sec" id="logRefresh">Обновить</button>
     <label><input type="checkbox" id="logAuto"> каждые 5 с</label>
-    <button class="btn sec" data-copy="#logOut">Копировать</button>
     <a href="/api/logs/download" download><button class="btn sec" type="button">Скачать всё</button></a>
     <button class="btn danger" id="logClear">Очистить</button>
   </div>
@@ -110,7 +114,6 @@
   <div class="row" style="margin-top:8px">
     <button class="btn" id="cfgSave">Сохранить</button>
     <button class="btn sec" id="cfgReload">Перечитать</button>
-    <button class="btn sec" data-copy="#cfgText">Копировать</button>
     <label>Версии <select id="cfgHist"></select></label>
     <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
   </div>
@@ -125,42 +128,41 @@
     <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
     <label for="sApp">Перезапуск приложения (cron)</label>
     <input id="sApp" placeholder="например 30 3 * * *   (пусто = выключено)">
-    <label for="sReboot">Перезагрузка планшета (cron)</label>
+    <label for="sReboot">Перезагрузка устройства (cron)</label>
     <input id="sReboot" placeholder="например 0 4 * * *   (пусто = выключено)">
     <label for="sPort">Порт веб-интерфейса</label>
     <input id="sPort" type="number" min="1024" max="65535">
     <label for="sBoot">Автозапуск службы</label>
-    <label><input id="sBoot" type="checkbox"> запускать при включении планшета</label>
+    <label><input id="sBoot" type="checkbox"> запускать при включении устройства</label>
     <label for="sPass">Новый пароль</label>
     <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
   <div class="msg" id="sMsg"></div>
-  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам планшета. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
+  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
 </section>
 
 <section id="pages">
   <h2>Страницы</h2>
   <div class="row">
-    <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран планшета</option><option value="index">index — этот веб-интерфейс</option></select></label>
+    <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран устройства</option><option value="index">index — этот веб-интерфейс</option></select></label>
     <span class="hint" id="pgState" style="margin:0"></span>
   </div>
   <textarea id="pgText" rows="22" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px">
     <button class="btn" id="pgSave">Сохранить</button>
-    <button class="btn sec" data-copy="#pgText">Копировать</button>
     <button class="btn danger" id="pgReset">Вернуть встроенную</button>
     <button class="btn sec" id="pgReload">Перезагрузить киоск</button>
   </div>
   <div class="msg" id="pgMsg"></div>
-  <p class="hint">Заменённые страницы хранятся на планшете и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
+  <p class="hint">Заменённые страницы хранятся во внутренней памяти приложения (путь показан выше; без root или adb до этого файла не добраться, меняйте страницу здесь, в редакторе) и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
 </section>
 
 <section id="power">
   <h2>Питание</h2>
   <div class="row">
     <button class="btn sec" id="pRestart">Перезапустить приложение</button>
-    <button class="btn danger" id="pReboot">Перезагрузить планшет</button>
+    <button class="btn danger" id="pReboot">Перезагрузить устройство</button>
   </div>
   <div class="msg" id="pMsg"></div>
   <p class="hint">«Перезапустить приложение» заново поднимает веб-сервер, планировщик и киоск, не закрывая экран.</p>
@@ -182,8 +184,17 @@ async function api(path, opts) {
   return {text: t, json: j};
 }
 const post = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "text/plain; charset=utf-8"}, body: body || ""});
-function say(id, text, ok) { const e = $(id); e.textContent = text || ""; e.className = "msg " + (ok ? "ok" : "err"); }
-async function run(msgId, fn) { try { const m = await fn(); say(msgId, m, true); } catch (e) { say(msgId, e.message, false); } }
+const hhmmss = () => new Date().toTimeString().slice(0, 8);
+function say(id, text, ok) {
+  const e = $(id); e.className = "msg"; e.textContent = "";
+  if (!text) return;
+  void e.offsetWidth; // перезапуск анимации: повторный одинаковый ответ тоже заметен
+  e.textContent = hhmmss() + "  " + text; e.className = "msg flash " + (ok ? "ok" : "err");
+}
+async function run(msgId, fn) {
+  say(msgId, "");
+  try { const m = await fn(); say(msgId, m, true); } catch (e) { say(msgId, e.message, false); }
+}
 
 // ---- копирование (на http:// буфер обмена браузера закрыт, поэтому есть запасной путь) ----
 async function copyText(text) {
@@ -196,13 +207,20 @@ async function copyText(text) {
   let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
   ta.remove(); return ok;
 }
-document.addEventListener("click", async e => {
-  const b = e.target.closest("[data-copy]"); if (!b) return;
-  const el = $(b.dataset.copy); if (!el) return;
-  const ok = await copyText(el.tagName === "TEXTAREA" ? el.value : el.textContent);
-  if (!b.dataset.label) b.dataset.label = b.textContent;
-  b.textContent = ok ? "Скопировано ✓" : "Не удалось скопировать";
-  setTimeout(() => { b.textContent = b.dataset.label; }, 1500);
+const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>';
+const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>';
+const ICON_BAD = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+// у каждого большого текстового поля справа вверху появляется кнопка-иконка «копировать»
+document.querySelectorAll("pre, textarea").forEach(el => {
+  const w = document.createElement("div"); w.className = "cw";
+  el.parentNode.insertBefore(w, el); w.appendChild(el);
+  const b = document.createElement("button"); b.type = "button"; b.className = "cp"; b.title = "Копировать"; b.innerHTML = ICON_COPY;
+  b.onclick = async () => {
+    const ok = await copyText(el.tagName === "TEXTAREA" ? el.value : el.textContent);
+    b.className = "cp " + (ok ? "done" : "fail"); b.innerHTML = ok ? ICON_OK : ICON_BAD;
+    setTimeout(() => { b.className = "cp"; b.innerHTML = ICON_COPY; }, 1500);
+  };
+  w.appendChild(b);
 });
 
 // ---- вкладки ----
@@ -232,15 +250,15 @@ async function loadStatus() {
     $("#ver").textContent = "версия " + i.app.version;
     const b = i.battery;
     $("#cards").innerHTML =
-      card("Время на планшете", i.time.now.replace("T", " ")) +
+      card("Время на устройстве", i.time.now.replace("T", " ")) +
       card("Приложение работает", fmtDur(i.time.appUptimeSeconds)) +
-      card("Планшет включён", fmtDur(i.time.deviceUptimeSeconds)) +
+      card("Устройство включено", fmtDur(i.time.deviceUptimeSeconds)) +
       card("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
       card("Устройство", i.device.manufacturer + " " + i.device.model + ", Android " + i.device.android) +
       card("Адрес", i.device.ips.length ? i.device.ips.join(", ") : "нет сети") +
       card("Свободно", i.storage.freeMegabytes + " МБ") +
       card("Лог", i.logs.level + ", " + Math.round(i.logs.sizeBytes / 1024) + " КБ") +
-      card("Перезагрузка планшета", i.power.rebootMethod || "недоступна") +
+      card("Перезагрузка устройства", i.power.rebootMethod || "недоступна") +
       card("Cron перезапуска / перезагрузки", (i.power.appRestartCron || "—") + " / " + (i.power.rebootCron || "—"));
     $("#infoRaw").textContent = JSON.stringify(i, null, 2);
     $("#beat").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
@@ -303,25 +321,31 @@ $("#sSave").onclick = () => run("#sMsg", async () => {
 async function loadPage() {
   try {
     const p = (await api("/api/ui?name=" + $("#pgName").value)).json;
-    $("#pgText").value = p.html; $("#pgState").textContent = p.custom ? "используется ваша версия" : "используется встроенная версия"; say("#pgMsg", "");
+    $("#pgText").value = p.html; $("#pgState").textContent = (p.custom ? "используется ваша версия" : "используется встроенная версия") + ". Файл на устройстве: " + p.path; say("#pgMsg", "");
   } catch (e) { say("#pgMsg", e.message, false); }
 }
 $("#pgName").onchange = loadPage;
 $("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; });
 $("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/ui/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
-$("#pgReload").onclick = () => run("#pgMsg", async () => { await post("/api/kiosk/reload"); return "киоск перезагружен"; });
+$("#pgReload").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/reload"); return r.json.message; });
 
 // ---- питание ----
 async function loadPower() {
   try {
     const i = (await api("/api/info")).json; const m = i.power.rebootMethod;
     $("#pReboot").disabled = !m;
-    $("#pHint").textContent = m ? "Перезагрузка планшета доступна (" + m + ")." :
-      "Перезагрузка планшета недоступна: нужен Device Owner или root. Для Device Owner на сброшенном планшете без аккаунтов выполните: adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver";
+    $("#pHint").textContent = m ? "Перезагрузка устройства доступна (" + m + ")." :
+      "Перезагрузка устройства недоступна: нужен Device Owner или root. Для Device Owner на сброшенном устройстве без аккаунтов выполните: adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver";
   } catch (e) { say("#pMsg", e.message, false); }
 }
-$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен несколько секунд.")) run("#pMsg", async () => { await post("/api/restart-app"); return "перезапускается, обновите страницу через несколько секунд"; }); };
-$("#pReboot").onclick = () => { if (confirm("Перезагрузить планшет?")) run("#pMsg", async () => { await post("/api/reboot?confirm=1"); return "перезагрузка запущена"; }); };
+$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен несколько секунд.")) run("#pMsg", async () => { await post("/api/restart-app");
+  say("#pMsg", "перезапуск…", true); await new Promise(r => setTimeout(r, 2500));
+  for (let n = 0; n < 40; n++) {
+    try { const i = (await api("/api/info")).json; return "приложение перезапущено, веб-сервер снова отвечает (перезапусков с запуска процесса: " + i.server.softRestarts + ")"; }
+    catch (e) { await new Promise(r => setTimeout(r, 1000)); }
+  }
+  throw new Error("веб-сервер не ответил за 40 секунд, проверьте строку состояния на устройстве"); }); };
+$("#pReboot").onclick = () => { if (confirm("Перезагрузить устройство?")) run("#pMsg", async () => { await post("/api/reboot?confirm=1"); return "перезагрузка запущена"; }); };
 
 // ---- автообновление ----
 setInterval(() => {

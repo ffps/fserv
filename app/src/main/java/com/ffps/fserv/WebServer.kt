@@ -18,7 +18,7 @@ import java.util.TimeZone
 /**
  * Встроенный веб-сервер: страница управления, JSON API и киоск-страница.
  *
- * Без пароля доступны только /health (для мониторинга) и /kiosk с самого планшета (127.0.0.1).
+ * Без пароля доступны только /health (для мониторинга) и /kiosk с самого устройства (127.0.0.1).
  * Остальное требует HTTP Basic (логин admin, пароль из настроек).
  * Все записи идут методом POST с телом в UTF-8; ответы JSON с отступами.
  */
@@ -86,9 +86,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/ui" -> uiGet(q(s, "name"))
             post && uri == "/api/ui" -> uiSave(q(s, "name"), body(s))
             post && uri == "/api/ui/reset" -> uiReset(q(s, "name"))
-            post && uri == "/api/kiosk/reload" ->
-                if (MainActivity.reloadKiosk()) ok("киоск перезагружен")
-                else fail(Response.Status.NOT_FOUND, "экран киоска сейчас не открыт (приложение не на переднем плане)")
+            post && uri == "/api/kiosk/reload" -> when (MainActivity.reloadKiosk()) {
+                KioskState.VISIBLE -> ok("киоск перезагружен, он сейчас на экране устройства")
+                KioskState.BACKGROUND ->
+                    ok("киоск перезагружен, но на экране устройства сейчас другое приложение")
+                KioskState.NONE ->
+                    fail(Response.Status.NOT_FOUND, "экран киоска не создан: откройте его на устройстве кнопкой Open kiosk")
+            }
 
             post && uri == "/api/restart-app" -> {
                 FLog.i("web", "запрошен перезапуск приложения")
@@ -177,7 +181,15 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             ),
             "battery" to Util.battery(ctx),
             "storage" to obj("freeMegabytes" to ctx.filesDir.usableSpace / 1048576),
-            "server" to obj("port" to Settings.webPort),
+            "server" to obj(
+                "port" to Settings.webPort,
+                "startedAt" to Util.iso(ServerService.serverStartedAt),
+                "softRestarts" to ServerService.restarts
+            ),
+            "paths" to obj(
+                "files" to ctx.filesDir.absolutePath,
+                "pages" to File(ctx.filesDir, "web").absolutePath
+            ),
             "power" to obj(
                 "rebootMethod" to Power.rebootMethod(ctx),
                 "appRestartCron" to Settings.appRestartCron,
@@ -250,8 +262,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
 
     private fun reboot(s: IHTTPSession): Response {
         if (q(s, "confirm") != "1") return fail(Response.Status.BAD_REQUEST, "нужен параметр confirm=1")
-        FLog.i("web", "запрошена перезагрузка планшета")
-        Journal.add("power", "Перезагрузка планшета (из веб-интерфейса)")
+        FLog.i("web", "запрошена перезагрузка устройства")
+        Journal.add("power", "Перезагрузка устройства (из веб-интерфейса)")
         val err = Power.reboot(ctx)
         return if (err == null) ok("перезагрузка запущена")
         else fail(Response.Status.NOT_IMPLEMENTED, err)
@@ -279,7 +291,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         val name = checkName(nameRaw)
         val f = overrideFile(name)
         val custom = f.exists() && f.length() > 0
-        return json(Response.Status.OK, obj("name" to name, "custom" to custom, "html" to if (custom) f.readText() else defaultHtml(name)))
+        return json(Response.Status.OK, obj("name" to name, "custom" to custom, "path" to overrideFile(name).absolutePath, "html" to if (custom) f.readText() else defaultHtml(name)))
     }
 
     private fun uiSave(nameRaw: String?, html: String): Response {

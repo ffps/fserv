@@ -46,7 +46,7 @@ object Settings {
     @get:Synchronized val appRestartCron: String get() = o.optString("appRestartCron", "")
     @get:Synchronized val rebootCron: String get() = o.optString("rebootCron", "")
 
-    /** Запускать службу при включении планшета. */
+    /** Запускать службу при включении устройства. */
     @get:Synchronized val autostart: Boolean get() = o.optBoolean("autostart", false)
 
     /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */

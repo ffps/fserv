@@ -18,6 +18,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
+/** Состояние экрана киоска для кнопки «Перезагрузить киоск». */
+enum class KioskState { VISIBLE, BACKGROUND, NONE }
+
 /**
  * Киоск-экран: полноэкранный WebView. Страницу отдаёт встроенный сервер (http://127.0.0.1:порт/kiosk),
  * поэтому её можно заменить из веб-интерфейса. Пока служба не запущена, показывается страница из ресурсов.
@@ -80,6 +83,16 @@ class MainActivity : Activity() {
         loadKiosk(false)
     }
 
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+    }
+
+    override fun onPause() {
+        resumed = false
+        super.onPause()
+    }
+
     override fun onStart() {
         super.onStart()
         if (Settings.serviceEnabled && Settings.isConfigured) ServerService.start(this)
@@ -95,6 +108,12 @@ class MainActivity : Activity() {
     /** Показывает страницу с сервера, если служба работает; иначе остаётся встроенная и проверяет снова. */
     private fun loadKiosk(force: Boolean) {
         handler.removeCallbacks(retry)
+        if (force) {
+            // видимая реакция: экран гаснет и плавно возвращается, пока страница перечитывается
+            web.animate().cancel()
+            web.alpha = 0f
+            web.animate().alpha(1f).setStartDelay(500).setDuration(500).start()
+        }
         if (ServerService.state == ServerService.State.RUNNING) {
             if (onAsset || force) {
                 onAsset = false
@@ -158,11 +177,18 @@ class MainActivity : Activity() {
         @Volatile
         private var current: MainActivity? = null
 
-        /** Перечитать киоск-страницу. false, если экран киоска сейчас не открыт. */
-        fun reloadKiosk(): Boolean {
-            val a = current ?: return false
+        @Volatile
+        private var resumed = false
+
+        /**
+         * Перечитать киоск-страницу. Результат: VISIBLE — экран киоска на виду; BACKGROUND — экран создан,
+         * но закрыт другим приложением (страница всё равно перечитана); NONE — экрана нет (система его закрыла
+         * или он не открывался), перечитывать нечего.
+         */
+        fun reloadKiosk(): KioskState {
+            val a = current ?: return KioskState.NONE
             a.runOnUiThread { a.loadKiosk(true) }
-            return true
+            return if (resumed) KioskState.VISIBLE else KioskState.BACKGROUND
         }
     }
 }
