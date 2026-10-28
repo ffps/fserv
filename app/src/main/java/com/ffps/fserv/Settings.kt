@@ -52,6 +52,38 @@ object Settings {
     /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */
     @get:Synchronized val serviceEnabled: Boolean get() = o.optBoolean("serviceEnabled", false)
 
+    @get:Synchronized val telegramToken: String get() = o.optString("telegramToken")
+    @get:Synchronized val telegramChatId: String get() = o.optString("telegramChatId")
+    @get:Synchronized val updateRepo: String get() = o.optString("updateRepo", "ffps/fserv")
+    @get:Synchronized val updateCheckCron: String get() = o.optString("updateCheckCron", "0 4 * * *")
+
+    val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
+
+    @Synchronized
+    fun getStr(key: String): String = o.optJSONObject("state")?.optString(key, "") ?: ""
+
+    @Synchronized
+    fun putStr(key: String, v: String) {
+        val st = o.optJSONObject("state") ?: JSONObject().also { o.put("state", it) }
+        st.put(key, v)
+        save()
+    }
+
+    /** SOCKS5-прокси для назначения (telegram, llm, updates) или null, если выключен. */
+    class ProxyCfg(val host: String, val port: Int, val user: String, val password: String)
+
+    @Synchronized
+    fun proxyCfg(purpose: String): ProxyCfg? {
+        val p = o.optJSONObject("proxies")?.optJSONObject(purpose) ?: return null
+        if (!p.optBoolean("enabled") || p.optString("host").isBlank()) return null
+        return ProxyCfg(p.optString("host").trim(), p.optInt("port", 1080), p.optString("user"), p.optString("password"))
+    }
+
+    @Synchronized
+    fun allProxies(): List<ProxyCfg> = PURPOSES.mapNotNull { proxyCfg(it) }
+
+    val PURPOSES = listOf("telegram", "llm", "updates")
+
     /** Настройки заданы: без пароля веб-интерфейс не запускается. */
     val isConfigured: Boolean get() = password.isNotEmpty()
 
@@ -85,7 +117,26 @@ object Settings {
         "appRestartCron" to appRestartCron,
         "rebootCron" to rebootCron,
         "passwordSet" to isConfigured,
-        "autostart" to autostart
+        "autostart" to autostart,
+        "telegram" to obj(
+            "tokenSet" to telegramToken.isNotEmpty(),
+            "tokenHint" to if (telegramToken.length > 8) telegramToken.take(3) + "…" + telegramToken.takeLast(3) else "",
+            "chatId" to telegramChatId
+        ),
+        "proxies" to JSONObject().also { px ->
+            for (n in PURPOSES) {
+                val p = o.optJSONObject("proxies")?.optJSONObject(n)
+                px.put(n, obj(
+                    "enabled" to (p?.optBoolean("enabled") ?: false),
+                    "host" to (p?.optString("host") ?: ""),
+                    "port" to (p?.optInt("port", 1080) ?: 1080),
+                    "user" to (p?.optString("user") ?: ""),
+                    "passwordSet" to !(p?.optString("password").isNullOrEmpty())
+                ))
+            }
+        },
+        "updateRepo" to updateRepo,
+        "updateCheckCron" to updateCheckCron
     )
 
     class Result(val errors: List<String>, val restartRequired: Boolean)
@@ -104,7 +155,7 @@ object Settings {
             val v = patch.optInt("webPort", -1)
             if (v !in 1024..65535) errors.add("webPort: число от 1024 до 65535")
         }
-        for (k in listOf("appRestartCron", "rebootCron")) {
+        for (k in listOf("appRestartCron", "rebootCron", "updateCheckCron")) {
             if (patch.has(k)) {
                 val v = patch.optString(k).trim()
                 if (v.isNotEmpty()) {
@@ -114,6 +165,25 @@ object Settings {
                         errors.add("$k: ${e.message}")
                     }
                 }
+            }
+        }
+        if (patch.has("telegramToken") && patch.optString("telegramToken").isNotEmpty() &&
+            !Regex("""\d{5,}:[A-Za-z0-9_-]{20,}""").matches(patch.optString("telegramToken").trim())) {
+            errors.add("telegramToken: ожидается вид 123456789:AAxxxxxxxx (от BotFather)")
+        }
+        if (patch.has("telegramChatId") && patch.optString("telegramChatId").isNotBlank() &&
+            !Regex("""-?\d+|@[A-Za-z0-9_]{4,}""").matches(patch.optString("telegramChatId").trim())) {
+            errors.add("telegramChatId: число (для группы со знаком минус) или @имя_канала")
+        }
+        if (patch.has("updateRepo") && !Regex("""[\w.-]+/[\w.-]+""").matches(patch.optString("updateRepo").trim())) {
+            errors.add("updateRepo: ожидается владелец/репозиторий")
+        }
+        patch.optJSONObject("proxies")?.let { px ->
+            for (n in px.keys()) {
+                if (n !in PURPOSES) { errors.add("proxies.$n: неизвестное назначение"); continue }
+                val p = px.optJSONObject(n) ?: continue
+                if (p.has("port") && p.optInt("port", -1) !in 1..65535) errors.add("proxies.$n.port: число от 1 до 65535")
+                if (p.optBoolean("enabled") && p.has("host") && p.optString("host").isBlank()) errors.add("proxies.$n.host: пусто")
             }
         }
         if (patch.has("password") && patch.optString("password").isEmpty() && password.isEmpty()) {
@@ -133,6 +203,30 @@ object Settings {
             if (patch.has(k)) o.put(k, patch.optString(k).trim())
         }
         if (patch.has("autostart")) o.put("autostart", patch.optBoolean("autostart"))
+        if (patch.has("updateCheckCron")) o.put("updateCheckCron", patch.optString("updateCheckCron").trim())
+        if (patch.has("updateRepo")) o.put("updateRepo", patch.optString("updateRepo").trim())
+        if (patch.has("telegramChatId")) o.put("telegramChatId", patch.optString("telegramChatId").trim())
+        // Пустой токен означает «не менять».
+        if (patch.optString("telegramToken").isNotEmpty()) {
+            o.put("telegramToken", patch.optString("telegramToken").trim())
+            FLog.addSecret(telegramToken)
+        }
+        patch.optJSONObject("proxies")?.let { px ->
+            val all = o.optJSONObject("proxies") ?: JSONObject().also { o.put("proxies", it) }
+            for (n in px.keys()) {
+                val src = px.optJSONObject(n) ?: continue
+                val dst = all.optJSONObject(n) ?: JSONObject().also { all.put(n, it) }
+                if (src.has("enabled")) dst.put("enabled", src.optBoolean("enabled"))
+                if (src.has("host")) dst.put("host", src.optString("host").trim())
+                if (src.has("port")) dst.put("port", src.optInt("port"))
+                if (src.has("user")) dst.put("user", src.optString("user"))
+                if (src.optString("password").isNotEmpty()) {
+                    dst.put("password", src.optString("password"))
+                    FLog.addSecret(src.optString("password"))
+                }
+                if (src.optBoolean("clearPassword")) dst.remove("password")
+            }
+        }
         // Пустой пароль в запросе означает «не менять».
         if (patch.has("password") && patch.optString("password").isNotEmpty() && patch.optString("password") != password) {
             o.put("password", patch.optString("password"))

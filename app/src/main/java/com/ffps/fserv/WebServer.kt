@@ -57,6 +57,42 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/default" -> page("index", true) // встроенная страница, даже если подменена
             get && uri == "/kiosk" -> page("kiosk", false)
 
+            get && uri == "/api" -> json(Response.Status.OK, apiIndex())
+
+            get && uri == "/api/telegram" -> json(Response.Status.OK, Telegram.status())
+            post && uri == "/api/telegram/test" -> try {
+                ok(Telegram.test())
+            } catch (e: IllegalArgumentException) {
+                fail(Response.Status.BAD_REQUEST, e.message ?: "ошибка")
+            } catch (e: Exception) {
+                fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+            }
+            post && uri == "/api/telegram/send" -> {
+                val t = body(s).trim()
+                require(t.isNotEmpty()) { "пустой текст" }
+                val id = Telegram.enqueue(t)
+                json(Response.Status.OK, obj("ok" to true, "id" to id, "pending" to Telegram.pending()))
+            }
+            get && uri == "/api/outbox" -> json(Response.Status.OK, Telegram.itemsJson())
+            post && uri == "/api/outbox/clear" -> {
+                val n = Telegram.clear()
+                Journal.add("telegram", "Очередь отправки очищена вручную ($n сообщ.)")
+                ok("удалено сообщений: $n")
+            }
+            post && uri == "/api/proxy/test" -> proxyTest(q(s, "name"))
+
+            get && uri == "/api/update" -> json(Response.Status.OK, Updater.status(ctx))
+            post && uri == "/api/update/check" -> try {
+                Updater.check()
+                json(Response.Status.OK, Updater.status(ctx))
+            } catch (e: Exception) {
+                fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+            }
+            post && uri == "/api/update/install" -> {
+                val err = Updater.installAsync(ctx)
+                if (err == null) ok("скачивание и установка запущены") else fail(Response.Status.CONFLICT, err)
+            }
+
             get && uri == "/api/info" -> json(Response.Status.OK, info())
 
             get && uri == "/api/settings" -> json(Response.Status.OK, Settings.publicJson())
@@ -152,7 +188,12 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             "time" to Util.iso(),
             "uptimeSeconds" to (System.currentTimeMillis() - App.startedAt) / 1000,
             "battery" to Util.battery(ctx),
-            "checks" to obj("web" to true, "service" to ServerService.state.name.lowercase())
+            "checks" to obj(
+                "web" to true,
+                "service" to ServerService.state.name.lowercase(),
+                "telegram" to Telegram.status(),
+                "updateAvailable" to (Updater.latest?.optLong("versionCode", 0L) ?: 0L).let { it > BuildConfig.VERSION_CODE }
+            )
         )
     )
 
@@ -202,6 +243,57 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             )
         )
     }
+
+    private fun proxyTest(name: String?): Response {
+        require(name in Settings.PURPOSES) { "name: telegram, llm или updates" }
+        val url = when (name) {
+            "telegram" -> "https://api.telegram.org/"
+            "llm" -> "https://generativelanguage.googleapis.com/"
+            else -> "https://api.github.com/"
+        }
+        val t0 = System.currentTimeMillis()
+        return try {
+            val r = Net.request(name!!, "GET", url, timeoutMs = 15_000)
+            ok("$url ответил HTTP ${r.code} за ${System.currentTimeMillis() - t0} мс (${r.via})")
+        } catch (e: Exception) {
+            fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun apiIndex(): JSONObject = obj(
+        "GET /health" to "состояние для мониторинга, без пароля",
+        "GET /api" to "этот список методов",
+        "GET /api/info" to "версия, устройство, время, батарея, путь к файлам, питание, лог",
+        "GET /api/settings" to "настройки без секретов (токен и пароли не отдаются)",
+        "POST /api/settings" to "частичное изменение настроек, JSON; пустой пароль или токен означает «не менять»",
+        "GET /api/logs" to "технический лог; ?lines=300&level=INFO",
+        "GET /api/logs/download" to "весь лог файлом",
+        "POST /api/logs/clear" to "очистить лог",
+        "GET /api/journal" to "журнал событий, новые первыми; ?limit=100",
+        "POST /api/journal/clear" to "очистить журнал",
+        "GET /api/config" to "JSON-конфиг задач как текст",
+        "POST /api/config" to "сохранить конфиг задач (тело: JSON-текст), с проверкой и историей версий",
+        "GET /api/config/history" to "сохранённые версии конфига",
+        "POST /api/config/restore" to "восстановить версию конфига; ?name=файл",
+        "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
+        "POST /api/ui" to "заменить страницу (тело: HTML); ?name=kiosk",
+        "POST /api/ui/reset" to "вернуть встроенную страницу; ?name=kiosk",
+        "POST /api/kiosk/reload" to "перечитать киоск на экране устройства",
+        "GET /api/telegram" to "состояние Telegram: настроен ли, сколько в очереди, последняя ошибка",
+        "POST /api/telegram/test" to "проверить бота и отправить тестовое сообщение напрямую",
+        "POST /api/telegram/send" to "поставить в очередь сообщение (тело: текст)",
+        "GET /api/outbox" to "очередь неотправленных сообщений",
+        "POST /api/outbox/clear" to "очистить очередь",
+        "POST /api/proxy/test" to "проверить прокси; ?name=telegram|llm|updates",
+        "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
+        "POST /api/update/check" to "проверить GitHub Releases сейчас",
+        "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
+        "POST /api/restart-app" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
+        "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
+        "GET /" to "веб-интерфейс",
+        "GET /default" to "встроенный веб-интерфейс, даже если страница подменена",
+        "GET /kiosk" to "страница киоска"
+    )
 
     private fun saveSettings(bodyText: String): Response {
         val patch = try {

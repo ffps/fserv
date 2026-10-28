@@ -34,6 +34,7 @@ class SettingsActivity : Activity() {
     private lateinit var port: EditText
     private lateinit var pass: EditText
     private lateinit var toggle: Button
+    private lateinit var allow: Button
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -118,6 +119,18 @@ class SettingsActivity : Activity() {
             topMargin = dp(8)
         })
 
+        allow = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Allow app updates"
+            setOnClickListener {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$packageName"))
+                )
+            }
+        }
+        root.addView(allow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+
         val ver = TextView(this).apply {
             text = "fServe ${BuildConfig.VERSION_NAME}"
             setTextColor(Color.GRAY)
@@ -184,6 +197,7 @@ class SettingsActivity : Activity() {
 
     private fun refresh() {
         val st = ServerService.state
+        allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()
         status.setTextColor(
             when (st) {

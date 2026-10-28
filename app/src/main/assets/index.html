@@ -68,6 +68,8 @@
   <button data-t="journal">Журнал</button>
   <button data-t="config">Задачи</button>
   <button data-t="settings">Настройки</button>
+  <button data-t="comm">Связь</button>
+  <button data-t="update">Обновления</button>
   <button data-t="pages">Страницы</button>
   <button data-t="power">Питание</button>
 </nav>
@@ -140,6 +142,51 @@
   <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
   <div class="msg" id="sMsg"></div>
   <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
+</section>
+
+<section id="comm">
+  <h2>Telegram</h2>
+  <div class="f">
+    <label for="tgToken">Токен бота</label>
+    <input id="tgToken" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+    <label for="tgChat">Chat id</label>
+    <input id="tgChat" placeholder="число, у группы со знаком минус">
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="tgSave">Сохранить</button>
+    <button class="btn sec" id="tgTest">Проверить и отправить тест</button>
+  </div>
+  <div class="msg" id="tgMsg"></div>
+  <p class="hint" id="tgState"></p>
+  <h2 style="margin-top:22px">Очередь отправки</h2>
+  <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
+  <div class="row" style="margin-top:10px"><button class="btn danger sm" id="obClear">Очистить очередь</button></div>
+  <h2 style="margin-top:22px">SOCKS5-прокси</h2>
+  <div id="pxBox"></div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="pxSave">Сохранить прокси</button></div>
+  <div class="msg" id="pxMsg"></div>
+  <p class="hint">У каждого назначения свой прокси. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. Кнопка «Проверить» использует сохранённые настройки.</p>
+</section>
+
+<section id="update">
+  <h2>Обновления</h2>
+  <div class="grid" id="upCards"></div>
+  <div class="row">
+    <button class="btn sec" id="upCheck">Проверить сейчас</button>
+    <button class="btn" id="upInstall">Скачать и установить</button>
+  </div>
+  <div class="msg" id="upMsg"></div>
+  <pre id="upNotes" style="display:none"></pre>
+  <h2 style="margin-top:22px">Параметры</h2>
+  <div class="f">
+    <label for="upRepo">Репозиторий GitHub</label>
+    <input id="upRepo" placeholder="владелец/репозиторий">
+    <label for="upCron">Проверка по расписанию (cron)</label>
+    <input id="upCron" placeholder="например 0 4 * * *   (пусто = выключено)">
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="upSave">Сохранить</button></div>
+  <div class="msg" id="upSMsg"></div>
+  <p class="hint">По расписанию выполняется только проверка: о новой версии придёт сообщение в Telegram. Устанавливается обновление только по кнопке. На устройстве должна быть разрешена установка из этого приложения (окно настроек, кнопка «Allow app updates»); если система запросит подтверждение, нажмите «Установить» на экране устройства. Откатиться на старую версию Android не даёт: чтобы вернуть прежнее поведение, выпускается новая версия с исправлением.</p>
 </section>
 
 <section id="pages">
@@ -231,12 +278,85 @@ document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === current));
   onTab();
 });
+
+// ---- связь ----
+const PX = [["telegram", "Telegram"], ["llm", "LLM (Gemini)"], ["updates", "Обновления (GitHub)"]];
+$("#pxBox").innerHTML = PX.map(([n, t]) => '<fieldset style="border:1px solid var(--line);border-radius:8px;margin:0 0 10px;padding:8px 12px;max-width:780px"><legend>' + t + '</legend><div class="f">' +
+  '<label>Использовать</label><label><input type="checkbox" id="px_' + n + '_on"> включён</label>' +
+  '<label>Адрес</label><input id="px_' + n + '_host" placeholder="хост или IP">' +
+  '<label>Порт</label><input id="px_' + n + '_port" type="number" min="1" max="65535" placeholder="1080">' +
+  '<label>Логин</label><input id="px_' + n + '_user" autocomplete="off">' +
+  '<label>Пароль</label><input id="px_' + n + '_pass" type="password" autocomplete="new-password" placeholder="пусто = не менять">' +
+  '</div><div class="row" style="margin-top:8px"><button class="btn sec sm" data-px="' + n + '">Проверить</button><span class="msg" id="px_' + n + '_msg" style="margin:0"></span></div></fieldset>').join("");
+async function loadComm() {
+  try {
+    const st = (await api("/api/settings")).json;
+    $("#tgChat").value = st.telegram.chatId; $("#tgToken").value = "";
+    $("#tgToken").placeholder = st.telegram.tokenSet ? "задан (" + st.telegram.tokenHint + "), пусто = не менять" : "не задан";
+    for (const [n] of PX) {
+      const p = st.proxies[n];
+      $("#px_" + n + "_on").checked = p.enabled; $("#px_" + n + "_host").value = p.host; $("#px_" + n + "_port").value = p.port;
+      $("#px_" + n + "_user").value = p.user; $("#px_" + n + "_pass").value = "";
+      $("#px_" + n + "_pass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
+    }
+    const t = (await api("/api/telegram")).json;
+    $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + t.lastSentAt.replace("T", " ") : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
+    const ob = (await api("/api/outbox")).json;
+    $("#obBody").innerHTML = ob.length ? ob.map(i => "<tr><td>" + esc(i.created.replace("T", " ")) + "</td><td>" + esc(i.text) + "</td><td>" + i.attempts + "</td><td>" + esc(i.nextTry ? i.nextTry.replace("T", " ") : "") + "</td><td>" + esc(i.lastError) + "</td></tr>").join("") : '<tr><td colspan="5" style="color:var(--dim)">пусто</td></tr>';
+  } catch (e) { say("#tgMsg", e.message, false); }
+}
+$("#tgSave").onclick = () => run("#tgMsg", async () => {
+  const patch = {telegramChatId: $("#tgChat").value.trim()};
+  if ($("#tgToken").value.trim()) patch.telegramToken = $("#tgToken").value.trim();
+  await post("/api/settings", JSON.stringify(patch)); loadComm(); return "сохранено";
+});
+$("#tgTest").onclick = () => run("#tgMsg", async () => { const r = await post("/api/telegram/test"); loadComm(); return r.json.message; });
+$("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/outbox/clear"); loadComm(); return r.json.message; }); };
+$("#pxSave").onclick = () => run("#pxMsg", async () => {
+  const px = {};
+  for (const [n] of PX) px[n] = {enabled: $("#px_" + n + "_on").checked, host: $("#px_" + n + "_host").value.trim(),
+    port: parseInt($("#px_" + n + "_port").value || "1080", 10), user: $("#px_" + n + "_user").value, password: $("#px_" + n + "_pass").value};
+  await post("/api/settings", JSON.stringify({proxies: px})); loadComm(); return "сохранено";
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-px]"); if (!b) return;
+  const n = b.dataset.px, id = "#px_" + n + "_msg";
+  say(id, ""); $(id).textContent = "проверяю…";
+  post("/api/proxy/test?name=" + n).then(r => say(id, r.json.message, true), er => say(id, er.message, false));
+});
+
+// ---- обновления ----
+let upTimer = null;
+async function loadUpdate() {
+  try {
+    const u = (await api("/api/update")).json, st = (await api("/api/settings")).json;
+    if (document.activeElement !== $("#upRepo")) $("#upRepo").value = st.updateRepo;
+    if (document.activeElement !== $("#upCron")) $("#upCron").value = st.updateCheckCron;
+    const l = u.latest;
+    $("#upCards").innerHTML = card("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
+      card("Последняя на GitHub", l ? l.versionName + " (" + l.versionCode + ")" : "ещё не проверялась") +
+      card("Статус", u.state !== "idle" ? u.state + (u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
+      card("Проверка", u.lastCheck ? u.lastCheck.replace("T", " ") : "не выполнялась") +
+      card("Установка разрешена", u.canInstall ? "да" : "нет (кнопка Allow app updates на устройстве)") +
+      (u.lastError ? card("Ошибка", u.lastError) : "");
+    $("#upInstall").disabled = !u.available || u.state !== "idle";
+    const n = $("#upNotes"); n.style.display = l && l.notes ? "block" : "none"; n.textContent = l ? l.notes : "";
+    clearTimeout(upTimer);
+    if (current === "update" && u.state !== "idle") upTimer = setTimeout(loadUpdate, 1500);
+  } catch (e) { say("#upMsg", e.message, false); }
+}
+$("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName : "обновлений нет"; });
+$("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
+$("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({updateRepo: $("#upRepo").value.trim(), updateCheckCron: $("#upCron").value.trim()})); return "сохранено"; });
+
 function onTab() {
   if (current === "status") loadStatus();
   if (current === "logs") loadLogs();
   if (current === "journal") loadJournal();
   if (current === "config") { loadConfig(); loadHist(); }
   if (current === "settings") loadSettings();
+  if (current === "comm") loadComm();
+  if (current === "update") loadUpdate();
   if (current === "pages") loadPage();
   if (current === "power") loadPower();
 }

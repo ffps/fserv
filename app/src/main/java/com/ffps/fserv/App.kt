@@ -13,6 +13,10 @@ class App : Application() {
         TaskStore.init(this)
         FLog.minLevel = Settings.logLevel
         FLog.addSecret(Settings.password)
+        FLog.addSecret(Settings.telegramToken)
+        for (px in Settings.allProxies()) FLog.addSecret(px.password)
+        Net.init()
+        Telegram.init(this)
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")
         Journal.add("app", "Приложение запущено (версия ${BuildConfig.VERSION_NAME})")
     }

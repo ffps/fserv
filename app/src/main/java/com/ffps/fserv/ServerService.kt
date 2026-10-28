@@ -114,6 +114,7 @@ class ServerService : Service() {
             state = State.RUNNING
             error = ""
         }
+        Telegram.start()
         if (scheduler == null) scheduler = Scheduler(applicationContext).also { it.start() }
         if (wake == null) {
             wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
@@ -143,6 +144,7 @@ class ServerService : Service() {
         server = null
         scheduler?.stop()
         scheduler = null
+        Telegram.stop()
     }
 
     /** Мягкий перезапуск: сервер и планировщик поднимаются заново (с новым портом), процесс остаётся. */
@@ -171,7 +173,7 @@ class ServerService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "fserv"
+        const val CHANNEL = "fserv"
         private const val NOTIF_ID = 1
 
         @Volatile

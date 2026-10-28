@@ -50,6 +50,10 @@ class Scheduler(private val ctx: Context) {
             }
             return
         }
+        if (due("updateCheck", Settings.updateCheckCron, minute)) {
+            Settings.setLastFired("updateCheck", minute)
+            Thread { Updater.scheduledCheck() }.start()
+        }
         if (due("appRestart", Settings.appRestartCron, minute)) {
             Settings.setLastFired("appRestart", minute)
             Journal.add("power", "Перезапуск приложения по расписанию (${Settings.appRestartCron})")
