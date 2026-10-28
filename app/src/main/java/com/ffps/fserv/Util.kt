@@ -1,0 +1,49 @@
+package com.ffps.fserv
+
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import org.json.JSONObject
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.text.SimpleDateFormat
+import java.util.Collections
+import java.util.Date
+import java.util.Locale
+
+object Util {
+    fun iso(ms: Long = System.currentTimeMillis()): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date(ms))
+
+    /** IPv4-адреса планшета в локальной сети. */
+    fun ips(): List<String> {
+        val res = ArrayList<String>()
+        try {
+            val all = NetworkInterface.getNetworkInterfaces() ?: return res
+            for (ni in Collections.list(all)) {
+                if (!ni.isUp || ni.isLoopback) continue
+                for (a in Collections.list(ni.inetAddresses)) {
+                    if (a is Inet4Address && !a.isLoopbackAddress && !a.isLinkLocalAddress) res.add(a.hostAddress ?: continue)
+                }
+            }
+        } catch (e: Exception) {
+            FLog.w("util", "ips failed", e)
+        }
+        return res
+    }
+
+    fun battery(ctx: Context): JSONObject {
+        val i: Intent? = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = i?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val status = i?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val temp = i?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        return obj(
+            "percent" to (if (level >= 0 && scale > 0) level * 100 / scale else null),
+            "charging" to charging,
+            "temperatureC" to (if (temp != Int.MIN_VALUE) temp / 10.0 else null)
+        )
+    }
+}
