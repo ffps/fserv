@@ -33,6 +33,21 @@ object Util {
         return res
     }
 
+    /** Самый «домашний» адрес: сначала 192.168.*, потом 10.*, 172.16-31.*, потом любой. */
+    fun bestIp(): String? {
+        val all = ips()
+        fun rank(ip: String): Int = when {
+            ip.startsWith("192.168.") -> 0
+            ip.startsWith("10.") -> 1
+            Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\..*").matches(ip) -> 2
+            else -> 3
+        }
+        return all.minByOrNull { rank(it) }
+    }
+
+    /** Адрес веб-интерфейса, например http://192.168.1.10:8080. */
+    fun address(): String = "http://${bestIp() ?: "localhost"}:${Settings.webPort}"
+
     fun battery(ctx: Context): JSONObject {
         val i: Intent? = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1

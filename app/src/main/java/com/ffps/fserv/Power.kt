@@ -1,12 +1,9 @@
 package com.ffps.fserv
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import java.io.File
 
 /** Нужен только для режима Device Owner: `adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver`. */
@@ -54,18 +51,19 @@ object Power {
     }
 
     /**
-     * Перезапуск приложения: убиваем процесс. Система сама поднимает домашний экран (мы HOME-приложение),
-     * а служба стартует из MainActivity. Запасной вариант: отложенный запуск активности через AlarmManager.
+     * Перезапуск приложения без потери экрана: веб-сервер, планировщик и киоск-страница поднимаются заново
+     * внутри того же процесса. Убивать процесс нельзя: если приложение не выбрано домашним экраном,
+     * после этого на экране остаётся чужая программа (так и вышло в 0.2.0).
+     * Жёсткий перезапуск процесса остаётся только запасным вариантом, когда службы нет.
      */
     fun restartApp(ctx: Context) {
-        try {
-            val intent = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val pi = PendingIntent.getActivity(ctx, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            ctx.getSystemService(AlarmManager::class.java).set(AlarmManager.RTC, System.currentTimeMillis() + 2000, pi)
-        } catch (e: Exception) {
-            FLog.w("power", "alarm for restart failed", e)
+        val s = ServerService.instance
+        if (s != null) {
+            FLog.i("power", "перезапуск приложения (мягкий)")
+            s.softRestart()
+            return
         }
-        FLog.i("power", "перезапуск приложения")
+        FLog.w("power", "службы нет, перезапускаю процесс")
         android.os.Process.killProcess(android.os.Process.myPid())
     }
 }

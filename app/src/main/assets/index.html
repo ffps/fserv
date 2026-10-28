@@ -5,41 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fServe</title>
 <style>
-  :root { --bg:#0f1b2b; --panel:#17283d; --line:#2a4160; --text:#e6eefb; --dim:#8fa5c4; --acc:#ff9a1f; --bad:#ff5a6e; --good:#4cd38b; }
+  :root { --bg:#f5f6fa; --panel:#ffffff; --line:#e2e5ee; --text:#1c2030; --dim:#69708a; --acc:#d81b60; --acc-d:#ad1457;
+          --acc-soft:#fde7ef; --bad:#c62828; --good:#2e7d32; --code:#f1f3f9; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; }
-  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--line); border-top:4px solid var(--acc); flex-wrap:wrap; }
+  header h1 { margin:0; font-size:19px; font-weight:650; letter-spacing:.01em; }
+  header svg { width:30px; height:30px; flex:none; }
   header .ver { color:var(--dim); font-size:13px; }
-  nav { display:flex; gap:4px; flex-wrap:wrap; padding:8px 16px 0; }
-  nav button { background:transparent; color:var(--dim); border:1px solid transparent; border-bottom:0; padding:8px 14px; border-radius:8px 8px 0 0; cursor:pointer; font:inherit; }
-  nav button.on { background:var(--panel); color:var(--text); border-color:var(--line); }
-  main { background:var(--panel); border:1px solid var(--line); margin:0 16px 24px; padding:16px; border-radius:0 8px 8px 8px; min-height:60vh; }
-  section { display:none; } section.on { display:block; }
-  h2 { margin:0 0 12px; font-size:16px; }
+  nav { display:flex; gap:2px; flex-wrap:wrap; padding:0 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+  nav button { background:transparent; color:var(--dim); border:0; border-bottom:3px solid transparent; padding:11px 14px 9px; cursor:pointer; font:inherit; }
+  nav button:hover { color:var(--text); }
+  nav button.on { color:var(--acc); border-bottom-color:var(--acc); font-weight:600; }
+  main { max-width:1100px; margin:18px auto 32px; padding:0 16px; }
+  section { display:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; box-shadow:0 1px 2px rgba(20,25,50,.04); }
+  section.on { display:block; }
+  h2 { margin:0 0 14px; font-size:17px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-bottom:14px; }
   .card { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
   .card .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
   .card .v { font-size:18px; margin-top:2px; word-break:break-word; }
-  button.btn, select, input, textarea { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 10px; }
-  button.btn { cursor:pointer; background:#21395a; } button.btn:hover { background:#2a4a75; }
-  button.btn.danger { background:#5a2130; border-color:#8c3348; } button.btn.danger:hover { background:#74293d; }
+  button.btn, select, input[type=text], input[type=number], input[type=password], input:not([type]), textarea { font:inherit; color:var(--text); background:#fff; border:1px solid #cdd2e0; border-radius:6px; padding:7px 10px; }
+  select:focus, input:focus, textarea:focus { outline:2px solid var(--acc-soft); border-color:var(--acc); }
+  button.btn { cursor:pointer; background:var(--acc); border-color:var(--acc); color:#fff; font-weight:500; }
+  button.btn:hover { background:var(--acc-d); border-color:var(--acc-d); }
+  button.btn.sec { background:#fff; color:var(--text); border-color:#cdd2e0; font-weight:400; }
+  button.btn.sec:hover { background:var(--acc-soft); border-color:var(--acc); color:var(--acc-d); }
+  button.btn.danger { background:#fff; color:var(--bad); border-color:var(--bad); }
+  button.btn.danger:hover { background:var(--bad); color:#fff; }
+  button.btn.sm { padding:3px 10px; font-size:13px; }
   button.btn:disabled { opacity:.45; cursor:not-allowed; }
   textarea { width:100%; font-family:ui-monospace, Consolas, monospace; font-size:13px; line-height:1.4; white-space:pre; overflow:auto; }
-  pre { margin:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:65vh; font:12.5px/1.4 ui-monospace, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
+  pre { margin:0; background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:65vh; font:12.5px/1.4 ui-monospace, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
   .row label { color:var(--dim); }
   .msg { margin-top:8px; min-height:1.4em; } .msg.ok { color:var(--good); } .msg.err { color:var(--bad); }
-  .hint { color:var(--dim); font-size:13px; margin:6px 0; }
-  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .hint { color:var(--dim); font-size:13px; margin:8px 0 0; }
+  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; }
-  .f { display:grid; grid-template-columns:minmax(150px,220px) 1fr; gap:8px 12px; align-items:center; max-width:760px; }
-  .f input, .f select { width:100%; }
-  code { background:var(--bg); padding:1px 5px; border-radius:4px; }
+  .f { display:grid; grid-template-columns:minmax(150px,240px) 1fr; gap:10px 14px; align-items:center; max-width:780px; }
+  .f input[type=text], .f input[type=number], .f input[type=password], .f input:not([type]), .f select { width:100%; }
+  code { background:var(--code); padding:1px 5px; border-radius:4px; }
+  a { color:var(--acc-d); }
+  details summary { cursor:pointer; color:var(--dim); }
 </style>
 </head>
 <body>
 <header>
+  <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><circle cx="60" cy="60" r="25" fill="none" stroke="#fff" stroke-width="10"/></svg>
   <h1>fServe</h1><span class="ver" id="ver"></span>
   <span class="ver" id="beat"></span>
 </header>
@@ -57,7 +70,11 @@
 <section id="status" class="on">
   <h2>Состояние</h2>
   <div class="grid" id="cards"></div>
-  <details><summary class="hint">Ответ /api/info целиком</summary><pre id="infoRaw"></pre></details>
+  <details>
+    <summary>Ответ /api/info целиком</summary>
+    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-copy="#infoRaw">Копировать</button></div>
+    <pre id="infoRaw"></pre>
+  </details>
 </section>
 
 <section id="logs">
@@ -65,9 +82,10 @@
   <div class="row">
     <label>Уровень <select id="logLevel"><option>DEBUG</option><option selected>INFO</option><option>WARN</option><option>ERROR</option></select></label>
     <label>Строк <input id="logLines" type="number" value="300" min="10" max="5000" style="width:90px"></label>
-    <button class="btn" id="logRefresh">Обновить</button>
+    <button class="btn sec" id="logRefresh">Обновить</button>
     <label><input type="checkbox" id="logAuto"> каждые 5 с</label>
-    <a class="btn" style="text-decoration:none" href="/api/logs/download" download><button class="btn" type="button">Скачать всё</button></a>
+    <button class="btn sec" data-copy="#logOut">Копировать</button>
+    <a href="/api/logs/download" download><button class="btn sec" type="button">Скачать всё</button></a>
     <button class="btn danger" id="logClear">Очистить</button>
   </div>
   <pre id="logOut">—</pre>
@@ -78,7 +96,7 @@
 <section id="journal">
   <h2>Журнал событий</h2>
   <div class="row">
-    <button class="btn" id="jRefresh">Обновить</button>
+    <button class="btn sec" id="jRefresh">Обновить</button>
     <button class="btn danger" id="jClear">Очистить</button>
   </div>
   <table><thead><tr><th>Время</th><th>Тип</th><th>Событие</th></tr></thead><tbody id="jBody"></tbody></table>
@@ -91,9 +109,10 @@
   <textarea id="cfgText" rows="22" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px">
     <button class="btn" id="cfgSave">Сохранить</button>
-    <button class="btn" id="cfgReload">Перечитать</button>
+    <button class="btn sec" id="cfgReload">Перечитать</button>
+    <button class="btn sec" data-copy="#cfgText">Копировать</button>
     <label>Версии <select id="cfgHist"></select></label>
-    <button class="btn" id="cfgRestore">Восстановить выбранную</button>
+    <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
   </div>
   <div class="msg" id="cfgMsg"></div>
   <p class="hint">Перед каждым сохранением предыдущая версия попадает в историю (последние 20). Поля <code>cron</code> проверяются. Формат задач появится вместе с движком сценариев.</p>
@@ -110,37 +129,41 @@
     <input id="sReboot" placeholder="например 0 4 * * *   (пусто = выключено)">
     <label for="sPort">Порт веб-интерфейса</label>
     <input id="sPort" type="number" min="1024" max="65535">
+    <label for="sBoot">Автозапуск службы</label>
+    <label><input id="sBoot" type="checkbox"> запускать при включении планшета</label>
     <label for="sPass">Новый пароль</label>
-    <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять, минимум 6 символов">
+    <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
   </div>
-  <div class="row" style="margin-top:12px"><button class="btn" id="sSave">Сохранить</button></div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
   <div class="msg" id="sMsg"></div>
-  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам планшета. Порт применяется после перезапуска приложения. После смены пароля браузер спросит его заново.</p>
+  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам планшета. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
 </section>
 
 <section id="pages">
   <h2>Страницы</h2>
   <div class="row">
     <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран планшета</option><option value="index">index — этот веб-интерфейс</option></select></label>
-    <span class="hint" id="pgState"></span>
+    <span class="hint" id="pgState" style="margin:0"></span>
   </div>
   <textarea id="pgText" rows="22" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px">
     <button class="btn" id="pgSave">Сохранить</button>
+    <button class="btn sec" data-copy="#pgText">Копировать</button>
     <button class="btn danger" id="pgReset">Вернуть встроенную</button>
-    <button class="btn" id="pgReload">Перезагрузить киоск на планшете</button>
+    <button class="btn sec" id="pgReload">Перезагрузить киоск</button>
   </div>
   <div class="msg" id="pgMsg"></div>
-  <p class="hint">Заменённые страницы хранятся на планшете и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a style="color:var(--acc)" href="/default">/default</a>.</p>
+  <p class="hint">Заменённые страницы хранятся на планшете и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
 </section>
 
 <section id="power">
   <h2>Питание</h2>
   <div class="row">
-    <button class="btn" id="pRestart">Перезапустить приложение</button>
+    <button class="btn sec" id="pRestart">Перезапустить приложение</button>
     <button class="btn danger" id="pReboot">Перезагрузить планшет</button>
   </div>
   <div class="msg" id="pMsg"></div>
+  <p class="hint">«Перезапустить приложение» заново поднимает веб-сервер, планировщик и киоск, не закрывая экран.</p>
   <p class="hint" id="pHint"></p>
 </section>
 
@@ -161,6 +184,26 @@ async function api(path, opts) {
 const post = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "text/plain; charset=utf-8"}, body: body || ""});
 function say(id, text, ok) { const e = $(id); e.textContent = text || ""; e.className = "msg " + (ok ? "ok" : "err"); }
 async function run(msgId, fn) { try { const m = await fn(); say(msgId, m, true); } catch (e) { say(msgId, e.message, false); } }
+
+// ---- копирование (на http:// буфер обмена браузера закрыт, поэтому есть запасной путь) ----
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove(); return ok;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-copy]"); if (!b) return;
+  const el = $(b.dataset.copy); if (!el) return;
+  const ok = await copyText(el.tagName === "TEXTAREA" ? el.value : el.textContent);
+  if (!b.dataset.label) b.dataset.label = b.textContent;
+  b.textContent = ok ? "Скопировано ✓" : "Не удалось скопировать";
+  setTimeout(() => { b.textContent = b.dataset.label; }, 1500);
+});
 
 // ---- вкладки ----
 let current = "status";
@@ -242,16 +285,18 @@ $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confi
 async function loadSettings() {
   try {
     const s = (await api("/api/settings")).json;
-    $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron; $("#sPort").value = s.webPort; $("#sPass").value = "";
+    $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
+    $("#sPort").value = s.webPort; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
     say("#sMsg", "");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
-  const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value, webPort: Number($("#sPort").value)};
+  const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value,
+             webPort: Number($("#sPort").value), autostart: $("#sBoot").checked};
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
-  return r.restartRequired ? "сохранено; порт изменится после перезапуска приложения" : "сохранено";
+  return r.restartRequired ? "сохранено; веб-сервер перезапускается на новом порту " + r.settings.webPort : "сохранено";
 });
 
 // ---- страницы ----
@@ -264,7 +309,7 @@ async function loadPage() {
 $("#pgName").onchange = loadPage;
 $("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; });
 $("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/ui/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
-$("#pgReload").onclick = () => run("#pgMsg", async () => { await post("/api/kiosk/reload"); return "киоск перезагружается"; });
+$("#pgReload").onclick = () => run("#pgMsg", async () => { await post("/api/kiosk/reload"); return "киоск перезагружен"; });
 
 // ---- питание ----
 async function loadPower() {
@@ -275,11 +320,10 @@ async function loadPower() {
       "Перезагрузка планшета недоступна: нужен Device Owner или root. Для Device Owner на сброшенном планшете без аккаунтов выполните: adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver";
   } catch (e) { say("#pMsg", e.message, false); }
 }
-$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен около минуты.")) run("#pMsg", async () => { await post("/api/restart-app"); return "перезапускается, подождите минуту и обновите страницу"; }); };
+$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен несколько секунд.")) run("#pMsg", async () => { await post("/api/restart-app"); return "перезапускается, обновите страницу через несколько секунд"; }); };
 $("#pReboot").onclick = () => { if (confirm("Перезагрузить планшет?")) run("#pMsg", async () => { await post("/api/reboot?confirm=1"); return "перезагрузка запущена"; }); };
 
 // ---- автообновление ----
-$("#logAuto").onchange = () => {};
 setInterval(() => {
   if (current === "status") loadStatus();
   if (current === "logs" && $("#logAuto").checked) loadLogs();

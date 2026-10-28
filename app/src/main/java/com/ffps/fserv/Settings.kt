@@ -3,15 +3,13 @@ package com.ffps.fserv
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
-import java.security.SecureRandom
 
 /**
- * Базовые настройки приложения (settings.json в приватной папке).
- * Токены, прокси и прочее добавятся на следующих этапах; сейчас: порт веб-интерфейса, пароль,
- * уровень лога и расписания автоперезапуска (cron).
+ * Базовые настройки приложения (settings.json в приватной папке): порт и пароль веб-интерфейса,
+ * автостарт, уровень лога и расписания автоперезапуска (cron).
+ * Пароль не генерируется: его вводит пользователь в окне настроек.
  */
 object Settings {
-    private const val ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789" // без похожих символов (l, 1, o, 0, i)
     private lateinit var file: File
     private var o = JSONObject()
 
@@ -23,8 +21,12 @@ object Settings {
         } catch (e: Exception) {
             JSONObject()
         }
-        if (o.optString("password").isEmpty()) {
-            o.put("password", randomPassword())
+        // До версии 0.3.0 пароль генерировался сам. Теперь его вводит пользователь,
+        // поэтому сгенерированный пароль и состояние службы сбрасываются один раз.
+        if (o.optInt("schema", 0) < 2) {
+            o.remove("password")
+            o.put("serviceEnabled", false)
+            o.put("schema", 2)
             save()
         }
     }
@@ -38,16 +40,32 @@ object Settings {
         }
     }
 
-    private fun randomPassword(): String {
-        val r = SecureRandom()
-        return (1..10).map { ALPHABET[r.nextInt(ALPHABET.length)] }.joinToString("")
-    }
-
     @get:Synchronized val webPort: Int get() = o.optInt("webPort", 8080)
     @get:Synchronized val password: String get() = o.optString("password")
     @get:Synchronized val logLevel: String get() = o.optString("logLevel", "INFO")
     @get:Synchronized val appRestartCron: String get() = o.optString("appRestartCron", "")
     @get:Synchronized val rebootCron: String get() = o.optString("rebootCron", "")
+
+    /** Запускать службу при включении планшета. */
+    @get:Synchronized val autostart: Boolean get() = o.optBoolean("autostart", false)
+
+    /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */
+    @get:Synchronized val serviceEnabled: Boolean get() = o.optBoolean("serviceEnabled", false)
+
+    /** Настройки заданы: без пароля веб-интерфейс не запускается. */
+    val isConfigured: Boolean get() = password.isNotEmpty()
+
+    @Synchronized
+    fun setAutostart(v: Boolean) {
+        o.put("autostart", v)
+        save()
+    }
+
+    @Synchronized
+    fun setServiceEnabled(v: Boolean) {
+        o.put("serviceEnabled", v)
+        save()
+    }
 
     @Synchronized
     fun lastFired(kind: String): Long = o.optJSONObject("lastFired")?.optLong(kind, -1L) ?: -1L
@@ -59,16 +77,6 @@ object Settings {
         save()
     }
 
-    /** Новый случайный пароль; возвращает его, чтобы показать пользователю один раз. */
-    @Synchronized
-    fun regeneratePassword(): String {
-        val p = randomPassword()
-        o.put("password", p)
-        save()
-        FLog.addSecret(p)
-        return p
-    }
-
     /** Настройки без пароля (для веб-интерфейса). */
     @Synchronized
     fun publicJson(): JSONObject = obj(
@@ -76,7 +84,8 @@ object Settings {
         "logLevel" to logLevel,
         "appRestartCron" to appRestartCron,
         "rebootCron" to rebootCron,
-        "passwordSet" to true
+        "passwordSet" to isConfigured,
+        "autostart" to autostart
     )
 
     class Result(val errors: List<String>, val restartRequired: Boolean)
@@ -107,9 +116,8 @@ object Settings {
                 }
             }
         }
-        if (patch.has("password")) {
-            val v = patch.optString("password")
-            if (v.isNotEmpty() && v.length < 6) errors.add("password: не короче 6 символов")
+        if (patch.has("password") && patch.optString("password").isEmpty() && password.isEmpty()) {
+            errors.add("password: пароль не может быть пустым")
         }
         if (errors.isNotEmpty()) return Result(errors, false)
 
@@ -124,7 +132,9 @@ object Settings {
         for (k in listOf("appRestartCron", "rebootCron")) {
             if (patch.has(k)) o.put(k, patch.optString(k).trim())
         }
-        if (patch.has("password") && patch.optString("password").isNotEmpty()) {
+        if (patch.has("autostart")) o.put("autostart", patch.optBoolean("autostart"))
+        // Пустой пароль в запросе означает «не менять».
+        if (patch.has("password") && patch.optString("password").isNotEmpty() && patch.optString("password") != password) {
             o.put("password", patch.optString("password"))
             FLog.addSecret(password)
         }

@@ -86,10 +86,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/ui" -> uiGet(q(s, "name"))
             post && uri == "/api/ui" -> uiSave(q(s, "name"), body(s))
             post && uri == "/api/ui/reset" -> uiReset(q(s, "name"))
-            post && uri == "/api/kiosk/reload" -> {
-                MainActivity.reloadKiosk()
-                ok("киоск перезагружается")
-            }
+            post && uri == "/api/kiosk/reload" ->
+                if (MainActivity.reloadKiosk()) ok("киоск перезагружен")
+                else fail(Response.Status.NOT_FOUND, "экран киоска сейчас не открыт (приложение не на переднем плане)")
 
             post && uri == "/api/restart-app" -> {
                 FLog.i("web", "запрошен перезапуск приложения")
@@ -109,6 +108,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     // ---------- авторизация ----------
 
     private fun authorized(s: IHTTPSession): Boolean {
+        if (!Settings.isConfigured) return false // пока пароль не задан, доступа нет
         val h = s.headers["authorization"] ?: return false
         if (!h.startsWith("Basic ", ignoreCase = true)) return false
         val decoded = try {
@@ -148,7 +148,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             "time" to Util.iso(),
             "uptimeSeconds" to (System.currentTimeMillis() - App.startedAt) / 1000,
             "battery" to Util.battery(ctx),
-            "checks" to obj("web" to true, "scheduler" to ServerService.running)
+            "checks" to obj("web" to true, "service" to ServerService.state.name.lowercase())
         )
     )
 
@@ -203,6 +203,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
         Journal.add("settings", "Изменены настройки" + if (patch.has("password")) " (в том числе пароль)" else "")
+        if (r.restartRequired) {
+            // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
+            Thread {
+                Thread.sleep(800)
+                ServerService.instance?.softRestart()
+            }.start()
+        }
         return json(
             Response.Status.OK,
             obj("ok" to true, "restartRequired" to r.restartRequired, "settings" to Settings.publicJson())

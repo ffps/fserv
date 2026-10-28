@@ -1,8 +1,8 @@
 package com.ffps.fserv
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -20,15 +20,17 @@ import android.webkit.WebViewClient
 
 /**
  * Киоск-экран: полноэкранный WebView. Страницу отдаёт встроенный сервер (http://127.0.0.1:порт/kiosk),
- * поэтому её можно заменить из веб-интерфейса. Пока сервер не поднялся, показывается страница из ресурсов.
+ * поэтому её можно заменить из веб-интерфейса. Пока служба не запущена, показывается страница из ресурсов.
  *
- * Скрытый вход в параметры: долгое нажатие в левом верхнем углу экрана (адрес, логин и пароль веб-интерфейса).
+ * Скрытый вход в настройки: долгое нажатие в левом верхнем углу экрана.
+ * Кнопка «назад» блокируется только если приложение выбрано домашним экраном.
  */
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
-    private val retry = Runnable { loadKiosk() }
+    private val retry = Runnable { loadKiosk(false) }
+    private var onAsset = false
     private var downX = 0f
     private var downY = 0f
 
@@ -47,7 +49,7 @@ class MainActivity : Activity() {
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                     if (request?.isForMainFrame == true) {
                         FLog.w("kiosk", "страница с сервера не загрузилась (${error?.description}), показываю встроенную")
-                        view?.loadUrl(ASSET_URL)
+                        showAsset()
                         handler.removeCallbacks(retry)
                         handler.postDelayed(retry, 15_000)
                     }
@@ -62,7 +64,7 @@ class MainActivity : Activity() {
             }
             setOnLongClickListener {
                 if (downX < width * 0.25f && downY < height * 0.2f) {
-                    showInfo()
+                    startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                     true
                 } else {
                     false
@@ -70,45 +72,47 @@ class MainActivity : Activity() {
             }
         }
         setContentView(web)
-        startService()
-        // Даём службе время поднять сервер; если не успеет, сработает запасная страница и повтор.
-        web.loadUrl(ASSET_URL)
-        handler.postDelayed(retry, 1500)
+
+        // Пока пароль не задан, сразу открываем окно настроек.
+        if (!Settings.isConfigured) startActivity(Intent(this, SettingsActivity::class.java))
+
+        showAsset()
+        loadKiosk(false)
     }
 
     override fun onStart() {
         super.onStart()
-        startService()
+        if (Settings.serviceEnabled && Settings.isConfigured) ServerService.start(this)
     }
 
-    private fun startService() {
-        try {
-            startForegroundService(Intent(this, ServerService::class.java))
-        } catch (e: Exception) {
-            FLog.e("app", "не удалось запустить службу", e)
+    private fun showAsset() {
+        if (!onAsset) {
+            onAsset = true
+            web.loadUrl(ASSET_URL)
         }
     }
 
-    private fun loadKiosk() {
+    /** Показывает страницу с сервера, если служба работает; иначе остаётся встроенная и проверяет снова. */
+    private fun loadKiosk(force: Boolean) {
         handler.removeCallbacks(retry)
-        web.loadUrl("http://127.0.0.1:${Settings.webPort}/kiosk")
+        if (ServerService.state == ServerService.State.RUNNING) {
+            if (onAsset || force) {
+                onAsset = false
+                web.loadUrl("http://127.0.0.1:${Settings.webPort}/kiosk")
+            }
+        } else {
+            if (force) {
+                onAsset = false
+                showAsset()
+            }
+            handler.postDelayed(retry, 3_000)
+        }
     }
 
-    private fun showInfo() {
-        val ips = Util.ips()
-        val addr = if (ips.isEmpty()) "(нет сети)" else ips.joinToString("\n") { "http://$it:${Settings.webPort}" }
-        val msg = "Адрес:\n$addr\n\nЛогин: admin\nПароль: ${Settings.password}\n\nВерсия ${BuildConfig.VERSION_NAME}"
-        AlertDialog.Builder(this)
-            .setTitle("fServe")
-            .setMessage(msg)
-            .setPositiveButton("Закрыть", null)
-            .setNeutralButton("Новый пароль") { _, _ ->
-                val p = Settings.regeneratePassword()
-                FLog.i("app", "пароль изменён с экрана планшета")
-                Journal.add("settings", "Пароль веб-интерфейса изменён с экрана планшета")
-                AlertDialog.Builder(this).setTitle("Новый пароль").setMessage(p).setPositiveButton("Закрыть", null).show()
-            }
-            .show()
+    private fun isDefaultHome(): Boolean {
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val ri = packageManager.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY)
+        return ri?.activityInfo?.packageName == packageName
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -133,9 +137,12 @@ class MainActivity : Activity() {
         }
     }
 
-    @Deprecated("Back is ignored in kiosk mode")
+    @Deprecated("Back is ignored when the app is the home screen")
     override fun onBackPressed() {
-        // Кнопка «назад» в киоске ничего не делает.
+        // Домашний экран «назад» не закрывает; если приложение запущено как обычное, работает как всегда.
+        if (isDefaultHome()) return
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     override fun onDestroy() {
@@ -151,9 +158,11 @@ class MainActivity : Activity() {
         @Volatile
         private var current: MainActivity? = null
 
-        /** Перечитать киоск-страницу (после замены из веб-интерфейса). */
-        fun reloadKiosk() {
-            current?.let { a -> a.runOnUiThread { a.loadKiosk() } }
+        /** Перечитать киоск-страницу. false, если экран киоска сейчас не открыт. */
+        fun reloadKiosk(): Boolean {
+            val a = current ?: return false
+            a.runOnUiThread { a.loadKiosk(true) }
+            return true
         }
     }
 }
