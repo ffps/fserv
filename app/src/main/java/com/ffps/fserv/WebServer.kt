@@ -65,7 +65,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             } catch (e: IllegalArgumentException) {
                 fail(Response.Status.BAD_REQUEST, e.message ?: "ошибка")
             } catch (e: Exception) {
-                fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+                fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
             }
             post && uri == "/api/telegram/send" -> {
                 val t = body(s).trim()
@@ -86,7 +86,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 Updater.check()
                 json(Response.Status.OK, Updater.status(ctx))
             } catch (e: Exception) {
-                fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+                fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
             }
             post && uri == "/api/update/install" -> {
                 val err = Updater.installAsync(ctx)
@@ -256,7 +256,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             val r = Net.request(name!!, "GET", url, timeoutMs = 15_000)
             ok("$url ответил HTTP ${r.code} за ${System.currentTimeMillis() - t0} мс (${r.via})")
         } catch (e: Exception) {
-            fail(Response.Status.BAD_GATEWAY, e.message ?: e.javaClass.simpleName)
+            fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
         }
     }
 
