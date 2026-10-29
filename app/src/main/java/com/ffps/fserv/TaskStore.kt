@@ -40,28 +40,7 @@ object TaskStore {
             return explain(text, e)
         }
         if (!text.trimEnd().endsWith("}")) return "после закрывающей } есть лишний текст"
-        val tasks = root.opt("tasks")
-        if (root.has("tasks") && tasks !is JSONArray) return "поле «tasks» должно быть массивом [...]"
-        if (tasks is JSONArray) {
-            val ids = HashSet<String>()
-            for (i in 0 until tasks.length()) {
-                val t = tasks.optJSONObject(i) ?: return "задача №${i + 1}: должна быть объектом {...}"
-                val id = t.optString("id")
-                if (id.isBlank()) return "задача №${i + 1}: нужно поле id"
-                if (!ids.add(id)) return "id «$id» повторяется"
-                if (t.has("enabled") && t.opt("enabled") !is Boolean) return "задача «$id»: enabled должно быть true или false"
-                for (key in t.keys()) {
-                    if (key == "cron" || key.endsWith("_cron")) {
-                        try {
-                            Cron.parse(t.optString(key))
-                        } catch (e: IllegalArgumentException) {
-                            return "задача «$id», поле $key: ${e.message}"
-                        }
-                    }
-                }
-            }
-        }
-        return null
+        return TaskSchema.validate(root) { Sounds.exists(it) }
     }
 
     private fun explain(text: String, e: JSONException): String {

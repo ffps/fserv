@@ -47,10 +47,16 @@ android {
     }
     kotlinOptions { jvmTarget = '17' }
 
+    testOptions { unitTests.returnDefaultValues = true }
+
     lint { abortOnError false; checkReleaseBuilds false; checkOnly 'NewApi', 'InlinedApi'; xmlReport true; htmlReport false }
 }
 
 dependencies {
     // Встроенный HTTP-сервер (веб-интерфейс и API)
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    // Тесты логики (длительности, условия, схема задач) выполняются на обычной JVM
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
 }

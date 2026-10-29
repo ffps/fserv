@@ -131,6 +131,7 @@ class ServerService : Service() {
             error = ""
         }
         Telegram.start()
+        TaskEngine.start()
         if (Settings.camera().keepRunning && CameraEngine.hasPermission(this)) CameraEngine.start("keep")
         if (scheduler == null) scheduler = Scheduler(applicationContext).also { it.start() }
         if (wake == null) {
@@ -166,6 +167,7 @@ class ServerService : Service() {
         scheduler?.stop()
         scheduler = null
         Telegram.stop()
+        TaskEngine.stop()
         CameraEngine.stop("keep")
     }
 

@@ -45,8 +45,8 @@ import kotlin.math.abs
 object CameraEngine {
     enum class State { STOPPED, OPENING, RUNNING, ERROR }
 
-    private const val GW = 64
-    private const val GH = 48
+    const val GW = 64
+    const val GH = 48
     private const val HISTORY = 600
 
     private lateinit var app: Context
@@ -90,6 +90,43 @@ object CameraEngine {
     @Volatile var motion = false
     @Volatile var lastMotionAt = 0L
     private var lastProcessedAt = 0L
+
+    /** Параметры детектора, которые временно заменяют настройки (шаг watch задачи). */
+    class Override(val cellThreshold: Int?, val areaPercent: Double?, val intervalMs: Int?, val mask: BooleanArray?)
+
+    @Volatile private var ov: Override? = null
+    @Volatile private var resetFlag = false
+
+    /** Сколько раз движение было признано с момента запуска; шаг watch следит за этим счётчиком. */
+    @Volatile var motionHits = 0L
+
+    fun setOverride(o: Override?) { ov = o }
+
+    /** Сбросить предыдущий кадр: следующее сравнение начнётся с чистого листа (после включения камеры, смены параметров). */
+    fun resetBaseline() { resetFlag = true }
+
+    /** Маска ячеек из описания зоны: include (или весь кадр) минус exclude; координаты в долях кадра. */
+    fun maskFromZone(z: JSONObject): BooleanArray {
+        val m = BooleanArray(GW * GH)
+        fun rects(key: String): List<DoubleArray> {
+            val out = ArrayList<DoubleArray>()
+            val a = z.optJSONArray(key) ?: return out
+            for (i in 0 until a.length()) a.optJSONArray(i)?.let { r -> out.add(DoubleArray(4) { r.optDouble(it) }) }
+            return out
+        }
+        val inc = ArrayList<DoubleArray>()
+        z.optJSONArray("rect")?.let { r -> inc.add(DoubleArray(4) { r.optDouble(it) }) }
+        inc.addAll(rects("rects"))
+        val exc = rects("exclude")
+        for (gy in 0 until GH) for (gx in 0 until GW) {
+            val cx = (gx + 0.5) / GW
+            val cy = (gy + 0.5) / GH
+            fun inside(r: DoubleArray) = cx >= r[0] && cx <= r[2] && cy >= r[1] && cy <= r[3]
+            val inn = inc.isEmpty() || inc.any { inside(it) }
+            m[gy * GW + gx] = inn && exc.none { inside(it) }
+        }
+        return m
+    }
 
     private val histLock = Object()
     private val history = ArrayList<DoubleArray>() // [время, score, luma, движение 0/1]
@@ -358,7 +395,7 @@ object CameraEngine {
                 fpsWindowStart = now
                 fpsWindowFrames = 0
             }
-            val interval = Settings.camera().intervalMs
+            val interval = ov?.intervalMs ?: Settings.camera().intervalMs
             if (now - lastProcessedAt < interval) return
             lastProcessedAt = now
             val t0 = System.nanoTime()
@@ -411,25 +448,32 @@ object CameraEngine {
         lastLuma = mean.toDouble()
 
         val cfg = Settings.camera()
+        val o = ov
+        if (resetFlag) { prev = null; resetFlag = false }
         val pv = prev
         var score = 0.0
+        val areaLimit = o?.areaPercent ?: cfg.areaPercent
         if (pv != null) {
             var cnt = 0
-            val thr = cfg.cellThreshold.toFloat()
+            var total = 0
+            val thr = (o?.cellThreshold ?: cfg.cellThreshold).toFloat()
+            val mask = o?.mask
             for (i in cells.indices) {
-                val c = abs(cells[i] - pv[i]) > thr
+                val inZone = mask == null || mask[i]
+                val c = inZone && abs(cells[i] - pv[i]) > thr
                 changed[i] = c
+                if (inZone) total++
                 if (c) cnt++
             }
-            score = cnt * 100.0 / cells.size
+            score = if (total > 0) cnt * 100.0 / total else 0.0
         } else {
             java.util.Arrays.fill(changed, false)
         }
         prev = cells
         lastScore = score
-        val mv = pv != null && score >= cfg.areaPercent
+        val mv = pv != null && score >= areaLimit
         motion = mv
-        if (mv) lastMotionAt = now
+        if (mv) { lastMotionAt = now; motionHits++ }
         synchronized(histLock) {
             history.add(doubleArrayOf(now.toDouble(), score, mean.toDouble(), if (mv) 1.0 else 0.0))
             while (history.size > HISTORY) history.removeAt(0)

@@ -97,6 +97,46 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 if (err == null) ok("скачивание и установка запущены") else fail(Response.Status.CONFLICT, err)
             }
 
+            get && uri == "/api/tasks" -> json(Response.Status.OK, TaskEngine.status())
+            post && uri == "/api/tasks/run" -> {
+                val assume = HashMap<String, Any?>()
+                (q(s, "assume") ?: "").split(",").filter { it.contains(":") }.forEach {
+                    assume[it.substringBefore(":").trim()] = it.substringAfter(":").trim() == "true"
+                }
+                val err = TaskEngine.runNow(q(s, "id") ?: "", q(s, "dry") == "1", assume)
+                if (err == null) ok("задача поставлена на выполнение") else fail(Response.Status.CONFLICT, err)
+            }
+            post && uri == "/api/tasks/stop" ->
+                if (TaskEngine.cancelCurrent()) ok("остановка запрошена") else fail(Response.Status.CONFLICT, "сейчас ничего не выполняется")
+
+            get && uri == "/api/sounds" -> json(Response.Status.OK, obj("files" to Sounds.list(), "totalBytes" to Sounds.totalSize()))
+            post && uri == "/api/sounds" -> {
+                val name = Sounds.checkName(q(s, "name"))
+                Sounds.save(name, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
+                FLog.i("sounds", "загружен файл $name")
+                Journal.add("sounds", "Загружен звук «$name»")
+                ok("загружено: $name")
+            }
+            post && uri == "/api/sounds/delete" -> {
+                val name = Sounds.checkName(q(s, "name"))
+                if (Sounds.delete(name)) { Journal.add("sounds", "Удалён звук «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+            }
+            post && uri == "/api/sounds/play" -> {
+                val name = q(s, "name") ?: ""
+                if (!name.startsWith("system:")) Sounds.checkName(name)
+                Audio.preview(ctx, name, q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100))
+                ok("воспроизведение запущено")
+            }
+            post && uri == "/api/sounds/stop" -> { Audio.stopPreview(); ok("остановлено") }
+            get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()))
+            post && uri == "/api/say" -> {
+                val text = body(s).trim()
+                require(text.isNotEmpty()) { "пустой текст" }
+                val vol = q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100) ?: voiceCfg()?.takeIf { it.has("volume") }?.optInt("volume")
+                val err = Voice.speak(text, vol, voiceCfg()) { false }
+                if (err == null) ok("произнесено") else fail(Response.Status.INTERNAL_ERROR, err)
+            }
+
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
             post && uri == "/api/camera/start" -> {
                 if (!CameraEngine.hasPermission(ctx)) fail(Response.Status.CONFLICT, "нет разрешения на камеру: на устройстве нажмите Allow camera в окне настроек")
@@ -303,6 +343,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
+    private fun voiceCfg(): JSONObject? = try { JSONObject(TaskStore.read()).optJSONObject("voice") } catch (e: Exception) { null }
+
     private fun screenInfo(): JSONObject {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
@@ -349,6 +391,16 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
+        "GET /api/tasks" to "задачи, ближайшие запуски, ход и итоги выполнения",
+        "POST /api/tasks/run" to "запустить задачу; ?id=wakeup&dry=1 (пробный) &assume=moved:true (результат watch в пробном запуске)",
+        "POST /api/tasks/stop" to "остановить выполняющуюся задачу",
+        "GET /api/sounds" to "загруженные звуки",
+        "POST /api/sounds" to "загрузить звук: тело файла, ?name=alarm.mp3",
+        "POST /api/sounds/delete" to "удалить звук; ?name=",
+        "POST /api/sounds/play" to "прослушать звук; ?name=alarm.mp3&volume=80 (или system:alarm)",
+        "POST /api/sounds/stop" to "остановить прослушивание",
+        "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
+        "POST /api/say" to "произнести текст (тело); ?volume=80",
         "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",
         "POST /api/camera/start" to "включить камеру вручную",
         "POST /api/camera/stop" to "выключить камеру, включённую вручную",
