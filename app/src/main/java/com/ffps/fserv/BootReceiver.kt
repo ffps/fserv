@@ -14,6 +14,7 @@ class BootReceiver : BroadcastReceiver() {
                     FLog.i("boot", "автозапуск после включения")
                     Journal.add("service", "Служба запущена автоматически после включения устройства")
                     ServerService.start(ctx)
+                    MainActivity.show(ctx)
                 }
             }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
@@ -21,6 +22,7 @@ class BootReceiver : BroadcastReceiver() {
                 if (Settings.serviceEnabled && Settings.isConfigured) {
                     FLog.i("boot", "служба поднимается после обновления приложения")
                     ServerService.start(ctx)
+                    MainActivity.show(ctx)
                 }
             }
         }

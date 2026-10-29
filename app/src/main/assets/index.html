@@ -199,7 +199,7 @@
   </div>
   <div class="msg" id="camMsg"></div>
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-    <img id="camImg" alt="кадр" style="max-width:100%;height:auto;background:#222;border-radius:8px">
+    <img id="camImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:240px;height:320px;max-width:100%;background:#222;border-radius:8px;object-fit:contain">
     <div style="flex:1;min-width:280px"><canvas id="camChart" width="640" height="200" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></canvas>
     <p class="hint">Оценка движения: доля ячеек кадра (в процентах), изменившихся с прошлого обработанного кадра. Красная линия: порог площади. Зелёные точки внизу: движение определено.</p></div>
   </div>
@@ -262,6 +262,7 @@
     <button class="btn" id="pgSave">Сохранить</button>
     <button class="btn danger" id="pgReset">Вернуть встроенную</button>
     <button class="btn sec" id="pgReload">Перезагрузить киоск</button>
+    <button class="btn sec" id="pgShow">Показать киоск на экране</button>
   </div>
   <div class="msg" id="pgMsg"></div>
   <p class="hint">Заменённые страницы хранятся во внутренней памяти приложения (путь показан выше; без root или adb до этого файла не добраться, меняйте страницу здесь, в редакторе) и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
@@ -524,6 +525,7 @@ async function loadStatus() {
     const b = i.battery;
     $("#cards").innerHTML =
       card("Время на устройстве", dt(i.time.now)) +
+      card("Экран", (i.screen.on ? "включён" : "выключен") + (i.screen.locked ? ", заблокирован" : "") + "; киоск " + (i.screen.kioskVisible ? "на экране" : "не на экране") + "; домашнее приложение: " + (i.screen.isHome ? "fServe" : (i.screen.homeApp || "?")) + (i.screen.overlayAllowed ? "" : "; нет права «поверх окон»")) +
       card("Приложение работает", fmtDur(i.time.appUptimeSeconds)) +
       card("Устройство включено", fmtDur(i.time.deviceUptimeSeconds)) +
       card("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
@@ -606,6 +608,8 @@ async function loadPage() {
 $("#pgName").onchange = loadPage;
 $("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; });
 $("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/ui/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
+$("#camImg").onload = function () { if (this.naturalWidth > 1) { this.style.width = this.naturalWidth + "px"; this.style.height = this.naturalHeight + "px"; } };
+$("#pgShow").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/show"); return r.json.message; });
 $("#pgReload").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/reload"); return r.json.message; });
 
 // ---- питание ----

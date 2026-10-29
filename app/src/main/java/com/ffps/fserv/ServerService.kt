@@ -177,6 +177,8 @@ class ServerService : Service() {
             stopServer()
             startAll()
             MainActivity.reloadKiosk()
+            // после перезапуска киоск всегда выводится на экран, чтобы было понятно, что сейчас на устройстве
+            if (!MainActivity.isVisible()) MainActivity.show(applicationContext)
         }.start()
     }
 

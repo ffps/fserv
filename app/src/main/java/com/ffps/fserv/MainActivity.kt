@@ -185,6 +185,26 @@ class MainActivity : Activity() {
          * но закрыт другим приложением (страница всё равно перечитана); NONE — экрана нет (система его закрыла
          * или он не открывался), перечитывать нечего.
          */
+        /** Киоск сейчас на экране. */
+        fun isVisible(): Boolean = current != null && resumed
+
+        /**
+         * Выводит киоск на передний план из фона. Android 10+ разрешает это только приложениям с правом
+         * «Поверх других окон» (Allow overlay в окне настроек); на Android 8–9 запрета нет. Возвращает текст ошибки или null.
+         */
+        fun show(ctx: android.content.Context): String? {
+            if (!Settings.isConfigured) return "пароль не задан"
+            return try {
+                ctx.startActivity(
+                    Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                )
+                null
+            } catch (e: Exception) {
+                FLog.w("kiosk", "не удалось показать киоск: ${e.message}")
+                e.message ?: e.javaClass.simpleName
+            }
+        }
+
         fun reloadKiosk(): KioskState {
             val a = current ?: return KioskState.NONE
             a.runOnUiThread { a.loadKiosk(true) }

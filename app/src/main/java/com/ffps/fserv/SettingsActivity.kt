@@ -36,6 +36,7 @@ class SettingsActivity : Activity() {
     private lateinit var toggle: Button
     private lateinit var allow: Button
     private lateinit var allowCam: Button
+    private lateinit var allowOv: Button
     private lateinit var crash: EditText
     private lateinit var crashLabel: TextView
     private lateinit var crashRow: LinearLayout
@@ -141,6 +142,18 @@ class SettingsActivity : Activity() {
             setOnClickListener { requestPermissions(arrayOf("android.permission.CAMERA"), 2) }
         }
         root.addView(allowCam, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+
+        allowOv = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Allow overlay"
+            setOnClickListener {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))
+                )
+            }
+        }
+        root.addView(allowOv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
@@ -264,6 +277,8 @@ class SettingsActivity : Activity() {
         crash.visibility = vis
         crashLabel.visibility = vis
         crashRow.visibility = vis
+        // «Поверх других окон» нужно с Android 10, чтобы киоск можно было вывести на экран из фона
+        allowOv.visibility = if (Build.VERSION.SDK_INT < 29 || android.provider.Settings.canDrawOverlays(this)) android.view.View.GONE else android.view.View.VISIBLE
         allowCam.visibility = if (CameraEngine.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()

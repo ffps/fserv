@@ -149,6 +149,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/ui" -> uiGet(q(s, "name"))
             post && uri == "/api/ui" -> uiSave(q(s, "name"), body(s))
             post && uri == "/api/ui/reset" -> uiReset(q(s, "name"))
+            post && uri == "/api/kiosk/show" -> {
+                if (MainActivity.isVisible()) ok("киоск уже на экране устройства")
+                else MainActivity.show(ctx).let { err ->
+                    if (err == null) ok("киоск выведен на экран (если система разрешила, см. Allow overlay в окне настроек)")
+                    else fail(Response.Status.CONFLICT, "не удалось: $err")
+                }
+            }
             post && uri == "/api/kiosk/reload" -> when (MainActivity.reloadKiosk()) {
                 KioskState.VISIBLE -> ok("киоск перезагружен, он сейчас на экране устройства")
                 KioskState.BACKGROUND ->
@@ -259,6 +266,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 "files" to ctx.filesDir.absolutePath,
                 "pages" to File(ctx.filesDir, "web").absolutePath
             ),
+            "screen" to screenInfo(),
             "power" to obj(
                 "rebootMethod" to Power.rebootMethod(ctx),
                 "appRestartCron" to Settings.appRestartCron,
@@ -295,6 +303,23 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
+    private fun screenInfo(): JSONObject {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+        val home = ctx.packageManager.resolveActivity(
+            android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),
+            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo?.packageName
+        return obj(
+            "on" to pm.isInteractive,
+            "locked" to km.isKeyguardLocked,
+            "kioskVisible" to MainActivity.isVisible(),
+            "homeApp" to home,
+            "isHome" to (home == ctx.packageName),
+            "overlayAllowed" to (android.os.Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(ctx))
+        )
+    }
+
     private fun apiIndex(): JSONObject = obj(
         "GET /health" to "состояние для мониторинга, без пароля",
         "GET /api" to "этот список методов",
@@ -313,6 +338,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
         "POST /api/ui" to "заменить страницу (тело: HTML); ?name=kiosk",
         "POST /api/ui/reset" to "вернуть встроенную страницу; ?name=kiosk",
+        "POST /api/kiosk/show" to "вывести киоск на передний план",
         "POST /api/kiosk/reload" to "перечитать киоск на экране устройства",
         "GET /api/telegram" to "состояние Telegram: настроен ли, сколько в очереди, последняя ошибка",
         "POST /api/telegram/test" to "поставить тестовое сообщение в очередь и дождаться доставки (до таймаута сети)",
