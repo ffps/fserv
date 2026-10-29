@@ -52,6 +52,7 @@ object Net {
         val t0 = System.currentTimeMillis()
         FLog.d("net", "$method ${url.substringBefore("?").take(120)} [$purpose, $via, таймаут ${tmo / 1000} с]")
         try {
+            c.setRequestProperty("Connection", "close")
             c.requestMethod = method
             c.connectTimeout = tmo
             c.readTimeout = tmo

@@ -29,7 +29,14 @@ class App : Application() {
      */
     private fun installCrashHandler() {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
+        // Пулы соединений встроенного OkHttp на Android 8.0 иногда падают внутри системного кода (NPE в
+        // ConnectionPool.cleanup). Такой поток не наш, и приложение из-за него убивать не нужно.
+        System.setProperty("http.keepAlive", "false")
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            if (t.name.startsWith("OkHttp")) {
+                FLog.w("crash", "сбой в потоке ${t.name} проигнорирован: ${e.javaClass.simpleName}: ${e.message}")
+                return@setDefaultUncaughtExceptionHandler
+            }
             try {
                 val sw = java.io.StringWriter()
                 e.printStackTrace(java.io.PrintWriter(sw))

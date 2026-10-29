@@ -36,8 +36,10 @@ class SettingsActivity : Activity() {
     private lateinit var toggle: Button
     private lateinit var allow: Button
     private lateinit var allowCam: Button
-    private lateinit var crash: TextView
-    private lateinit var crashBtn: Button
+    private lateinit var crash: EditText
+    private lateinit var crashLabel: TextView
+    private lateinit var crashRow: LinearLayout
+    private var crashShown = ""
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -142,19 +144,48 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
-        crash = TextView(this).apply {
-            setTextColor(Color.parseColor("#C62828"))
-            textSize = 11f
+        crashLabel = label("Last crash").apply { visibility = android.view.View.GONE }
+        root.addView(crashLabel, full(top = 12))
+        crash = EditText(this).apply {
+            // только для чтения, но текст можно выделять и копировать; длинный отчёт прокручивается
+            keyListener = null
             setTextIsSelectable(true)
+            isSingleLine = false
+            setHorizontallyScrolling(false)
+            gravity = Gravity.TOP
+            textSize = 11f
+            setTextColor(Color.parseColor("#C62828"))
+            movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
+            isVerticalScrollBarEnabled = true
+            minLines = 6
+            maxLines = 10
+            setOnTouchListener { v, e ->
+                v.parent.requestDisallowInterceptTouchEvent(true)
+                if (e.action == android.view.MotionEvent.ACTION_UP) v.parent.requestDisallowInterceptTouchEvent(false)
+                false
+            }
             visibility = android.view.View.GONE
         }
-        root.addView(crash, full(top = 12))
-        crashBtn = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+        root.addView(crash, full())
+        val crashRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = android.view.View.GONE
+        }
+        crashRow.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Copy"
+            setOnClickListener {
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("fServe crash", crash.text.toString()))
+                Toast.makeText(this@SettingsActivity, "Copied", Toast.LENGTH_SHORT).show()
+            }
+        })
+        crashRow.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
             text = "Clear crash report"
-            visibility = android.view.View.GONE
             setOnClickListener { App.clearCrash(this@SettingsActivity); refresh() }
-        }
-        root.addView(crashBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        })
+        this.crashRow = crashRow
+        root.addView(crashRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
@@ -225,9 +256,14 @@ class SettingsActivity : Activity() {
     private fun refresh() {
         val st = ServerService.state
         val ct = App.crashText(this)
-        crash.text = if (ct.isEmpty()) "" else "Last crash:\n" + ct.take(3000)
-        crash.visibility = if (ct.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
-        crashBtn.visibility = crash.visibility
+        if (ct != crashShown) { // не трогаем текст каждую секунду: иначе сбрасываются прокрутка и выделение
+            crashShown = ct
+            crash.setText(ct)
+        }
+        val vis = if (ct.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+        crash.visibility = vis
+        crashLabel.visibility = vis
+        crashRow.visibility = vis
         allowCam.visibility = if (CameraEngine.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()
