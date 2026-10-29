@@ -249,7 +249,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     }
 
     /** Проверка прокси: запрос к каждому из трёх адресов через него, независимо от галочек. Любой HTTP-ответ означает, что связь есть. */
-    private fun proxyTest(q(s, "name")): Response {
+    private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
         val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"))
         require(name == null || all.any { it.first == name }) { "name: telegram, llm или updates" }
