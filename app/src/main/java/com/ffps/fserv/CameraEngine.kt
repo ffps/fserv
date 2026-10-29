@@ -515,10 +515,36 @@ object CameraEngine {
             bmp.recycle()
             bmp = r
         }
-        val o = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 80, o)
+        // Итог всегда ровно 320x240 (или 240x320 после поворота): кадр вписывается с чёрными полями
+        val bw = if (bmp.width >= bmp.height) 320 else 240
+        val bh = if (bmp.width >= bmp.height) 240 else 320
+        val box = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(box)
+        cv.drawColor(Color.BLACK)
+        val k = minOf(bw.toFloat() / bmp.width, bh.toFloat() / bmp.height)
+        val dw = bmp.width * k
+        val dh = bmp.height * k
+        val dst = android.graphics.RectF((bw - dw) / 2, (bh - dh) / 2, (bw + dw) / 2, (bh + dh) / 2)
+        cv.drawBitmap(bmp, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
         bmp.recycle()
+        val o = ByteArrayOutputStream()
+        box.compress(Bitmap.CompressFormat.JPEG, 80, o)
+        box.recycle()
         return o.toByteArray()
+    }
+
+    /** Размеры кадра YUV, которые отдаёт камера (для выбора в веб-интерфейсе). */
+    fun availableSizes(): List<String> = try {
+        val mgr = app.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val id = pickCamera(mgr)
+        if (id == null) emptyList() else {
+            val sizes = mgr.getCameraCharacteristics(id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                ?.getOutputSizes(ImageFormat.YUV_420_888) ?: emptyArray()
+            sizes.filter { it.width * it.height in 19200..2_100_000 }
+                .sortedBy { it.width * it.height }.map { "${it.width}x${it.height}" }.distinct()
+        }
+    } catch (e: Exception) {
+        emptyList()
     }
 
     fun historyJson(limit: Int): JSONArray {
@@ -557,6 +583,7 @@ object CameraEngine {
             "motion" to motion,
             "lastMotion" to if (lastMotionAt > 0) Util.iso(lastMotionAt) else null,
             "config" to Settings.publicJson().optJSONObject("camera"),
+            "resolutions" to arr(availableSizes()),
             "interval" to cfg.intervalMs
         )
     }

@@ -56,6 +56,9 @@
   .msg.flash { animation:fl .5s ease-out; } @keyframes fl { from { background:var(--acc-soft); } to { background:transparent; } }
   .pxu { display:grid; grid-template-columns:max-content max-content 1fr; gap:8px 14px; align-items:center; }
   .pxu .msg { margin:0; }
+  td { word-break:break-word; overflow-wrap:anywhere; }
+  .jt { cursor:pointer; } .jt b { color:var(--acc); font-weight:500; white-space:nowrap; }
+  .jt .full { display:none; white-space:pre-wrap; } .jt.open .full { display:inline; } .jt.open .short { display:none; }
   details summary { cursor:pointer; color:var(--dim); }
 </style>
 </head>
@@ -160,7 +163,7 @@
   </div>
   <div class="row" style="margin-top:14px">
     <button class="btn" id="tgSave">Сохранить</button>
-    <button class="btn sec" id="tgTest">Проверить и отправить тест</button>
+    <button class="btn sec" id="tgTest">Тест</button>
   </div>
   <div class="msg" id="tgMsg"></div>
   <p class="hint" id="tgState"></p>
@@ -191,13 +194,12 @@
   <h2>Камера</h2>
   <div class="grid" id="camCards"></div>
   <div class="row">
-    <button class="btn" id="camOn">Включить</button>
-    <button class="btn sec" id="camOff">Выключить</button>
+    <button class="btn" id="camToggle">Включить</button>
     <label><input type="checkbox" id="camOverlay" checked> закрашивать изменения красным</label>
   </div>
   <div class="msg" id="camMsg"></div>
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-    <img id="camImg" alt="кадр" style="max-width:100%;width:300px;height:auto;background:#222;border-radius:8px;min-height:100px">
+    <img id="camImg" alt="кадр" style="max-width:100%;height:auto;background:#222;border-radius:8px">
     <div style="flex:1;min-width:280px"><canvas id="camChart" width="640" height="200" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></canvas>
     <p class="hint">Оценка движения: доля ячеек кадра (в процентах), изменившихся с прошлого обработанного кадра. Красная линия: порог площади. Зелёные точки внизу: движение определено.</p></div>
   </div>
@@ -208,7 +210,7 @@
     <label for="cmArea">Площадь движения, % кадра</label><input id="cmArea" type="number" min="0.05" max="100" step="0.05">
     <label for="cmRot">Поворот изображения</label>
     <select id="cmRot"><option value="-1">авто (по сенсору)</option><option value="0">0</option><option value="90">90</option><option value="180">180</option><option value="270">270</option></select>
-    <label for="cmRes">Разрешение кадра</label><input id="cmRes" placeholder="640x480">
+    <label for="cmRes">Разрешение кадра</label><select id="cmRes"></select>
     <label>Держать камеру включённой</label><label><input type="checkbox" id="cmKeep"> пока работает служба (для отладки; нагрев и расход)</label>
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="cmSave">Сохранить</button></div>
@@ -219,8 +221,7 @@
     <label>Минут <input id="ctMin" type="number" value="10" min="1" max="720" style="width:80px"></label>
     <label>Циклов <input id="ctCnt" type="number" value="50" min="1" max="2000" style="width:80px"></label>
     <label>Пауза, с <input id="ctGap" type="number" value="3" min="0" max="600" style="width:70px"></label>
-    <button class="btn" id="ctStart">Запустить</button>
-    <button class="btn danger" id="ctStop">Остановить</button>
+    <button class="btn" id="ctToggle">Запустить</button>
   </div>
   <div class="msg" id="ctMsg"></div>
   <p class="hint" id="ctProg"></p>
@@ -425,9 +426,13 @@ async function loadCamera(full) {
     if (full) {
       const k = c.config;
       $("#cmInt").value = k.intervalMs; $("#cmThr").value = k.cellThreshold; $("#cmArea").value = k.areaPercent;
+      const opts = (c.resolutions || []).slice(); if (!opts.includes(k.resolution)) opts.unshift(k.resolution);
+      $("#cmRes").innerHTML = opts.map(r => "<option>" + esc(r) + "</option>").join("");
       $("#cmRot").value = String(k.rotation); $("#cmRes").value = k.resolution; $("#cmKeep").checked = k.keepRunning;
     }
+    if (!camBusy) setCamBtn(c.owners.includes("manual"));
     const t = (await api("/api/camera/test")).json;
+    setCtBtn(t.running);
     $("#ctProg").textContent = t.running ? "Идёт тест (" + t.mode + "): " + t.progress : (t.startedAt ? "Тест не идёт. Последний запуск: " + dt(t.startedAt) : "");
     $("#ctLog").textContent = t.log.length ? t.log.join("\n") : "—";
     $("#ctRes").style.display = t.result ? "block" : "none"; if (t.result) $("#ctRes").textContent = JSON.stringify(t.result, null, 2);
@@ -444,19 +449,31 @@ async function camResult(wantRunning) {
   loadCamera(false);
   return wantRunning ? "камера пока не вышла в работу, смотрите состояние ниже" : "камера ещё держится другим владельцем (см. «Состояние»)";
 }
-$("#camOn").onclick = () => run("#camMsg", async () => { await post("/api/camera/start"); say("#camMsg", "включаю…", true); return await camResult(true); });
-$("#camOff").onclick = () => run("#camMsg", async () => { await post("/api/camera/stop"); return await camResult(false); });
+let camManual = false, camBusy = false;
+function setCamBtn(on) {
+  camManual = on; const b = $("#camToggle");
+  b.textContent = on ? "Выключить" : "Включить"; b.className = on ? "btn danger" : "btn";
+}
+$("#camToggle").onclick = () => run("#camMsg", async () => {
+  if (camManual) { await post("/api/camera/stop"); setCamBtn(false); return await camResult(false); }
+  await post("/api/camera/start"); setCamBtn(true); say("#camMsg", "включаю…", true); return await camResult(true);
+});
 $("#cmSave").onclick = () => run("#cmMsg", async () => {
   const cam = {intervalMs: Number($("#cmInt").value), cellThreshold: Number($("#cmThr").value), areaPercent: Number($("#cmArea").value),
-    rotation: Number($("#cmRot").value), resolution: $("#cmRes").value.trim(), keepRunning: $("#cmKeep").checked};
+    rotation: Number($("#cmRot").value), resolution: $("#cmRes").value, keepRunning: $("#cmKeep").checked};
   await post("/api/settings", JSON.stringify({camera: cam})); loadCamera(true);
   return "сохранено (новое разрешение применится при следующем открытии камеры)";
 });
-$("#ctStart").onclick = () => run("#ctMsg", async () => {
+let ctRunning = false;
+function setCtBtn(on) {
+  ctRunning = on; const b = $("#ctToggle");
+  b.textContent = on ? "Остановить" : "Запустить"; b.className = on ? "btn danger" : "btn";
+}
+$("#ctToggle").onclick = () => run("#ctMsg", async () => {
+  if (ctRunning) { const r = await post("/api/camera/test/stop"); return r.json.message; }
   const q = "mode=" + $("#ctMode").value + "&minutes=" + $("#ctMin").value + "&count=" + $("#ctCnt").value + "&gap=" + $("#ctGap").value;
   const r = await post("/api/camera/test?" + q); loadCamera(false); return r.json.message;
 });
-$("#ctStop").onclick = () => run("#ctMsg", async () => { const r = await post("/api/camera/test/stop"); return r.json.message; });
 setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
 
 // ---- обновления ----
@@ -534,10 +551,16 @@ $("#logLevel").onchange = loadLogs;
 $("#logClear").onclick = () => { if (confirm("Очистить технический лог?")) run("#logMsg", async () => { await post("/api/logs/clear"); loadLogs(); return "лог очищен"; }); };
 
 // ---- журнал ----
+// длинные записи журнала показываются свёрнутыми, по нажатию раскрываются
+function jText(t) {
+  t = String(t || "");
+  if (t.length <= 140 && t.indexOf("\n") < 0) return esc(t);
+  return '<div class="jt" onclick="this.classList.toggle(\'open\')" title="Нажмите, чтобы развернуть или свернуть"><span class="short">' + esc(t.slice(0, 140).replace(/\n/g, " ")) + '… <b>[развернуть]</b></span><span class="full">' + esc(t) + ' <b>[свернуть]</b></span></div>';
+}
 async function loadJournal() {
   try {
     const a = (await api("/api/journal?limit=200")).json;
-    $("#jBody").innerHTML = a.length ? a.map(e => "<tr><td>" + esc(dt(e.time)) + "</td><td>" + esc(e.type) + "</td><td>" + esc(e.text) + "</td></tr>").join("") : '<tr><td colspan="3">пока пусто</td></tr>';
+    $("#jBody").innerHTML = a.length ? a.map(e => "<tr><td>" + esc(dt(e.time)) + "</td><td>" + esc(e.type) + "</td><td>" + jText(e.text) + "</td></tr>").join("") : '<tr><td colspan="3">пока пусто</td></tr>';
   } catch (e) { say("#jMsg", e.message, false); }
 }
 $("#jRefresh").onclick = loadJournal;

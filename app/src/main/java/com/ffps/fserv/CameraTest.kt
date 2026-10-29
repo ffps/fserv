@@ -91,8 +91,11 @@ object CameraTest {
         )
         for (k in extra.keys()) res.put(k, extra.get(k))
         result = res
-        val sum = "Стресс-тест камеры ($title) завершён: " + res.toString()
-        Journal.add("camera", sum.take(900))
+        val sum = "Стресс-тест камеры ($title) завершён за ${res.optLong("durationSec")} с" +
+            (if (res.has("ok")) ": успешно ${res.optInt("ok")}, сбоев ${res.optInt("failed")}, до первого кадра в среднем ${res.optLong("avgOpenToFrameMs")} мс" else
+                ": кадров ${res.optLong("framesProcessed")}, перезапусков ${res.optInt("restartsDuringTest")}") +
+            ", макс. температура ${res.optDouble("maxTemperatureC")}°C, рост открытых файлов ${res.optInt("fdGrowth")}. Подробности: вкладка «Камера»"
+        Journal.add("camera", sum)
         log("итог: $res")
     }
 
