@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fServe</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff9a1f'/%3E%3Cstop offset='1' stop-color='%23d81b60'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='26' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='60' r='25' fill='none' stroke='%23fff' stroke-width='10'/%3E%3C/svg%3E">
 <style>
   :root { --bg:#f5f6fa; --panel:#ffffff; --line:#e2e5ee; --text:#1c2030; --dim:#69708a; --acc:#d81b60; --acc-d:#ad1457;
           --acc-soft:#fde7ef; --bad:#c62828; --good:#2e7d32; --code:#f1f3f9; }
@@ -39,7 +40,7 @@
   pre { margin:0; background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:65vh; font:12.5px/1.4 ui-monospace, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
   .row label { color:var(--dim); }
-  .msg { margin-top:8px; min-height:1.4em; } .msg.ok { color:var(--good); } .msg.err { color:var(--bad); }
+  .msg { margin-top:8px; min-height:1.4em; white-space:pre-line; } .msg.ok { color:var(--good); } .msg.err { color:var(--bad); }
   .hint { color:var(--dim); font-size:13px; margin:8px 0 0; }
   table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; }
@@ -128,6 +129,8 @@
   <div class="f">
     <label for="sLevel">Уровень лога</label>
     <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+    <label for="sTmo">Таймаут сети, секунд</label>
+    <input id="sTmo" type="number" min="2" max="120">
     <label for="sApp">Перезапуск приложения (cron)</label>
     <input id="sApp" placeholder="например 30 3 * * *   (пусто = выключено)">
     <label for="sReboot">Перезагрузка устройства (cron)</label>
@@ -158,14 +161,22 @@
   </div>
   <div class="msg" id="tgMsg"></div>
   <p class="hint" id="tgState"></p>
+  <p class="hint">Тест отправляется напрямую, минуя очередь, поэтому в очереди не появляется. Результат проверки пишется в лог.</p>
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
   <div class="row" style="margin-top:10px"><button class="btn danger sm" id="obClear">Очистить очередь</button></div>
   <h2 style="margin-top:22px">SOCKS5-прокси</h2>
-  <div id="pxBox"></div>
-  <div class="row" style="margin-top:14px"><button class="btn" id="pxSave">Сохранить прокси</button></div>
+  <div class="f">
+    <label for="pxHost">Адрес</label><input id="pxHost" placeholder="хост или IP">
+    <label for="pxPort">Порт</label><input id="pxPort" type="number" min="1" max="65535" placeholder="1080">
+    <label for="pxUser">Логин</label><input id="pxUser" autocomplete="off">
+    <label for="pxPass">Пароль</label><input id="pxPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+    <label>Использовать для</label>
+    <div><label><input type="checkbox" id="pxTg"> Telegram</label> &nbsp; <label><input type="checkbox" id="pxLlm"> LLM</label> &nbsp; <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label></div>
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="pxSave">Сохранить прокси</button><button class="btn sec" id="pxTest">Проверить</button></div>
   <div class="msg" id="pxMsg"></div>
-  <p class="hint">У каждого назначения свой прокси. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. Кнопка «Проверить» использует сохранённые настройки.</p>
+  <p class="hint">Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к Telegram, Gemini и GitHub через прокси независимо от галочек; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
 </section>
 
 <section id="update">
@@ -221,6 +232,7 @@
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
+const dt = s => String(s || "").replace("T", " ").replace(/(Z|[+-]\d\d:\d\d)$/, "");
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 async function api(path, opts) {
@@ -272,37 +284,31 @@ document.querySelectorAll("pre, textarea").forEach(el => {
 
 // ---- вкладки ----
 let current = "status";
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
-  current = b.dataset.t;
-  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
-  document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === current));
+function showTab(t) {
+  if (!document.getElementById(t) || !document.querySelector('#tabs button[data-t="' + t + '"]')) t = "status";
+  current = t;
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x.dataset.t === t));
+  document.querySelectorAll("main section").forEach(x => x.classList.toggle("on", x.id === t));
+  if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   onTab();
-});
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.t));
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---- связь ----
-const PX = [["telegram", "Telegram"], ["llm", "LLM (Gemini)"], ["updates", "Обновления (GitHub)"]];
-$("#pxBox").innerHTML = PX.map(([n, t]) => '<fieldset style="border:1px solid var(--line);border-radius:8px;margin:0 0 10px;padding:8px 12px;max-width:780px"><legend>' + t + '</legend><div class="f">' +
-  '<label>Использовать</label><label><input type="checkbox" id="px_' + n + '_on"> включён</label>' +
-  '<label>Адрес</label><input id="px_' + n + '_host" placeholder="хост или IP">' +
-  '<label>Порт</label><input id="px_' + n + '_port" type="number" min="1" max="65535" placeholder="1080">' +
-  '<label>Логин</label><input id="px_' + n + '_user" autocomplete="off">' +
-  '<label>Пароль</label><input id="px_' + n + '_pass" type="password" autocomplete="new-password" placeholder="пусто = не менять">' +
-  '</div><div class="row" style="margin-top:8px"><button class="btn sec sm" data-px="' + n + '">Проверить</button><span class="msg" id="px_' + n + '_msg" style="margin:0"></span></div></fieldset>').join("");
 async function loadComm() {
   try {
     const st = (await api("/api/settings")).json;
     $("#tgChat").value = st.telegram.chatId; $("#tgToken").value = "";
     $("#tgToken").placeholder = st.telegram.tokenSet ? "задан (" + st.telegram.tokenHint + "), пусто = не менять" : "не задан";
-    for (const [n] of PX) {
-      const p = st.proxies[n];
-      $("#px_" + n + "_on").checked = p.enabled; $("#px_" + n + "_host").value = p.host; $("#px_" + n + "_port").value = p.port;
-      $("#px_" + n + "_user").value = p.user; $("#px_" + n + "_pass").value = "";
-      $("#px_" + n + "_pass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
-    }
+    const p = st.proxy;
+    $("#pxHost").value = p.host; $("#pxPort").value = p.port; $("#pxUser").value = p.user; $("#pxPass").value = "";
+    $("#pxPass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
+    $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates;
     const t = (await api("/api/telegram")).json;
-    $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + t.lastSentAt.replace("T", " ") : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
+    $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + dt(t.lastSentAt) : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
     const ob = (await api("/api/outbox")).json;
-    $("#obBody").innerHTML = ob.length ? ob.map(i => "<tr><td>" + esc(i.created.replace("T", " ")) + "</td><td>" + esc(i.text) + "</td><td>" + i.attempts + "</td><td>" + esc(i.nextTry ? i.nextTry.replace("T", " ") : "") + "</td><td>" + esc(i.lastError) + "</td></tr>").join("") : '<tr><td colspan="5" style="color:var(--dim)">пусто</td></tr>';
+    $("#obBody").innerHTML = ob.length ? ob.map(i => "<tr><td>" + esc(dt(i.created)) + "</td><td>" + esc(i.text) + "</td><td>" + i.attempts + "</td><td>" + esc(i.nextTry ? dt(i.nextTry) : "") + "</td><td>" + esc(i.lastError) + "</td></tr>").join("") : '<tr><td colspan="5" style="color:var(--dim)">пусто</td></tr>';
   } catch (e) { say("#tgMsg", e.message, false); }
 }
 $("#tgSave").onclick = () => run("#tgMsg", async () => {
@@ -313,17 +319,12 @@ $("#tgSave").onclick = () => run("#tgMsg", async () => {
 $("#tgTest").onclick = () => run("#tgMsg", async () => { const r = await post("/api/telegram/test"); loadComm(); return r.json.message; });
 $("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/outbox/clear"); loadComm(); return r.json.message; }); };
 $("#pxSave").onclick = () => run("#pxMsg", async () => {
-  const px = {};
-  for (const [n] of PX) px[n] = {enabled: $("#px_" + n + "_on").checked, host: $("#px_" + n + "_host").value.trim(),
-    port: parseInt($("#px_" + n + "_port").value || "1080", 10), user: $("#px_" + n + "_user").value, password: $("#px_" + n + "_pass").value};
-  await post("/api/settings", JSON.stringify({proxies: px})); loadComm(); return "сохранено";
+  const px = {host: $("#pxHost").value.trim(), port: parseInt($("#pxPort").value || "1080", 10), user: $("#pxUser").value,
+    telegram: $("#pxTg").checked, llm: $("#pxLlm").checked, updates: $("#pxUp").checked};
+  if ($("#pxPass").value) px.password = $("#pxPass").value;
+  await post("/api/settings", JSON.stringify({proxy: px})); loadComm(); return "сохранено";
 });
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-px]"); if (!b) return;
-  const n = b.dataset.px, id = "#px_" + n + "_msg";
-  say(id, ""); $(id).textContent = "проверяю…";
-  post("/api/proxy/test?name=" + n).then(r => say(id, r.json.message, true), er => say(id, er.message, false));
-});
+$("#pxTest").onclick = () => run("#pxMsg", async () => { say("#pxMsg", "проверяю…", true); return (await post("/api/proxy/test")).json.message; });
 
 // ---- обновления ----
 let upTimer = null;
@@ -336,7 +337,7 @@ async function loadUpdate() {
     $("#upCards").innerHTML = card("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
       card("Последняя на GitHub", l ? l.versionName + " (" + l.versionCode + ")" : "ещё не проверялась") +
       card("Статус", u.state !== "idle" ? u.state + (u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
-      card("Проверка", u.lastCheck ? u.lastCheck.replace("T", " ") : "не выполнялась") +
+      card("Проверка", u.lastCheck ? dt(u.lastCheck) : "не выполнялась") +
       card("Установка разрешена", u.canInstall ? "да" : "нет (кнопка Allow app updates на устройстве)") +
       (u.lastError ? card("Ошибка", u.lastError) : "");
     $("#upInstall").disabled = !u.available || u.state !== "idle";
@@ -370,7 +371,7 @@ async function loadStatus() {
     $("#ver").textContent = "версия " + i.app.version;
     const b = i.battery;
     $("#cards").innerHTML =
-      card("Время на устройстве", i.time.now.replace("T", " ")) +
+      card("Время на устройстве", dt(i.time.now)) +
       card("Приложение работает", fmtDur(i.time.appUptimeSeconds)) +
       card("Устройство включено", fmtDur(i.time.deviceUptimeSeconds)) +
       card("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
@@ -401,7 +402,7 @@ $("#logClear").onclick = () => { if (confirm("Очистить техничес�
 async function loadJournal() {
   try {
     const a = (await api("/api/journal?limit=200")).json;
-    $("#jBody").innerHTML = a.length ? a.map(e => "<tr><td>" + esc((e.time || "").replace("T", " ")) + "</td><td>" + esc(e.type) + "</td><td>" + esc(e.text) + "</td></tr>").join("") : '<tr><td colspan="3">пока пусто</td></tr>';
+    $("#jBody").innerHTML = a.length ? a.map(e => "<tr><td>" + esc(dt(e.time)) + "</td><td>" + esc(e.type) + "</td><td>" + esc(e.text) + "</td></tr>").join("") : '<tr><td colspan="3">пока пусто</td></tr>';
   } catch (e) { say("#jMsg", e.message, false); }
 }
 $("#jRefresh").onclick = loadJournal;
@@ -412,7 +413,7 @@ async function loadConfig() { try { $("#cfgText").value = (await api("/api/confi
 async function loadHist() {
   try {
     const h = (await api("/api/config/history")).json;
-    $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(x.time.replace("T", " ").slice(0, 19)) + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
+    $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
   } catch (e) {}
 }
 $("#cfgSave").onclick = () => run("#cfgMsg", async () => { await post("/api/config", $("#cfgText").value); loadHist(); return "сохранено"; });
@@ -424,13 +425,13 @@ async function loadSettings() {
   try {
     const s = (await api("/api/settings")).json;
     $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
-    $("#sPort").value = s.webPort; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
+    $("#sPort").value = s.webPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
     say("#sMsg", "");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
   const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value,
-             webPort: Number($("#sPort").value), autostart: $("#sBoot").checked};
+             webPort: Number($("#sPort").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked};
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
@@ -472,7 +473,7 @@ setInterval(() => {
   if (current === "status") loadStatus();
   if (current === "logs" && $("#logAuto").checked) loadLogs();
 }, 5000);
-loadStatus();
+showTab(location.hash.slice(1) || "status");
 </script>
 </body>
 </html>

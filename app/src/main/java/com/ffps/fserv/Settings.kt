@@ -23,6 +23,26 @@ object Settings {
         }
         // До версии 0.3.0 пароль генерировался сам. Теперь его вводит пользователь,
         // поэтому сгенерированный пароль и состояние службы сбрасываются один раз.
+        // До 0.4.1 было по прокси на назначение; оставляем первый заданный, галочки берём из «включён».
+        if (o.has("proxies") && !o.has("proxy")) {
+            val old = o.getJSONObject("proxies")
+            var first: JSONObject? = null
+            for (n in listOf("telegram", "llm", "updates")) {
+                val x = old.optJSONObject(n) ?: continue
+                if (first == null && x.optString("host").isNotBlank()) first = x
+            }
+            if (first != null) {
+                val np = JSONObject(first.toString())
+                np.remove("enabled")
+                for (n in listOf("telegram", "llm", "updates")) {
+                    val x = old.optJSONObject(n)
+                    np.put(n, x != null && x.optBoolean("enabled") && x.optString("host").isNotBlank())
+                }
+                o.put("proxy", np)
+            }
+            o.remove("proxies")
+            save()
+        }
         if (o.optInt("schema", 0) < 2) {
             o.remove("password")
             o.put("serviceEnabled", false)
@@ -69,18 +89,23 @@ object Settings {
         save()
     }
 
-    /** SOCKS5-прокси для назначения (telegram, llm, updates) или null, если выключен. */
+    /** Общий таймаут сетевых операций, секунд. */
+    @get:Synchronized val netTimeoutSec: Int get() = o.optInt("netTimeoutSec", 10).coerceIn(2, 120)
+
+    /** Один SOCKS5-прокси; флаги telegram/llm/updates говорят, для каких подсистем он используется. */
     class ProxyCfg(val host: String, val port: Int, val user: String, val password: String)
 
+    /** Прокси для подсистемы (telegram, llm, updates) или null. Назначение "test" берёт прокси без учёта галочек. */
     @Synchronized
     fun proxyCfg(purpose: String): ProxyCfg? {
-        val p = o.optJSONObject("proxies")?.optJSONObject(purpose) ?: return null
-        if (!p.optBoolean("enabled") || p.optString("host").isBlank()) return null
+        val p = o.optJSONObject("proxy") ?: return null
+        if (p.optString("host").isBlank()) return null
+        if (purpose != "test" && !p.optBoolean(purpose)) return null
         return ProxyCfg(p.optString("host").trim(), p.optInt("port", 1080), p.optString("user"), p.optString("password"))
     }
 
     @Synchronized
-    fun allProxies(): List<ProxyCfg> = PURPOSES.mapNotNull { proxyCfg(it) }
+    fun allProxies(): List<ProxyCfg> = listOfNotNull(proxyCfg("test"))
 
     val PURPOSES = listOf("telegram", "llm", "updates")
 
@@ -123,17 +148,17 @@ object Settings {
             "tokenHint" to if (telegramToken.length > 8) telegramToken.take(3) + "…" + telegramToken.takeLast(3) else "",
             "chatId" to telegramChatId
         ),
-        "proxies" to JSONObject().also { px ->
-            for (n in PURPOSES) {
-                val p = o.optJSONObject("proxies")?.optJSONObject(n)
-                px.put(n, obj(
-                    "enabled" to (p?.optBoolean("enabled") ?: false),
-                    "host" to (p?.optString("host") ?: ""),
-                    "port" to (p?.optInt("port", 1080) ?: 1080),
-                    "user" to (p?.optString("user") ?: ""),
-                    "passwordSet" to !(p?.optString("password").isNullOrEmpty())
-                ))
-            }
+        "netTimeoutSec" to netTimeoutSec,
+        "proxy" to o.optJSONObject("proxy").let { p ->
+            obj(
+                "host" to (p?.optString("host") ?: ""),
+                "port" to (p?.optInt("port", 1080) ?: 1080),
+                "user" to (p?.optString("user") ?: ""),
+                "passwordSet" to !(p?.optString("password").isNullOrEmpty()),
+                "telegram" to (p?.optBoolean("telegram") ?: false),
+                "llm" to (p?.optBoolean("llm") ?: false),
+                "updates" to (p?.optBoolean("updates") ?: false)
+            )
         },
         "updateRepo" to updateRepo,
         "updateCheckCron" to updateCheckCron
@@ -178,13 +203,12 @@ object Settings {
         if (patch.has("updateRepo") && !Regex("""[\w.-]+/[\w.-]+""").matches(patch.optString("updateRepo").trim())) {
             errors.add("updateRepo: ожидается владелец/репозиторий")
         }
-        patch.optJSONObject("proxies")?.let { px ->
-            for (n in px.keys()) {
-                if (n !in PURPOSES) { errors.add("proxies.$n: неизвестное назначение"); continue }
-                val p = px.optJSONObject(n) ?: continue
-                if (p.has("port") && p.optInt("port", -1) !in 1..65535) errors.add("proxies.$n.port: число от 1 до 65535")
-                if (p.optBoolean("enabled") && p.has("host") && p.optString("host").isBlank()) errors.add("proxies.$n.host: пусто")
-            }
+        if (patch.has("netTimeoutSec") && patch.optInt("netTimeoutSec", -1) !in 2..120) errors.add("netTimeoutSec: число секунд от 2 до 120")
+        patch.optJSONObject("proxy")?.let { p ->
+            if (p.has("port") && p.optInt("port", -1) !in 1..65535) errors.add("proxy.port: число от 1 до 65535")
+            val anyOn = PURPOSES.any { p.optBoolean(it) }
+            val hostNow = if (p.has("host")) p.optString("host") else (o.optJSONObject("proxy")?.optString("host") ?: "")
+            if (anyOn && hostNow.isBlank()) errors.add("proxy.host: адрес прокси пуст, а он нужен выбранным подсистемам")
         }
         if (patch.has("password") && patch.optString("password").isEmpty() && password.isEmpty()) {
             errors.add("password: пароль не может быть пустым")
@@ -211,21 +235,18 @@ object Settings {
             o.put("telegramToken", patch.optString("telegramToken").trim())
             FLog.addSecret(telegramToken)
         }
-        patch.optJSONObject("proxies")?.let { px ->
-            val all = o.optJSONObject("proxies") ?: JSONObject().also { o.put("proxies", it) }
-            for (n in px.keys()) {
-                val src = px.optJSONObject(n) ?: continue
-                val dst = all.optJSONObject(n) ?: JSONObject().also { all.put(n, it) }
-                if (src.has("enabled")) dst.put("enabled", src.optBoolean("enabled"))
-                if (src.has("host")) dst.put("host", src.optString("host").trim())
-                if (src.has("port")) dst.put("port", src.optInt("port"))
-                if (src.has("user")) dst.put("user", src.optString("user"))
-                if (src.optString("password").isNotEmpty()) {
-                    dst.put("password", src.optString("password"))
-                    FLog.addSecret(src.optString("password"))
-                }
-                if (src.optBoolean("clearPassword")) dst.remove("password")
+        if (patch.has("netTimeoutSec")) o.put("netTimeoutSec", patch.optInt("netTimeoutSec"))
+        patch.optJSONObject("proxy")?.let { src ->
+            val dst = o.optJSONObject("proxy") ?: JSONObject().also { o.put("proxy", it) }
+            if (src.has("host")) dst.put("host", src.optString("host").trim())
+            if (src.has("port")) dst.put("port", src.optInt("port"))
+            if (src.has("user")) dst.put("user", src.optString("user"))
+            for (n in PURPOSES) if (src.has(n)) dst.put(n, src.optBoolean(n))
+            if (src.optString("password").isNotEmpty()) {
+                dst.put("password", src.optString("password"))
+                FLog.addSecret(src.optString("password"))
             }
+            if (src.optBoolean("clearPassword")) dst.remove("password")
         }
         // Пустой пароль в запросе означает «не менять».
         if (patch.has("password") && patch.optString("password").isNotEmpty() && patch.optString("password") != password) {

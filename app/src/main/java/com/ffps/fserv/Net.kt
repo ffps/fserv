@@ -40,18 +40,21 @@ object Net {
         body: ByteArray? = null,
         contentType: String? = null,
         headers: Map<String, String> = emptyMap(),
-        timeoutMs: Int = 20_000,
+        timeoutMs: Int = 0,
         saveTo: File? = null,
         onProgress: ((Long, Long) -> Unit)? = null
     ): Resp {
+        val tmo = if (timeoutMs > 0) timeoutMs else Settings.netTimeoutSec * 1000
         val px = Settings.proxyCfg(purpose)
         val proxy = if (px != null) Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(px.host, px.port)) else Proxy.NO_PROXY
         val via = if (px != null) "SOCKS5 ${px.host}:${px.port}" else "напрямую"
         val c = URL(url).openConnection(proxy) as HttpURLConnection
+        val t0 = System.currentTimeMillis()
+        FLog.d("net", "$method ${url.substringBefore("?").take(120)} [$purpose, $via, таймаут ${tmo / 1000} с]")
         try {
             c.requestMethod = method
-            c.connectTimeout = timeoutMs
-            c.readTimeout = timeoutMs
+            c.connectTimeout = tmo
+            c.readTimeout = tmo
             c.instanceFollowRedirects = true
             c.setRequestProperty("User-Agent", "fServe/${BuildConfig.VERSION_NAME}")
             for ((k, v) in headers) c.setRequestProperty(k, v)
@@ -62,6 +65,7 @@ object Net {
                 c.outputStream.use { it.write(body) }
             }
             val code = c.responseCode
+            FLog.d("net", "ответ HTTP $code за ${System.currentTimeMillis() - t0} мс ($purpose)")
             val stream = if (code in 200..399) c.inputStream else c.errorStream
             if (saveTo != null && code in 200..299) {
                 val total = c.contentLengthLong
@@ -84,6 +88,7 @@ object Net {
             val text = stream?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
             return Resp(code, text, via)
         } catch (e: java.io.IOException) {
+            FLog.w("net", "$method ${url.substringBefore("?").take(120)} [$purpose, $via] не удалось за ${System.currentTimeMillis() - t0} мс: ${e.javaClass.simpleName}: ${e.message}")
             throw java.io.IOException("$via: ${e.javaClass.simpleName}: ${e.message}", e)
         } finally {
             c.disconnect()

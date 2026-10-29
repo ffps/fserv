@@ -61,10 +61,14 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
 
             get && uri == "/api/telegram" -> json(Response.Status.OK, Telegram.status())
             post && uri == "/api/telegram/test" -> try {
-                ok(Telegram.test())
+                val m = Telegram.test()
+                FLog.i("telegram", "проверка связи: $m")
+                ok(m)
             } catch (e: IllegalArgumentException) {
+                FLog.w("telegram", "проверка связи: ${e.message}")
                 fail(Response.Status.BAD_REQUEST, e.message ?: "ошибка")
             } catch (e: Exception) {
+                FLog.w("telegram", "проверка связи не удалась: ${e.message}")
                 fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
             }
             post && uri == "/api/telegram/send" -> {
@@ -79,7 +83,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 Journal.add("telegram", "Очередь отправки очищена вручную ($n сообщ.)")
                 ok("удалено сообщений: $n")
             }
-            post && uri == "/api/proxy/test" -> proxyTest(q(s, "name"))
+            post && uri == "/api/proxy/test" -> proxyTest()
 
             get && uri == "/api/update" -> json(Response.Status.OK, Updater.status(ctx))
             post && uri == "/api/update/check" -> try {
@@ -244,20 +248,25 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         )
     }
 
-    private fun proxyTest(name: String?): Response {
-        require(name in Settings.PURPOSES) { "name: telegram, llm или updates" }
-        val url = when (name) {
-            "telegram" -> "https://api.telegram.org/"
-            "llm" -> "https://generativelanguage.googleapis.com/"
-            else -> "https://api.github.com/"
+    /** Проверка прокси: запрос к каждому из трёх адресов через него, независимо от галочек. Любой HTTP-ответ означает, что связь есть. */
+    private fun proxyTest(): Response {
+        if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
+        val targets = listOf("Telegram" to "https://api.telegram.org/", "LLM (Gemini)" to "https://generativelanguage.googleapis.com/", "GitHub" to "https://api.github.com/")
+        val lines = ArrayList<String>()
+        var bad = 0
+        for ((title, url) in targets) {
+            val t0 = System.currentTimeMillis()
+            try {
+                val r = Net.request("test", "GET", url)
+                lines.add("$title: связь есть (HTTP ${r.code}, ${System.currentTimeMillis() - t0} мс)")
+            } catch (e: Exception) {
+                bad++
+                lines.add("$title: НЕТ СВЯЗИ: ${e.message}")
+            }
         }
-        val t0 = System.currentTimeMillis()
-        return try {
-            val r = Net.request(name!!, "GET", url, timeoutMs = 15_000)
-            ok("$url ответил HTTP ${r.code} за ${System.currentTimeMillis() - t0} мс (${r.via})")
-        } catch (e: Exception) {
-            fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
-        }
+        val text = lines.joinToString("\n")
+        FLog.i("proxy", "проверка прокси: " + lines.joinToString("; "))
+        return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
     private fun apiIndex(): JSONObject = obj(
@@ -284,7 +293,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/telegram/send" to "поставить в очередь сообщение (тело: текст)",
         "GET /api/outbox" to "очередь неотправленных сообщений",
         "POST /api/outbox/clear" to "очистить очередь",
-        "POST /api/proxy/test" to "проверить прокси; ?name=telegram|llm|updates",
+        "POST /api/proxy/test" to "проверить прокси: запрос к Telegram, Gemini и GitHub через него",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",

@@ -191,11 +191,11 @@ object Telegram {
     }
 
     /** Один вызов Bot API. Бросает TgError при ответе с ошибкой и IOException при сбое сети. */
-    private fun call(method: String, payload: JSONObject?, timeoutMs: Int = 20_000): JSONObject {
+    private fun call(method: String, payload: JSONObject?): JSONObject {
         val url = "https://api.telegram.org/bot${Settings.telegramToken}/$method"
         val r = Net.request(
             "telegram", "POST", url, (payload ?: JSONObject()).toString().toByteArray(Charsets.UTF_8),
-            "application/json; charset=utf-8", timeoutMs = timeoutMs
+            "application/json; charset=utf-8"
         )
         val j = try { JSONObject(r.body) } catch (e: Exception) { null }
         if (j == null || !j.optBoolean("ok")) {

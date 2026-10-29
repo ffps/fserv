@@ -15,7 +15,7 @@ import java.util.Locale
 object Journal {
     private const val MAX_BYTES = 5L * 1024 * 1024
     private const val MAX_AGE_MS = 90L * 24 * 3600 * 1000
-    private val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+    private val iso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     private lateinit var file: File
     private var appends = 0
 

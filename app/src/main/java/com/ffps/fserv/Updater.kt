@@ -128,7 +128,7 @@ object Updater {
         dir.listFiles()?.forEach { it.delete() }
         val f = File(dir, l.getString("apk"))
         FLog.i("update", "скачиваю ${l.getString("apk")}")
-        val r = Net.request("updates", "GET", l.getString("apkUrl"), timeoutMs = 60_000, saveTo = f) { d, t -> done = d; total = t }
+        val r = Net.request("updates", "GET", l.getString("apkUrl"), saveTo = f) { d, t -> done = d; total = t }
         if (r.code != 200) throw java.io.IOException("скачивание: HTTP ${r.code} (${r.via})")
         val md = MessageDigest.getInstance("SHA-256")
         f.inputStream().use { ins -> val b = ByteArray(65536); while (true) { val n = ins.read(b); if (n < 0) break; md.update(b, 0, n) } }
