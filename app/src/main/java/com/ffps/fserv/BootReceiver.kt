@@ -17,6 +17,7 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                FLog.i("boot", "приложение обновлено; служба включена: ${Settings.serviceEnabled}, пароль задан: ${Settings.isConfigured}")
                 if (Settings.serviceEnabled && Settings.isConfigured) {
                     FLog.i("boot", "служба поднимается после обновления приложения")
                     ServerService.start(ctx)

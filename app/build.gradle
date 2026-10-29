@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId 'com.ffps.fserv'
-        minSdk 29
+        minSdk 26
         targetSdk 34
         versionCode vCode
         versionName vName

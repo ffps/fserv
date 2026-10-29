@@ -232,6 +232,8 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // Служба должна работать, но не работает (например, после обновления): поднимаем её.
+        if (Settings.serviceEnabled && Settings.isConfigured && ServerService.state == ServerService.State.STOPPED) ServerService.start(this)
         handler.post(tick)
     }
 

@@ -21,6 +21,7 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.Image
 import android.media.ImageReader
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import org.json.JSONArray
@@ -242,8 +243,7 @@ object CameraEngine {
         try {
             val surface = reader!!.surface
             val exec = Executor { r -> h.post(r) }
-            val cfg = SessionConfiguration(
-                SessionConfiguration.SESSION_REGULAR, listOf(OutputConfiguration(surface)), exec,
+            val cb =
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(s: CameraCaptureSession) {
                         if (gen != generation) { s.close(); return }
@@ -263,8 +263,14 @@ object CameraEngine {
                         if (gen == generation) fail("не удалось настроить поток камеры", true)
                     }
                 }
-            )
-            d.createCaptureSession(cfg)
+            if (Build.VERSION.SDK_INT >= 28) {
+                d.createCaptureSession(
+                    SessionConfiguration(SessionConfiguration.SESSION_REGULAR, listOf(OutputConfiguration(surface)), exec, cb)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                d.createCaptureSession(listOf(surface), cb, h)
+            }
         } catch (e: Exception) {
             fail("сессия камеры: ${e.javaClass.simpleName}: ${e.message}", true)
         }
@@ -465,7 +471,7 @@ object CameraEngine {
     }
 
     /** JPEG последнего кадра. С [overlay] изменившиеся ячейки закрашены красным. Поворот по настройке или по сенсору. */
-    fun snapshotJpeg(overlay: Boolean): ByteArray? {
+    fun snapshotJpeg(overlay: Boolean, maxSide: Int = 320): ByteArray? {
         val nv: ByteArray
         val w: Int
         val hh: Int
@@ -479,15 +485,23 @@ object CameraEngine {
         val bos = ByteArrayOutputStream()
         YuvImage(nv, ImageFormat.NV21, w, hh, null).compressToJpeg(Rect(0, 0, w, hh), 80, bos)
         var bmp = BitmapFactory.decodeByteArray(bos.toByteArray(), 0, bos.size()) ?: return null
+        if (maxSide in 64 until maxOf(w, hh)) {
+            val k = maxSide.toFloat() / maxOf(w, hh)
+            val sm = Bitmap.createScaledBitmap(bmp, (w * k).toInt(), (hh * k).toInt(), true)
+            bmp.recycle()
+            bmp = sm
+        }
         if (overlay && ch != null) {
             val m = bmp.copy(Bitmap.Config.ARGB_8888, true)
             val c = Canvas(m)
+            val bw = m.width
+            val bh = m.height
             val paint = Paint().apply { color = Color.argb(110, 255, 0, 60) }
             for (gy in 0 until GH) for (gx in 0 until GW) {
                 if (ch[gy * GW + gx]) {
                     c.drawRect(
-                        (gx * w / GW).toFloat(), (gy * hh / GH).toFloat(),
-                        ((gx + 1) * w / GW).toFloat(), ((gy + 1) * hh / GH).toFloat(), paint
+                        (gx * bw / GW).toFloat(), (gy * bh / GH).toFloat(),
+                        ((gx + 1) * bw / GW).toFloat(), ((gy + 1) * bh / GH).toFloat(), paint
                     )
                 }
             }

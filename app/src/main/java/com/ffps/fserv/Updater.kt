@@ -138,7 +138,9 @@ object Updater {
         val pi = ctx.packageManager.getPackageArchiveInfo(f.absolutePath, 0)
             ?: throw java.io.IOException("файл не является APK")
         if (pi.packageName != ctx.packageName) throw java.io.IOException("чужой пакет ${pi.packageName}")
-        if (pi.longVersionCode != l.getLong("versionCode")) throw java.io.IOException("versionCode в APK ${pi.longVersionCode} не совпал с version.json")
+        @Suppress("DEPRECATION")
+        val apkCode: Long = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+        if (apkCode != l.getLong("versionCode")) throw java.io.IOException("versionCode в APK $apkCode не совпал с version.json")
         install(ctx, f)
     }
 

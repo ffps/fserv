@@ -49,7 +49,7 @@ class ServerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Повторный запуск (например, из активности) обновляет тип службы: после выдачи разрешения камеры
         // или когда приложение снова на переднем плане.
-        if (CameraEngine.hasPermission(this) && (foregroundType and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA) == 0) goForeground()
+        if (Build.VERSION.SDK_INT >= 29 && CameraEngine.hasPermission(this) && (foregroundType and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA) == 0) goForeground()
         startAll()
         return START_STICKY
     }
@@ -63,6 +63,11 @@ class ServerService : Service() {
         val cam = CameraEngine.hasPermission(this)
         val special = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         val type = special or (if (cam) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
+        if (Build.VERSION.SDK_INT < 29) {
+            startForeground(NOTIF_ID, n) // до Android 10 типов служб нет
+            foregroundType = 0
+            return
+        }
         try {
             startForeground(NOTIF_ID, n, type)
             foregroundType = type

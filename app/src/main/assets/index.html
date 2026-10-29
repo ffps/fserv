@@ -197,7 +197,7 @@
   </div>
   <div class="msg" id="camMsg"></div>
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-    <img id="camImg" alt="кадр" style="max-width:100%;width:480px;background:#222;border-radius:8px;min-height:120px">
+    <img id="camImg" alt="кадр" style="max-width:100%;width:300px;height:auto;background:#222;border-radius:8px;min-height:100px">
     <div style="flex:1;min-width:280px"><canvas id="camChart" width="640" height="200" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></canvas>
     <p class="hint">Оценка движения: доля ячеек кадра (в процентах), изменившихся с прошлого обработанного кадра. Красная линия: порог площади. Зелёные точки внизу: движение определено.</p></div>
   </div>
@@ -433,8 +433,19 @@ async function loadCamera(full) {
     $("#ctRes").style.display = t.result ? "block" : "none"; if (t.result) $("#ctRes").textContent = JSON.stringify(t.result, null, 2);
   } catch (e) { say("#camMsg", e.message, false); }
 }
-$("#camOn").onclick = () => run("#camMsg", async () => { const r = await post("/api/camera/start"); setTimeout(() => loadCamera(false), 1500); return r.json.message; });
-$("#camOff").onclick = () => run("#camMsg", async () => { const r = await post("/api/camera/stop"); setTimeout(() => loadCamera(false), 800); return r.json.message; });
+async function camResult(wantRunning) {
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    const c = (await api("/api/camera")).json;
+    if (wantRunning && c.state === "RUNNING") { loadCamera(false); return "камера работает, первый кадр через " + c.firstFrameLatencyMs + " мс"; }
+    if (!wantRunning && c.state === "STOPPED") { loadCamera(false); return "камера выключена"; }
+    if (wantRunning && c.state === "ERROR") { loadCamera(false); throw new Error("камера не запустилась: " + c.lastError + " (повторные попытки идут)"); }
+  }
+  loadCamera(false);
+  return wantRunning ? "камера пока не вышла в работу, смотрите состояние ниже" : "камера ещё держится другим владельцем (см. «Состояние»)";
+}
+$("#camOn").onclick = () => run("#camMsg", async () => { await post("/api/camera/start"); say("#camMsg", "включаю…", true); return await camResult(true); });
+$("#camOff").onclick = () => run("#camMsg", async () => { await post("/api/camera/stop"); return await camResult(false); });
 $("#cmSave").onclick = () => run("#cmMsg", async () => {
   const cam = {intervalMs: Number($("#cmInt").value), cellThreshold: Number($("#cmThr").value), areaPercent: Number($("#cmArea").value),
     rotation: Number($("#cmRot").value), resolution: $("#cmRes").value.trim(), keepRunning: $("#cmKeep").checked};

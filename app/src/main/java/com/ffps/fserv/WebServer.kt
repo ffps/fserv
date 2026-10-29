@@ -105,7 +105,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); Journal.add("camera", "Камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
             get && uri == "/api/camera/history" -> json(Response.Status.OK, CameraEngine.historyJson(q(s, "limit")?.toIntOrNull()?.coerceIn(1, 600) ?: 120))
             get && uri == "/api/camera/snapshot" -> {
-                val jpg = CameraEngine.snapshotJpeg(q(s, "overlay") == "1")
+                val jpg = CameraEngine.snapshotJpeg(q(s, "overlay") == "1", q(s, "size")?.toIntOrNull() ?: 320)
                 if (jpg == null) fail(Response.Status.NOT_FOUND, "кадра пока нет: камера выключена или ещё не дала кадр")
                 else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", java.io.ByteArrayInputStream(jpg), jpg.size.toLong())
                     .also { it.addHeader("Cache-Control", "no-store") }
