@@ -47,6 +47,9 @@ class ServerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Повторный запуск (например, из активности) обновляет тип службы: после выдачи разрешения камеры
+        // или когда приложение снова на переднем плане.
+        if (CameraEngine.hasPermission(this) && (foregroundType and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA) == 0) goForeground()
         startAll()
         return START_STICKY
     }
@@ -56,10 +59,17 @@ class ServerService : Service() {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "fServe", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(NotificationChannel(ALERT_CHANNEL, "fServe: требуется действие", NotificationManager.IMPORTANCE_HIGH))
         val n = buildNotification()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_ID, n)
+        // Тип camera нужен, чтобы открывать камеру из фона; его можно указать только при выданном разрешении.
+        val cam = CameraEngine.hasPermission(this)
+        val special = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        val type = special or (if (cam) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
+        try {
+            startForeground(NOTIF_ID, n, type)
+            foregroundType = type
+        } catch (e: Exception) {
+            FLog.w("service", "startForeground с типом $type не удался (${e.message}), пробую без камеры")
+            startForeground(NOTIF_ID, n, special)
+            foregroundType = special
         }
     }
 
@@ -116,6 +126,7 @@ class ServerService : Service() {
             error = ""
         }
         Telegram.start()
+        if (Settings.camera().keepRunning && CameraEngine.hasPermission(this)) CameraEngine.start("keep")
         if (scheduler == null) scheduler = Scheduler(applicationContext).also { it.start() }
         if (wake == null) {
             wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
@@ -146,6 +157,7 @@ class ServerService : Service() {
         scheduler?.stop()
         scheduler = null
         Telegram.stop()
+        CameraEngine.stop("keep")
     }
 
     /** Мягкий перезапуск: сервер и планировщик поднимаются заново (с новым портом), процесс остаётся. */
@@ -186,6 +198,9 @@ class ServerService : Service() {
 
         @Volatile
         var instance: ServerService? = null
+
+        @Volatile
+        var foregroundType: Int = 0
 
         /** Когда последний раз поднимался веб-сервер, и сколько было мягких перезапусков с начала процесса. */
         @Volatile

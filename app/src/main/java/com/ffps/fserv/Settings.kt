@@ -89,6 +89,25 @@ object Settings {
         save()
     }
 
+    /** Параметры камеры и детектора движения. */
+    class CameraCfg(
+        val intervalMs: Int, val cellThreshold: Int, val areaPercent: Double,
+        val rotation: Int, val keepRunning: Boolean, val resolution: String
+    )
+
+    @Synchronized
+    fun camera(): CameraCfg {
+        val c = o.optJSONObject("camera")
+        return CameraCfg(
+            c?.optInt("intervalMs", 1000) ?: 1000,
+            c?.optInt("cellThreshold", 10) ?: 10,
+            c?.optDouble("areaPercent", 1.0) ?: 1.0,
+            c?.optInt("rotation", -1) ?: -1,
+            c?.optBoolean("keepRunning", false) ?: false,
+            c?.optString("resolution", "640x480") ?: "640x480"
+        )
+    }
+
     /** Общий таймаут сетевых операций, секунд. */
     @get:Synchronized val netTimeoutSec: Int get() = o.optInt("netTimeoutSec", 10).coerceIn(2, 120)
 
@@ -149,6 +168,10 @@ object Settings {
             "chatId" to telegramChatId
         ),
         "netTimeoutSec" to netTimeoutSec,
+        "camera" to camera().let { c ->
+            obj("intervalMs" to c.intervalMs, "cellThreshold" to c.cellThreshold, "areaPercent" to c.areaPercent,
+                "rotation" to c.rotation, "keepRunning" to c.keepRunning, "resolution" to c.resolution)
+        },
         "proxy" to o.optJSONObject("proxy").let { p ->
             obj(
                 "host" to (p?.optString("host") ?: ""),
@@ -203,6 +226,13 @@ object Settings {
         if (patch.has("updateRepo") && !Regex("""[\w.-]+/[\w.-]+""").matches(patch.optString("updateRepo").trim())) {
             errors.add("updateRepo: ожидается владелец/репозиторий")
         }
+        patch.optJSONObject("camera")?.let { c ->
+            if (c.has("intervalMs") && c.optInt("intervalMs", -1) !in 200..60000) errors.add("camera.intervalMs: от 200 до 60000 мс")
+            if (c.has("cellThreshold") && c.optInt("cellThreshold", -1) !in 1..100) errors.add("camera.cellThreshold: от 1 до 100")
+            if (c.has("areaPercent") && (c.optDouble("areaPercent", -1.0) < 0.05 || c.optDouble("areaPercent", -1.0) > 100.0)) errors.add("camera.areaPercent: от 0.05 до 100")
+            if (c.has("rotation") && c.optInt("rotation", -2) !in listOf(-1, 0, 90, 180, 270)) errors.add("camera.rotation: -1 (авто), 0, 90, 180 или 270")
+            if (c.has("resolution") && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString("resolution"))) errors.add("camera.resolution: вида 640x480")
+        }
         if (patch.has("netTimeoutSec") && patch.optInt("netTimeoutSec", -1) !in 2..120) errors.add("netTimeoutSec: число секунд от 2 до 120")
         patch.optJSONObject("proxy")?.let { p ->
             if (p.has("port") && p.optInt("port", -1) !in 1..65535) errors.add("proxy.port: число от 1 до 65535")
@@ -236,6 +266,13 @@ object Settings {
             FLog.addSecret(telegramToken)
         }
         if (patch.has("netTimeoutSec")) o.put("netTimeoutSec", patch.optInt("netTimeoutSec"))
+        patch.optJSONObject("camera")?.let { src ->
+            val dst = o.optJSONObject("camera") ?: JSONObject().also { o.put("camera", it) }
+            for (k in listOf("intervalMs", "cellThreshold", "rotation")) if (src.has(k)) dst.put(k, src.optInt(k))
+            if (src.has("areaPercent")) dst.put("areaPercent", src.optDouble("areaPercent"))
+            if (src.has("keepRunning")) dst.put("keepRunning", src.optBoolean("keepRunning"))
+            if (src.has("resolution")) dst.put("resolution", src.optString("resolution"))
+        }
         patch.optJSONObject("proxy")?.let { src ->
             val dst = o.optJSONObject("proxy") ?: JSONObject().also { o.put("proxy", it) }
             if (src.has("host")) dst.put("host", src.optString("host").trim())

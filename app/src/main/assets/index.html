@@ -72,6 +72,7 @@
   <button data-t="config">Задачи</button>
   <button data-t="settings">Настройки</button>
   <button data-t="comm">Связь</button>
+  <button data-t="camera">Камера</button>
   <button data-t="update">Обновления</button>
   <button data-t="pages">Страницы</button>
   <button data-t="power">Питание</button>
@@ -184,6 +185,48 @@
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
+</section>
+
+<section id="camera">
+  <h2>Камера</h2>
+  <div class="grid" id="camCards"></div>
+  <div class="row">
+    <button class="btn" id="camOn">Включить</button>
+    <button class="btn sec" id="camOff">Выключить</button>
+    <label><input type="checkbox" id="camOverlay" checked> закрашивать изменения красным</label>
+  </div>
+  <div class="msg" id="camMsg"></div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+    <img id="camImg" alt="кадр" style="max-width:100%;width:480px;background:#222;border-radius:8px;min-height:120px">
+    <div style="flex:1;min-width:280px"><canvas id="camChart" width="640" height="200" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></canvas>
+    <p class="hint">Оценка движения: доля ячеек кадра (в процентах), изменившихся с прошлого обработанного кадра. Красная линия: порог площади. Зелёные точки внизу: движение определено.</p></div>
+  </div>
+  <h2 style="margin-top:22px">Параметры детектора</h2>
+  <div class="f">
+    <label for="cmInt">Интервал между кадрами, мс</label><input id="cmInt" type="number" min="200" max="60000">
+    <label for="cmThr">Порог изменения ячейки (1–100)</label><input id="cmThr" type="number" min="1" max="100">
+    <label for="cmArea">Площадь движения, % кадра</label><input id="cmArea" type="number" min="0.05" max="100" step="0.05">
+    <label for="cmRot">Поворот изображения</label>
+    <select id="cmRot"><option value="-1">авто (по сенсору)</option><option value="0">0</option><option value="90">90</option><option value="180">180</option><option value="270">270</option></select>
+    <label for="cmRes">Разрешение кадра</label><input id="cmRes" placeholder="640x480">
+    <label>Держать камеру включённой</label><label><input type="checkbox" id="cmKeep"> пока работает служба (для отладки; нагрев и расход)</label>
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="cmSave">Сохранить</button></div>
+  <div class="msg" id="cmMsg"></div>
+  <h2 style="margin-top:22px">Стресс-тест</h2>
+  <div class="row">
+    <label>Режим <select id="ctMode"><option value="continuous">непрерывно N минут</option><option value="cycles">циклы открыть-кадр-закрыть</option></select></label>
+    <label>Минут <input id="ctMin" type="number" value="10" min="1" max="720" style="width:80px"></label>
+    <label>Циклов <input id="ctCnt" type="number" value="50" min="1" max="2000" style="width:80px"></label>
+    <label>Пауза, с <input id="ctGap" type="number" value="3" min="0" max="600" style="width:70px"></label>
+    <button class="btn" id="ctStart">Запустить</button>
+    <button class="btn danger" id="ctStop">Остановить</button>
+  </div>
+  <div class="msg" id="ctMsg"></div>
+  <p class="hint" id="ctProg"></p>
+  <pre id="ctLog" style="max-height:240px">—</pre>
+  <pre id="ctRes" style="display:none;margin-top:8px"></pre>
+  <p class="hint">Непрерывный режим проверяет устойчивость долгой работы (кадры не должны пропадать, температура и число открытых файлов расти), циклы проверяют открытие и закрытие камеры, как будет делать будильник. Итог пишется в журнал. Во время теста держите устройство на зарядке.</p>
 </section>
 
 <section id="update">
@@ -344,6 +387,67 @@ document.addEventListener("click", e => {
   post("/api/proxy/test?name=" + b.dataset.pt).then(r => say(id, r.json.message, true), er => say(id, er.message, false));
 });
 
+
+// ---- камера ----
+let camTimer = null;
+function drawChart(h, thr) {
+  const c = $("#camChart"), g = c.getContext("2d"), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const max = Math.max(5, thr * 2, ...h.map(x => x.score));
+  g.strokeStyle = "#e2e5ee"; g.lineWidth = 1; g.beginPath(); g.moveTo(0, H - 20); g.lineTo(W, H - 20); g.stroke();
+  const y = v => (H - 24) - (v / max) * (H - 34);
+  g.strokeStyle = "#c62828"; g.setLineDash([6, 4]); g.beginPath(); g.moveTo(0, y(thr)); g.lineTo(W, y(thr)); g.stroke(); g.setLineDash([]);
+  g.fillStyle = "#69708a"; g.font = "12px sans-serif"; g.fillText(max.toFixed(0) + "%", 4, 12); g.fillText("порог " + thr + "%", 4, y(thr) - 4);
+  if (!h.length) return;
+  const dx = W / Math.max(h.length - 1, 1);
+  g.strokeStyle = "#d81b60"; g.lineWidth = 2; g.beginPath();
+  h.forEach((p, i) => { const X = i * dx, Y = y(p.score); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
+  g.fillStyle = "#2e7d32"; h.forEach((p, i) => { if (p.motion) g.fillRect(i * dx - 1, H - 14, 3, 8); });
+}
+async function loadCamera(full) {
+  try {
+    const c = (await api("/api/camera")).json;
+    $("#camCards").innerHTML =
+      card("Состояние", c.state + (c.owners.length ? " (" + c.owners.join(", ") + ")" : "")) +
+      card("Разрешение камеры", c.permission ? "выдано" : "нет: нажмите Allow camera на устройстве") +
+      card("Кадр", (c.size || "—") + (c.sensorOrientation ? ", сенсор " + c.sensorOrientation + "°" : "")) +
+      card("Кадров/с, обработка", c.fps + " к/с, " + c.avgProcessMs + " мс") +
+      card("Оценка движения", c.score + "%" + (c.motion ? " ДВИЖЕНИЕ" : "")) +
+      card("Яркость кадра", c.luma + " из 255") +
+      card("Кадров всего / обработано", c.framesTotal + " / " + c.framesProcessed) +
+      card("Открытий / перезапусков", c.opens + " / " + c.restarts) +
+      card("Первый кадр после открытия", c.firstFrameLatencyMs + " мс") +
+      card("Последнее движение", c.lastMotion ? dt(c.lastMotion) : "не было") +
+      card("Ошибка", c.lastError || "нет");
+    if (c.state === "RUNNING") $("#camImg").src = "/api/camera/snapshot?overlay=" + ($("#camOverlay").checked ? 1 : 0) + "&t=" + Date.now();
+    const h = (await api("/api/camera/history?limit=120")).json;
+    drawChart(h, c.config.areaPercent);
+    if (full) {
+      const k = c.config;
+      $("#cmInt").value = k.intervalMs; $("#cmThr").value = k.cellThreshold; $("#cmArea").value = k.areaPercent;
+      $("#cmRot").value = String(k.rotation); $("#cmRes").value = k.resolution; $("#cmKeep").checked = k.keepRunning;
+    }
+    const t = (await api("/api/camera/test")).json;
+    $("#ctProg").textContent = t.running ? "Идёт тест (" + t.mode + "): " + t.progress : (t.startedAt ? "Тест не идёт. Последний запуск: " + dt(t.startedAt) : "");
+    $("#ctLog").textContent = t.log.length ? t.log.join("\n") : "—";
+    $("#ctRes").style.display = t.result ? "block" : "none"; if (t.result) $("#ctRes").textContent = JSON.stringify(t.result, null, 2);
+  } catch (e) { say("#camMsg", e.message, false); }
+}
+$("#camOn").onclick = () => run("#camMsg", async () => { const r = await post("/api/camera/start"); setTimeout(() => loadCamera(false), 1500); return r.json.message; });
+$("#camOff").onclick = () => run("#camMsg", async () => { const r = await post("/api/camera/stop"); setTimeout(() => loadCamera(false), 800); return r.json.message; });
+$("#cmSave").onclick = () => run("#cmMsg", async () => {
+  const cam = {intervalMs: Number($("#cmInt").value), cellThreshold: Number($("#cmThr").value), areaPercent: Number($("#cmArea").value),
+    rotation: Number($("#cmRot").value), resolution: $("#cmRes").value.trim(), keepRunning: $("#cmKeep").checked};
+  await post("/api/settings", JSON.stringify({camera: cam})); loadCamera(true);
+  return "сохранено (новое разрешение применится при следующем открытии камеры)";
+});
+$("#ctStart").onclick = () => run("#ctMsg", async () => {
+  const q = "mode=" + $("#ctMode").value + "&minutes=" + $("#ctMin").value + "&count=" + $("#ctCnt").value + "&gap=" + $("#ctGap").value;
+  const r = await post("/api/camera/test?" + q); loadCamera(false); return r.json.message;
+});
+$("#ctStop").onclick = () => run("#ctMsg", async () => { const r = await post("/api/camera/test/stop"); return r.json.message; });
+setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
+
 // ---- обновления ----
 let upTimer = null;
 const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
@@ -376,6 +480,7 @@ function onTab() {
   if (current === "config") { loadConfig(); loadHist(); }
   if (current === "settings") loadSettings();
   if (current === "comm") loadComm();
+  if (current === "camera") loadCamera(true);
   if (current === "update") loadUpdate();
   if (current === "pages") loadPage();
   if (current === "power") loadPower();

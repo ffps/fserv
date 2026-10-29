@@ -35,6 +35,7 @@ class SettingsActivity : Activity() {
     private lateinit var pass: EditText
     private lateinit var toggle: Button
     private lateinit var allow: Button
+    private lateinit var allowCam: Button
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -131,6 +132,14 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
+        allowCam = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Allow camera"
+            setOnClickListener { requestPermissions(arrayOf("android.permission.CAMERA"), 2) }
+        }
+        root.addView(allowCam, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+
         val ver = TextView(this).apply {
             text = "fServe ${BuildConfig.VERSION_NAME}"
             setTextColor(Color.GRAY)
@@ -197,6 +206,7 @@ class SettingsActivity : Activity() {
 
     private fun refresh() {
         val st = ServerService.state
+        allowCam.visibility = if (CameraEngine.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()
         status.setTextColor(
@@ -212,6 +222,12 @@ class SettingsActivity : Activity() {
             cornerRadius = dp(28).toFloat()
             setColor(Color.parseColor(if (enabled) "#D32F2F" else "#0F9688"))
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Разрешение камеры выдано: служба переоформляется с типом camera.
+        if (requestCode == 2 && Settings.serviceEnabled && Settings.isConfigured) ServerService.start(this)
     }
 
     override fun onResume() {

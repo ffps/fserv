@@ -97,6 +97,29 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 if (err == null) ok("скачивание и установка запущены") else fail(Response.Status.CONFLICT, err)
             }
 
+            get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
+            post && uri == "/api/camera/start" -> {
+                if (!CameraEngine.hasPermission(ctx)) fail(Response.Status.CONFLICT, "нет разрешения на камеру: на устройстве нажмите Allow camera в окне настроек")
+                else { CameraEngine.start("manual"); Journal.add("camera", "Камера включена вручную"); ok("камера запускается") }
+            }
+            post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); Journal.add("camera", "Камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
+            get && uri == "/api/camera/history" -> json(Response.Status.OK, CameraEngine.historyJson(q(s, "limit")?.toIntOrNull()?.coerceIn(1, 600) ?: 120))
+            get && uri == "/api/camera/snapshot" -> {
+                val jpg = CameraEngine.snapshotJpeg(q(s, "overlay") == "1")
+                if (jpg == null) fail(Response.Status.NOT_FOUND, "кадра пока нет: камера выключена или ещё не дала кадр")
+                else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", java.io.ByteArrayInputStream(jpg), jpg.size.toLong())
+                    .also { it.addHeader("Cache-Control", "no-store") }
+            }
+            get && uri == "/api/camera/test" -> json(Response.Status.OK, CameraTest.status())
+            post && uri == "/api/camera/test" -> {
+                val err = CameraTest.start(
+                    ctx, q(s, "mode") ?: "continuous", q(s, "minutes")?.toIntOrNull() ?: 10,
+                    q(s, "count")?.toIntOrNull() ?: 50, q(s, "gap")?.toIntOrNull() ?: 3
+                )
+                if (err == null) ok("тест запущен") else fail(Response.Status.CONFLICT, err)
+            }
+            post && uri == "/api/camera/test/stop" -> { CameraTest.stop(); ok("остановка запрошена") }
+
             get && uri == "/api/info" -> json(Response.Status.OK, info())
 
             get && uri == "/api/settings" -> json(Response.Status.OK, Settings.publicJson())
@@ -299,12 +322,24 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
+        "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",
+        "POST /api/camera/start" to "включить камеру вручную",
+        "POST /api/camera/stop" to "выключить камеру, включённую вручную",
+        "GET /api/camera/snapshot" to "последний кадр JPEG; ?overlay=1 закрашивает ячейки с движением",
+        "GET /api/camera/history" to "история оценок движения; ?limit=120",
+        "GET /api/camera/test" to "ход и итог стресс-теста камеры",
+        "POST /api/camera/test" to "запустить стресс-тест; ?mode=continuous&minutes=10 или ?mode=cycles&count=50&gap=3",
+        "POST /api/camera/test/stop" to "остановить стресс-тест",
         "POST /api/restart-app" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
         "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
         "GET /" to "веб-интерфейс",
         "GET /default" to "встроенный веб-интерфейс, даже если страница подменена",
         "GET /kiosk" to "страница киоска"
     )
+
+    private fun applyCameraKeep() {
+        if (Settings.camera().keepRunning && CameraEngine.hasPermission(ctx)) CameraEngine.start("keep") else CameraEngine.stop("keep")
+    }
 
     private fun saveSettings(bodyText: String): Response {
         val patch = try {
@@ -317,6 +352,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to r.errors.joinToString("; "), "errors" to arr(r.errors)))
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
+        if (patch.has("camera")) applyCameraKeep()
         Journal.add("settings", "Изменены настройки" + if (patch.has("password")) " (в том числе пароль)" else "")
         if (r.restartRequired) {
             // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
