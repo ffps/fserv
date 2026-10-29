@@ -210,11 +210,24 @@ object Telegram {
         call("sendMessage", obj("chat_id" to Settings.telegramChatId, "text" to text, "disable_web_page_preview" to true))
     }
 
-    /** Проверка связи: getMe и тестовое сообщение напрямую, минуя очередь. Возвращает описание результата. */
+    /**
+     * Проверка связи: тестовое сообщение ставится в обычную очередь и ждёт доставки не дольше таймаута сети.
+     * Если не ушло, остаётся в очереди и будет повторяться, как любое сообщение; тогда бросается IOException с причиной.
+     */
     fun test(): String {
         require(Settings.telegramConfigured) { "не заданы токен бота и chat id" }
-        val me = call("getMe", null).optJSONObject("result")?.optString("username") ?: "?"
-        send("fServe: проверка связи (${android.os.Build.MODEL}, версия ${BuildConfig.VERSION_NAME})")
-        return "бот @$me, тестовое сообщение отправлено"
+        val id = enqueue("fServe: проверка связи (${android.os.Build.MODEL}, версия ${BuildConfig.VERSION_NAME})")
+        val deadline = System.currentTimeMillis() + Settings.netTimeoutSec * 1000L + 3000
+        while (System.currentTimeMillis() < deadline) {
+            val queued = synchronized(lock) { items.any { it.id == id } }
+            if (!queued) return "тестовое сообщение доставлено через очередь"
+            Thread.sleep(300)
+        }
+        val it = synchronized(lock) { items.firstOrNull { x -> x.id == id } }
+            ?: return "тестовое сообщение доставлено через очередь"
+        throw java.io.IOException(
+            "не доставлено, сообщение осталось в очереди и будет отправляться повторно" +
+                (if (it.lastError.isNotEmpty()) ": ${it.lastError}" else " (впереди есть другие сообщения)")
+        )
     }
 }

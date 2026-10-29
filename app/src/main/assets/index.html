@@ -54,6 +54,8 @@
   .cp svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .cp.done { color:var(--good); border-color:var(--good); } .cp.fail { color:var(--bad); border-color:var(--bad); }
   .msg.flash { animation:fl .5s ease-out; } @keyframes fl { from { background:var(--acc-soft); } to { background:transparent; } }
+  .pxu { display:grid; grid-template-columns:max-content max-content 1fr; gap:8px 14px; align-items:center; }
+  .pxu .msg { margin:0; }
   details summary { cursor:pointer; color:var(--dim); }
 </style>
 </head>
@@ -161,7 +163,7 @@
   </div>
   <div class="msg" id="tgMsg"></div>
   <p class="hint" id="tgState"></p>
-  <p class="hint">Тест отправляется напрямую, минуя очередь, поэтому в очереди не появляется. Результат проверки пишется в лог.</p>
+  <p class="hint">Тест ставится в обычную очередь и ждёт доставки до таймаута сети; если не ушёл, остаётся в очереди и повторяется. Результат пишется в лог.</p>
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
   <div class="row" style="margin-top:10px"><button class="btn danger sm" id="obClear">Очистить очередь</button></div>
@@ -171,12 +173,17 @@
     <label for="pxPort">Порт</label><input id="pxPort" type="number" min="1" max="65535" placeholder="1080">
     <label for="pxUser">Логин</label><input id="pxUser" autocomplete="off">
     <label for="pxPass">Пароль</label><input id="pxPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
-    <label>Использовать для</label>
-    <div><label><input type="checkbox" id="pxTg"> Telegram</label> &nbsp; <label><input type="checkbox" id="pxLlm"> LLM</label> &nbsp; <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label></div>
   </div>
-  <div class="row" style="margin-top:14px"><button class="btn" id="pxSave">Сохранить прокси</button><button class="btn sec" id="pxTest">Проверить</button></div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="pxSave">Сохранить прокси</button></div>
   <div class="msg" id="pxMsg"></div>
-  <p class="hint">Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к Telegram, Gemini и GitHub через прокси независимо от галочек; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
+  <h2 style="margin-top:22px">Использовать прокси для</h2>
+  <div class="pxu">
+    <label><input type="checkbox" id="pxTg"> Telegram</label><button class="btn sec sm" data-pt="telegram">Проверить</button><span class="msg" id="pt_telegram"></span>
+    <label><input type="checkbox" id="pxLlm"> LLM</label><button class="btn sec sm" data-pt="llm">Проверить</button><span class="msg" id="pt_llm"></span>
+    <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
+  </div>
+  <div class="msg" id="pxuMsg"></div>
+  <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
 </section>
 
 <section id="update">
@@ -316,18 +323,30 @@ $("#tgSave").onclick = () => run("#tgMsg", async () => {
   if ($("#tgToken").value.trim()) patch.telegramToken = $("#tgToken").value.trim();
   await post("/api/settings", JSON.stringify(patch)); loadComm(); return "сохранено";
 });
-$("#tgTest").onclick = () => run("#tgMsg", async () => { const r = await post("/api/telegram/test"); loadComm(); return r.json.message; });
+$("#tgTest").onclick = () => run("#tgMsg", async () => { say("#tgMsg", "отправляю через очередь…", true); try { return (await post("/api/telegram/test")).json.message; } finally { loadComm(); } });
 $("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/outbox/clear"); loadComm(); return r.json.message; }); };
 $("#pxSave").onclick = () => run("#pxMsg", async () => {
-  const px = {host: $("#pxHost").value.trim(), port: parseInt($("#pxPort").value || "1080", 10), user: $("#pxUser").value,
-    telegram: $("#pxTg").checked, llm: $("#pxLlm").checked, updates: $("#pxUp").checked};
+  const px = {host: $("#pxHost").value.trim(), port: parseInt($("#pxPort").value || "1080", 10), user: $("#pxUser").value};
   if ($("#pxPass").value) px.password = $("#pxPass").value;
   await post("/api/settings", JSON.stringify({proxy: px})); loadComm(); return "сохранено";
 });
-$("#pxTest").onclick = () => run("#pxMsg", async () => { say("#pxMsg", "проверяю…", true); return (await post("/api/proxy/test")).json.message; });
+for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"]]) {
+  $(id).onchange = () => run("#pxuMsg", async () => {
+    try { await post("/api/settings", JSON.stringify({proxy: {[k]: $(id).checked}})); }
+    finally { loadComm(); }
+    return "сохранено";
+  });
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-pt]"); if (!b) return;
+  const id = "#pt_" + b.dataset.pt;
+  say(id, ""); $(id).textContent = "проверяю…";
+  post("/api/proxy/test?name=" + b.dataset.pt).then(r => say(id, r.json.message, true), er => say(id, er.message, false));
+});
 
 // ---- обновления ----
 let upTimer = null;
+const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
 async function loadUpdate() {
   try {
     const u = (await api("/api/update")).json, st = (await api("/api/settings")).json;
@@ -336,14 +355,14 @@ async function loadUpdate() {
     const l = u.latest;
     $("#upCards").innerHTML = card("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
       card("Последняя на GitHub", l ? l.versionName + " (" + l.versionCode + ")" : "ещё не проверялась") +
-      card("Статус", u.state !== "idle" ? u.state + (u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
+      card("Статус", u.state !== "idle" ? (ST[u.state] || u.state) + (u.state === "downloading" && u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
       card("Проверка", u.lastCheck ? dt(u.lastCheck) : "не выполнялась") +
       card("Установка разрешена", u.canInstall ? "да" : "нет (кнопка Allow app updates на устройстве)") +
       (u.lastError ? card("Ошибка", u.lastError) : "");
-    $("#upInstall").disabled = !u.available || u.state !== "idle";
+    $("#upInstall").disabled = !u.available || (u.state !== "idle" && u.state !== "confirm");
     const n = $("#upNotes"); n.style.display = l && l.notes ? "block" : "none"; n.textContent = l ? l.notes : "";
     clearTimeout(upTimer);
-    if (current === "update" && u.state !== "idle") upTimer = setTimeout(loadUpdate, 1500);
+    if (current === "update" && u.state !== "idle" && u.state !== "confirm") upTimer = setTimeout(loadUpdate, 1500);
   } catch (e) { say("#upMsg", e.message, false); }
 }
 $("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName : "обновлений нет"; });

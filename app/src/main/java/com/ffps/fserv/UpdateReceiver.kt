@@ -19,6 +19,7 @@ class UpdateReceiver : BroadcastReceiver() {
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 FLog.i("update", "системе нужно подтверждение установки")
+                Updater.state = "confirm"
                 try {
                     ctx.startActivity(confirm)
                 } catch (e: Exception) {
@@ -26,10 +27,10 @@ class UpdateReceiver : BroadcastReceiver() {
                 }
                 try {
                     val pi = PendingIntent.getActivity(ctx, 77, confirm, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    val n = Notification.Builder(ctx, ServerService.CHANNEL)
+                    val n = Notification.Builder(ctx, ServerService.ALERT_CHANNEL)
                         .setSmallIcon(R.drawable.ic_launcher_foreground)
                         .setContentTitle("fServe: подтвердите обновление")
-                        .setContentText("Нажмите, чтобы установить")
+                        .setContentText("Нажмите, чтобы установить новую версию").setCategory(Notification.CATEGORY_ALARM)
                         .setContentIntent(pi).setAutoCancel(true).build()
                     ctx.getSystemService(NotificationManager::class.java).notify(2, n)
                 } catch (e: Exception) {

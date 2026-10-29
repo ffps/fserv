@@ -54,6 +54,7 @@ class ServerService : Service() {
     private fun goForeground() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "fServe", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(ALERT_CHANNEL, "fServe: требуется действие", NotificationManager.IMPORTANCE_HIGH))
         val n = buildNotification()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -174,6 +175,7 @@ class ServerService : Service() {
 
     companion object {
         const val CHANNEL = "fserv"
+        const val ALERT_CHANNEL = "fserv_alert"
         private const val NOTIF_ID = 1
 
         @Volatile

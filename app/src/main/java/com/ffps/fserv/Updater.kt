@@ -36,6 +36,7 @@ object Updater {
             "lastCheck" to if (lastCheck > 0) Util.iso(lastCheck) else null,
             "lastError" to lastError,
             "state" to state,
+            "confirm" to (state == "confirm"),
             "progress" to obj("bytes" to done, "total" to total),
             "canInstall" to canInstall(ctx)
         )
@@ -104,7 +105,7 @@ object Updater {
 
     /** Скачивает и ставит последнюю версию (фоновый поток). Возвращает текст ошибки, если запуск невозможен. */
     fun installAsync(ctx: Context): String? {
-        if (state != "idle") return "уже выполняется: $state"
+        if (state != "idle" && state != "confirm") return "уже выполняется: $state"
         if (!canInstall(ctx)) return "приложению не разрешена установка обновлений: на устройстве откройте окно настроек fServe и нажмите «Allow app updates»"
         Thread {
             try {
