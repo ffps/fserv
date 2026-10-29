@@ -136,7 +136,17 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        focused = hasFocus
+        handler.removeCallbacks(collapseShade)
         if (hasFocus) hideSystemUi()
+        else if (resumed) handler.postDelayed(collapseShade, 15_000) // шторку или окно над киоском через 15 с убираем
+    }
+
+    private val collapseShade = Runnable {
+        if (resumed && !focused) {
+            FLog.i("kiosk", "над киоском шторка или окно, закрываю")
+            collapsePanels(this)
+        }
     }
 
     private fun hideSystemUi() {
@@ -180,13 +190,38 @@ class MainActivity : Activity() {
         @Volatile
         private var resumed = false
 
+        @Volatile
+        private var focused = false
+
+        /** Закрывает шторку уведомлений. Работает без root, но способ зависит от версии Android. */
+        fun collapsePanels(ctx: android.content.Context): Boolean {
+            try {
+                val sb = ctx.getSystemService("statusbar")
+                if (sb != null) {
+                    val m = try { sb.javaClass.getMethod("collapsePanels") } catch (e: NoSuchMethodException) { sb.javaClass.getMethod("collapse") }
+                    m.invoke(sb)
+                    return true
+                }
+            } catch (e: Throwable) {
+                FLog.d("kiosk", "collapsePanels: ${e.javaClass.simpleName}: ${e.message}")
+            }
+            try {
+                @Suppress("DEPRECATION")
+                ctx.sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                return true
+            } catch (e: Throwable) {
+                FLog.d("kiosk", "CLOSE_SYSTEM_DIALOGS: ${e.message}")
+            }
+            return false
+        }
+
         /**
          * Перечитать киоск-страницу. Результат: VISIBLE — экран киоска на виду; BACKGROUND — экран создан,
          * но закрыт другим приложением (страница всё равно перечитана); NONE — экрана нет (система его закрыла
          * или он не открывался), перечитывать нечего.
          */
         /** Киоск сейчас на экране. */
-        fun isVisible(): Boolean = current != null && resumed
+        fun isVisible(): Boolean = current != null && resumed && focused
 
         /**
          * Выводит киоск на передний план из фона. Android 10+ разрешает это только приложениям с правом
@@ -194,6 +229,7 @@ class MainActivity : Activity() {
          */
         fun show(ctx: android.content.Context): String? {
             if (!Settings.isConfigured) return "пароль не задан"
+            if (current != null && resumed && !focused) collapsePanels(ctx) // киоск открыт, но закрыт шторкой
             return try {
                 ctx.startActivity(
                     Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -208,7 +244,7 @@ class MainActivity : Activity() {
         fun reloadKiosk(): KioskState {
             val a = current ?: return KioskState.NONE
             a.runOnUiThread { a.loadKiosk(true) }
-            return if (resumed) KioskState.VISIBLE else KioskState.BACKGROUND
+            return if (resumed && focused) KioskState.VISIBLE else KioskState.BACKGROUND
         }
     }
 }

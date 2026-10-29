@@ -159,7 +159,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/kiosk/reload" -> when (MainActivity.reloadKiosk()) {
                 KioskState.VISIBLE -> ok("киоск перезагружен, он сейчас на экране устройства")
                 KioskState.BACKGROUND ->
-                    ok("киоск перезагружен, но на экране устройства сейчас другое приложение")
+                    ok("киоск перезагружен, но он закрыт другим окном (шторка, другое приложение): нажмите «Показать киоск на экране»")
                 KioskState.NONE ->
                     fail(Response.Status.NOT_FOUND, "экран киоска не создан: откройте его на устройстве кнопкой Open kiosk")
             }
