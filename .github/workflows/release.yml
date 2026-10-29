@@ -119,6 +119,23 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Lint (API-level problems)
+        shell: bash
+        continue-on-error: true
+        run: |
+          ./gradlew --no-daemon :app:lintRelease -PappVersionName=${{ steps.ver.outputs.version }} -PappVersionCode=${{ steps.ver.outputs.code }} > lint.log 2>&1 || true
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          n = 0
+          for f in glob.glob('app/build/reports/lint-results*.xml'):
+              for i in ET.parse(f).getroot().iter('issue'):
+                  loc = i.find('location')
+                  where = (loc.get('file', '').split('com/ffps/fserv/')[-1] + ':' + loc.get('line', '')) if loc is not None else ''
+                  print(f"::warning title=Lint {i.get('id')} ({where})::{i.get('message')}")
+                  n += 1
+          print(f"lint issues: {n}")
+          PY
+
       - name: Name, verify and describe APK
         id: apk
         shell: bash

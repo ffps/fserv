@@ -47,7 +47,7 @@ android {
     }
     kotlinOptions { jvmTarget = '17' }
 
-    lint { abortOnError false; checkReleaseBuilds false }
+    lint { abortOnError false; checkReleaseBuilds false; checkOnly 'NewApi', 'InlinedApi'; xmlReport true; htmlReport false }
 }
 
 dependencies {

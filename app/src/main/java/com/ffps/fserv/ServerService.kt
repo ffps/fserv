@@ -142,7 +142,11 @@ class ServerService : Service() {
         }
         if (wifi == null) {
             wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "fserv:wifi").apply {
+                .createWifiLock(
+                    // LOW_LATENCY появился только в Android 10; на Android 8–9 такой режим вызывает исключение
+                    if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "fserv:wifi"
+                ).apply {
                     setReferenceCounted(false)
                     acquire()
                 }

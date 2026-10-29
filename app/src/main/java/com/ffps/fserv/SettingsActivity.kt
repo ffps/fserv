@@ -36,6 +36,8 @@ class SettingsActivity : Activity() {
     private lateinit var toggle: Button
     private lateinit var allow: Button
     private lateinit var allowCam: Button
+    private lateinit var crash: TextView
+    private lateinit var crashBtn: Button
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -140,6 +142,22 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
+        crash = TextView(this).apply {
+            setTextColor(Color.parseColor("#C62828"))
+            textSize = 11f
+            setTextIsSelectable(true)
+            visibility = android.view.View.GONE
+        }
+        root.addView(crash, full(top = 12))
+        crashBtn = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Clear crash report"
+            visibility = android.view.View.GONE
+            setOnClickListener { App.clearCrash(this@SettingsActivity); refresh() }
+        }
+        root.addView(crashBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+
         val ver = TextView(this).apply {
             text = "fServe ${BuildConfig.VERSION_NAME}"
             setTextColor(Color.GRAY)
@@ -206,6 +224,10 @@ class SettingsActivity : Activity() {
 
     private fun refresh() {
         val st = ServerService.state
+        val ct = App.crashText(this)
+        crash.text = if (ct.isEmpty()) "" else "Last crash:\n" + ct.take(3000)
+        crash.visibility = if (ct.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+        crashBtn.visibility = crash.visibility
         allowCam.visibility = if (CameraEngine.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()

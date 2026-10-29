@@ -215,6 +215,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             "time" to Util.iso(),
             "uptimeSeconds" to (System.currentTimeMillis() - App.startedAt) / 1000,
             "battery" to Util.battery(ctx),
+            "lastCrash" to App.crashText(ctx).ifEmpty { null },
             "checks" to obj(
                 "web" to true,
                 "service" to ServerService.state.name.lowercase(),
