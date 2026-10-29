@@ -56,6 +56,67 @@ object TaskStore {
         return head
     }
 
+    /**
+     * Сохраняет одну задачу: [originalId] пуст для новой, иначе заменяет задачу с этим id (можно переименовать).
+     * Проверяется весь конфиг; при ошибке ничего не меняется. Возвращает текст ошибки или null.
+     */
+    /** Android экранирует «/» как «\/»; в cron это некрасиво, поэтому возвращаем обычную косую черту. */
+    private fun pretty(root: JSONObject): String = root.toString(2).replace("\\/", "/") + "\n"
+
+    @Synchronized
+    fun saveTask(taskText: String, originalId: String): String? {
+        val task = try { JSONObject(taskText) } catch (e: JSONException) { return "задача: " + explain(taskText, e) }
+        val id = task.optString("id")
+        if (id.isBlank()) return "в задаче нужно поле id"
+        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
+        val old = root.optJSONArray("tasks") ?: JSONArray()
+        val out = JSONArray()
+        var placed = false
+        for (i in 0 until old.length()) {
+            val t = old.optJSONObject(i)
+            if (t == null) { out.put(old.opt(i)); continue }
+            val tid = t.optString("id")
+            if (originalId.isNotEmpty() && tid == originalId) { out.put(task); placed = true }
+            else {
+                if (tid == id) return "задача с id «$id» уже есть"
+                out.put(t)
+            }
+        }
+        if (!placed) {
+            if (originalId.isNotEmpty()) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
+            out.put(task)
+        }
+        root.put("tasks", out)
+        return save(pretty(root))
+    }
+
+    @Synchronized
+    fun deleteTask(id: String): String? {
+        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
+        val old = root.optJSONArray("tasks") ?: JSONArray()
+        val out = JSONArray()
+        var found = false
+        for (i in 0 until old.length()) {
+            val t = old.optJSONObject(i)
+            if (t != null && t.optString("id") == id) { found = true; continue }
+            out.put(old.opt(i))
+        }
+        if (!found) return "задачи «$id» нет"
+        root.put("tasks", out)
+        return save(pretty(root))
+    }
+
+    /** Заменяет общие разделы voice и zones (отсутствующий в запросе раздел не трогается; null или {} убирает его). */
+    @Synchronized
+    fun saveGlobal(patch: JSONObject): String? {
+        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
+        for (k in listOf("voice", "zones")) if (patch.has(k)) {
+            val v = patch.opt(k)
+            if (v is JSONObject && v.length() > 0) root.put(k, v) else root.remove(k)
+        }
+        return save(pretty(root))
+    }
+
     /** null = сохранено; иначе текст ошибки (файл не изменён). */
     @Synchronized
     fun save(text: String): String? {

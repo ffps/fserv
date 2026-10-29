@@ -183,6 +183,17 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
 
             get && uri == "/api/config" -> text(Response.Status.OK, "application/json", TaskStore.read())
             post && uri == "/api/config" -> saveConfig(body(s))
+            post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", body(s))
+            post && uri == "/api/tasks/delete" -> {
+                val id = q(s, "id") ?: ""
+                val err = TaskStore.deleteTask(id)
+                if (err == null) { Journal.add("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
+            }
+            post && uri == "/api/config/global" -> {
+                val patch = try { JSONObject(body(s)) } catch (e: JSONException) { return fail(Response.Status.BAD_REQUEST, "тело запроса не JSON") }
+                val err = TaskStore.saveGlobal(patch)
+                if (err == null) { Journal.add("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
+            }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
             post && uri == "/api/config/restore" -> restoreConfig(q(s, "name") ?: "")
 
@@ -374,6 +385,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/journal" to "журнал событий, новые первыми; ?limit=100",
         "POST /api/journal/clear" to "очистить журнал",
         "GET /api/config" to "JSON-конфиг задач как текст",
+        "POST /api/tasks/save" to "сохранить одну задачу (тело: JSON задачи); ?id=прежний_id, пусто для новой",
+        "POST /api/tasks/delete" to "удалить задачу; ?id=",
+        "POST /api/config/global" to "сохранить общие разделы voice и zones (тело: {\"voice\": {...}, \"zones\": {...}})",
         "POST /api/config" to "сохранить конфиг задач (тело: JSON-текст), с проверкой и историей версий",
         "GET /api/config/history" to "сохранённые версии конфига",
         "POST /api/config/restore" to "восстановить версию конфига; ?name=файл",
@@ -458,6 +472,15 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         val r = text(Response.Status.OK, "text/plain", sb.toString())
         r.addHeader("Content-Disposition", "attachment; filename=\"fserv-log.txt\"")
         return r
+    }
+
+    private fun saveTaskReq(originalId: String, bodyText: String): Response {
+        val err = TaskStore.saveTask(bodyText, originalId)
+        if (err != null) return fail(Response.Status.BAD_REQUEST, err)
+        val id = try { JSONObject(bodyText).optString("id") } catch (e: Exception) { "" }
+        FLog.i("web", "задача «$id» сохранена")
+        Journal.add("config", if (originalId.isEmpty()) "Добавлена задача «$id»" else "Изменена задача «$id»")
+        return ok("задача сохранена")
     }
 
     private fun saveConfig(bodyText: String): Response {

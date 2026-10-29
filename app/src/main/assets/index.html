@@ -119,26 +119,53 @@
 </section>
 
 <section id="config">
-  <h2>Задачи</h2>
-  <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th><th></th></tr></thead><tbody id="tkBody"></tbody></table>
-  <div class="row" style="margin-top:10px">
-    <label>Пробный запуск: результаты watch <input id="tkAssume" placeholder="moved:true" style="width:160px"></label>
+  <h2>Общие настройки задач</h2>
+  <div class="f">
+    <label for="gVol">Громкость по умолчанию, %</label><input id="gVol" type="number" min="0" max="100" placeholder="не задана">
+    <label for="gLang">Язык голоса</label><input id="gLang" placeholder="ru-RU">
+    <label for="gVoice">Голос</label><select id="gVoice"><option value="">по умолчанию</option></select>
+    <label for="gRate">Скорость речи (1 = обычная)</label><input id="gRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
+    <label for="gPitch">Тон голоса (1 = обычный)</label><input id="gPitch" type="number" step="0.05" min="0.3" max="2" placeholder="1">
+  </div>
+  <details style="margin-top:10px"><summary>Зоны детектора движения (JSON)</summary>
+    <textarea id="gZones" rows="6" spellcheck="false" placeholder='{"bed": {"rect": [0.1, 0.2, 0.9, 0.9], "exclude": [[0, 0, 0.2, 0.2]]}}'></textarea>
+    <p class="hint">Прямоугольники в долях кадра от 0 до 1: <code>[x1, y1, x2, y2]</code>. Зона подключается в шаге watch полем <code>"zone": "bed"</code>.</p>
+  </details>
+  <div class="row" style="margin-top:12px"><button class="btn" id="gSave">Сохранить общие настройки</button></div>
+  <div class="msg" id="gMsg"></div>
+
+  <h2 style="margin-top:26px">Задачи</h2>
+  <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th></tr></thead><tbody id="tkBody"></tbody></table>
+
+  <div class="row" style="margin-top:16px">
+    <label>Редактировать <select id="tkSel" style="min-width:240px"></select></label>
+    <button class="btn sec" id="tkAdd">Добавить задачу</button>
+    <button class="btn sec" id="tkExample">Добавить пример (будильник)</button>
+    <button class="btn danger" id="tkDel">Удалить выбранную</button>
+  </div>
+  <textarea id="tkText" rows="22" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" id="tkSave">Сохранить задачу</button>
+    <button class="btn" id="tkRun">Запустить</button>
+    <button class="btn sec" id="tkDry">Пробный запуск</button>
+    <label>результаты watch <input id="tkAssume" placeholder="moved:true" style="width:150px"></label>
   </div>
   <div class="msg" id="tkMsg"></div>
-  <p class="hint" id="tkRun"></p>
+  <p class="hint" id="tkRunInfo"></p>
   <pre id="tkLog" style="max-height:300px">—</pre>
-  <p class="hint">Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем выше (например, moved:true), по умолчанию «движения нет».</p>
-  <h2 style="margin-top:22px">Конфиг задач (JSON)</h2>
-  <textarea id="cfgText" rows="22" spellcheck="false"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button class="btn" id="cfgSave">Сохранить</button>
-    <button class="btn sec" id="cfgReload">Перечитать</button>
-    <label>Версии <select id="cfgHist"></select></label>
-    <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
-    <button class="btn sec" id="cfgExample">Вставить пример</button>
-  </div>
-  <div class="msg" id="cfgMsg"></div>
-  <p class="hint">Перед каждым сохранением предыдущая версия попадает в историю (последние 20). Структура проверяется целиком: опечатки в полях, расписания, длительности, условия, имена файлов и зон. Длительности: <code>"30s"</code>, <code>"5m"</code>, <code>"1h30m"</code>, число = секунды, диапазон <code>"30s..2m"</code> даёт случайное значение (заново при каждом использовании).</p>
+  <p class="hint">Запускать можно только сохранённую задачу. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Длительности: <code>"30s"</code>, <code>"5m"</code>, <code>"1h30m"</code>, число = секунды, диапазон <code>"30s..2m"</code> даёт случайное значение (заново при каждом использовании). Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
+
+  <details style="margin-top:22px"><summary>Весь конфиг одним текстом и история версий</summary>
+    <textarea id="cfgText" rows="22" spellcheck="false" style="margin-top:8px"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="cfgSave">Сохранить весь конфиг</button>
+      <button class="btn sec" id="cfgReload">Перечитать</button>
+      <label>Версии <select id="cfgHist"></select></label>
+      <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
+    </div>
+    <div class="msg" id="cfgMsg"></div>
+    <p class="hint">Перед каждым сохранением (в том числе одной задачи) предыдущая версия попадает в историю, последние 20.</p>
+  </details>
 </section>
 
 <section id="sound">
@@ -158,9 +185,10 @@
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
     <button class="btn" id="sdUpload">Загрузить</button>
     <label>Громкость <input id="sdVol" type="number" min="0" max="100" value="80" style="width:70px"></label>
-    <button class="btn sec" id="sdSys">Системный сигнал</button>
   </div>
   <div class="msg" id="sdMsg"></div>
+  <h2 style="margin-top:22px">Системные сигналы</h2>
+  <table><thead><tr><th>Сигнал</th><th>Имя в задаче</th><th></th></tr></thead><tbody id="ssBody"></tbody></table>
   <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>{"play": "alarm.mp3", "volume": 80, "fade_in": "5s", "fade_out": "3s"}</code>; список имён <code>["a.mp3", "b.mp3"]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
 </section>
 
@@ -540,7 +568,7 @@ function onTab() {
   if (current === "status") loadStatus();
   if (current === "logs") loadLogs();
   if (current === "journal") loadJournal();
-  if (current === "config") { loadConfig(); loadHist(); loadTasks(); }
+  if (current === "config") { loadTasksEditor(true).then(loadTasks); loadConfig(); loadHist(); }
   if (current === "sound") loadSound();
   if (current === "settings") loadSettings();
   if (current === "comm") loadComm();
@@ -616,47 +644,130 @@ $("#cfgReload").onclick = loadConfig;
 $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); await loadConfig(); loadHist(); return "восстановлено"; }); };
 
 
-// ---- задачи: список, запуск, ход выполнения ----
-let tkTimer = null;
-const EXAMPLE = {
-  version: 1,
-  voice: {lang: "ru-RU", rate: 0.95, volume: 80},
-  tasks: [{
-    id: "wakeup", title: "Подъём", enabled: true, cron: "0 9 * * *", late_ok: "0", timeout: "60m",
-    steps: [
-      {repeat: {times: 6, every: "5m", until: "moved"}, do: [
-        {watch: {motion: true, for: "60s", poll: "5s", save_as: "moved"}},
-        {if: "not moved", then: [{play: "system:alarm", volume: 80, fade_in: "5s", fade_out: "2s", for: "20s"}, {say: "Доброе утро! Пора вставать."}]}
-      ]},
-      {if: "moved",
-       then: [{say: "Доброе утро! Не забудьте измерить давление и принять таблетки."}, {telegram: "Встала в {time}"}],
-       else: [{telegram: "К {time} движения нет, не вставала"}]}
-    ]
-  }]
+// ---- задачи: общие настройки, список, редактор одной задачи ----
+const EXAMPLE_TASK = {
+  id: "wakeup", title: "Подъём", enabled: true, cron: "0 9 * * *", late_ok: "0", timeout: "60m",
+  steps: [
+    {repeat: {times: 6, every: "5m", until: "moved"}, do: [
+      {watch: {motion: true, for: "60s", poll: "5s", save_as: "moved"}},
+      {if: "not moved", then: [{play: "system:alarm", volume: 80, fade_in: "5s", fade_out: "2s", for: "20s"}, {say: "Доброе утро! Пора вставать."}]}
+    ]},
+    {if: "moved",
+     then: [{say: "Доброе утро! Не забудьте измерить давление и принять таблетки."}, {telegram: "Встала в {time}"}],
+     else: [{telegram: "К {time} движения нет, не вставала"}]}
+  ]
 };
-$("#cfgExample").onclick = () => { if (!$("#cfgText").value.trim() || confirm("Заменить текст в редакторе примером? Сохранение отдельное.")) $("#cfgText").value = JSON.stringify(EXAMPLE, null, 2) + "\n"; };
+let cfgObj = {tasks: []};     // последняя прочитанная конфигурация
+let tkOrig = "";               // id редактируемой задачи на сервере ("" = новая, ещё не сохранена)
+let tkShown = "";              // текст, с которого начато редактирование (для проверки изменений)
+const num = v => (v === "" || v == null) ? undefined : Number(v);
+
+async function loadGlobal() {
+  const text = (await api("/api/config")).text;
+  cfgObj = JSON.parse(text);
+  const v = cfgObj.voice || {};
+  $("#gVol").value = v.volume ?? ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
+  $("#gZones").value = cfgObj.zones && Object.keys(cfgObj.zones).length ? JSON.stringify(cfgObj.zones, null, 2) : "";
+  try {
+    const vi = (await api("/api/voice")).json;
+    const names = (vi.voices || []).map(x => x.name); if (v.voice && !names.includes(v.voice)) names.unshift(v.voice);
+    $("#gVoice").innerHTML = '<option value="">по умолчанию</option>' + names.map(n => "<option>" + esc(n) + "</option>").join("");
+  } catch (e) {}
+  $("#gVoice").value = v.voice || "";
+}
+$("#gSave").onclick = () => run("#gMsg", async () => {
+  const voice = {};
+  if ($("#gVol").value !== "") voice.volume = Number($("#gVol").value);
+  if ($("#gLang").value.trim()) voice.lang = $("#gLang").value.trim();
+  if ($("#gVoice").value) voice.voice = $("#gVoice").value;
+  if ($("#gRate").value !== "") voice.rate = Number($("#gRate").value);
+  if ($("#gPitch").value !== "") voice.pitch = Number($("#gPitch").value);
+  let zones = {}; const zt = $("#gZones").value.trim();
+  if (zt) { try { zones = JSON.parse(zt); } catch (e) { throw new Error("зоны: " + e.message); } }
+  await post("/api/config/global", JSON.stringify({voice: voice, zones: zones}));
+  await loadGlobal(); return "сохранено";
+});
+
+function fillSelect(selectId) {
+  const sel = $("#tkSel"), ts = cfgObj.tasks || [];
+  sel.innerHTML = ts.map(t => '<option value="' + esc(t.id) + '">' + esc((t.title ? t.title + " · " : "") + t.id) + (t.enabled === false ? " (выкл.)" : "") + "</option>").join("") +
+    (tkOrig === "" ? '<option value="">(новая задача, не сохранена)</option>' : "");
+  sel.value = tkOrig;
+  if (sel.value !== tkOrig) sel.selectedIndex = Math.max(0, sel.options.length - 1);
+}
+function showTask(task, orig) {
+  tkOrig = orig; tkShown = JSON.stringify(task, null, 2);
+  $("#tkText").value = tkShown;
+  fillSelect();
+  const has = !!orig; $("#tkRun").disabled = !has; $("#tkDry").disabled = !has;
+}
+function tkDirty() { return $("#tkText").value !== tkShown; }
+async function loadTasksEditor(keep) {
+  await loadGlobal();
+  const ts = cfgObj.tasks || [];
+  const want = keep && ts.find(t => t.id === tkOrig) ? tkOrig : (ts[0] ? ts[0].id : "");
+  const t = ts.find(x => x.id === want);
+  if (t) showTask(t, t.id); else showTask({id: "", title: "", enabled: false, cron: "0 9 * * *", steps: []}, "");
+}
+$("#tkSel").onchange = () => {
+  const id = $("#tkSel").value;
+  if (tkDirty() && !confirm("В редакторе есть несохранённые изменения. Открыть другую задачу?")) { fillSelect(); return; }
+  const t = (cfgObj.tasks || []).find(x => x.id === id);
+  if (t) showTask(t, t.id);
+};
+function newId() { let n = 1; const ids = (cfgObj.tasks || []).map(t => t.id); while (ids.includes("task" + n)) n++; return "task" + n; }
+$("#tkAdd").onclick = () => {
+  if (tkDirty() && !confirm("Есть несохранённые изменения. Начать новую задачу?")) return;
+  showTask({id: newId(), title: "Новая задача", enabled: false, cron: "0 9 * * *", timeout: "30m", steps: [{log: "привет из {task}"}]}, "");
+  say("#tkMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
+};
+$("#tkExample").onclick = () => {
+  if (tkDirty() && !confirm("Есть несохранённые изменения. Начать новую задачу?")) return;
+  const t = JSON.parse(JSON.stringify(EXAMPLE_TASK)); if ((cfgObj.tasks || []).some(x => x.id === t.id)) t.id = newId();
+  showTask(t, "");
+  say("#tkMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
+};
+$("#tkSave").onclick = () => run("#tkMsg", async () => {
+  let t; try { t = JSON.parse($("#tkText").value); } catch (e) { throw new Error("это не JSON: " + e.message); }
+  await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig), $("#tkText").value);
+  tkOrig = t.id; await loadTasksEditor(true); loadTasks(); return "задача «" + t.id + "» сохранена";
+});
+$("#tkDel").onclick = () => {
+  if (!tkOrig) { loadTasksEditor(false); return; }
+  if (confirm("Удалить задачу «" + tkOrig + "»?")) run("#tkMsg", async () => { await post("/api/tasks/delete?id=" + encodeURIComponent(tkOrig)); tkOrig = ""; await loadTasksEditor(false); loadTasks(); return "задача удалена"; });
+};
+
+let tkTimer = null, tkRunning = false;
+function setRunBtn(on) { tkRunning = on; const b = $("#tkRun"); b.textContent = on ? "Остановить" : "Запустить"; b.className = on ? "btn danger" : "btn"; }
 async function loadTasks() {
   try {
     const t = (await api("/api/tasks")).json;
     $("#tkBody").innerHTML = t.tasks.length ? t.tasks.map(x => {
       const st = x.running ? "выполняется" : x.queued ? "в очереди" : x.enabled ? "ждёт" : "выключена";
-      return "<tr><td>" + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + "</div></td><td>" + esc(x.cron || "только вручную") + "</td><td>" + esc(x.next ? dt(x.next) : "") + "</td><td>" + st + "</td><td>" +
-        '<button class="btn sm ' + (x.running ? "danger" : "") + '" data-tk="' + esc(x.id) + '" data-act="' + (x.running ? "stop" : "run") + '">' + (x.running ? "Остановить" : "Запустить") + "</button> " +
-        '<button class="btn sm sec" data-tk="' + esc(x.id) + '" data-act="dry">Пробный</button></td></tr>';
-    }).join("") : '<tr><td colspan="5" style="color:var(--dim)">задач нет (кнопка «Вставить пример» ниже)</td></tr>';
-    const r = t.runs[0];
-    $("#tkRun").textContent = r ? "Последний запуск: «" + r.title + "» " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : (t.configOk ? "Запусков ещё не было." : "tasks.json не читается");
-    $("#tkLog").textContent = r && r.lines ? r.lines.join("\n") : "—";
+      return '<tr style="cursor:pointer" data-pick="' + esc(x.id) + '"><td>' + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + "</div></td><td>" + esc(x.cron || "только вручную") + "</td><td>" + esc(x.next ? dt(x.next) : "") + "</td><td>" + st + "</td></tr>";
+    }).join("") : '<tr><td colspan="4" style="color:var(--dim)">задач нет: добавьте внизу</td></tr>';
+    const mine = tkOrig ? t.tasks.find(x => x.id === tkOrig) : null;
+    setRunBtn(!!(mine && mine.running));
+    const runs = t.runs.filter(r => !tkOrig || r.task === tkOrig), r = runs[0];
+    const full = t.runs[0] && t.runs[0].task === tkOrig ? t.runs[0] : null;
+    $("#tkRunInfo").textContent = r ? "Последний запуск: " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : (t.configOk ? "У этой задачи запусков ещё не было." : "tasks.json не читается");
+    $("#tkLog").textContent = full && full.lines ? full.lines.join("\n") : (r ? "(подробный ход виден только у самого последнего запуска среди всех задач)" : "—");
   } catch (e) { say("#tkMsg", e.message, false); }
 }
 document.addEventListener("click", e => {
-  const b = e.target.closest("[data-tk]"); if (!b) return;
-  const id = encodeURIComponent(b.dataset.tk), act = b.dataset.act;
-  run("#tkMsg", async () => {
-    if (act === "stop") { const r = await post("/api/tasks/stop"); loadTasks(); return r.json.message; }
-    const a = act === "dry" ? "&dry=1&assume=" + encodeURIComponent($("#tkAssume").value.trim()) : "";
-    const r = await post("/api/tasks/run?id=" + id + a); setTimeout(loadTasks, 400); return r.json.message;
-  });
+  const r = e.target.closest("[data-pick]"); if (!r) return;
+  const t = (cfgObj.tasks || []).find(x => x.id === r.dataset.pick); if (!t) return;
+  if (tkDirty() && !confirm("Есть несохранённые изменения. Открыть другую задачу?")) return;
+  showTask(t, t.id); loadTasks();
+});
+$("#tkRun").onclick = () => run("#tkMsg", async () => {
+  if (tkRunning) { const r = await post("/api/tasks/stop"); loadTasks(); return r.json.message; }
+  if (tkDirty()) throw new Error("есть несохранённые изменения: сначала сохраните задачу, запускается сохранённая версия");
+  const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig)); setTimeout(loadTasks, 400); return r.json.message;
+});
+$("#tkDry").onclick = () => run("#tkMsg", async () => {
+  if (tkDirty()) throw new Error("есть несохранённые изменения: сначала сохраните задачу");
+  const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig) + "&dry=1&assume=" + encodeURIComponent($("#tkAssume").value.trim())); setTimeout(loadTasks, 400); return r.json.message;
 });
 setInterval(() => { if (current === "config") loadTasks(); }, 1500);
 
@@ -670,7 +781,12 @@ async function loadSound() {
   loadSoundFiles();
 }
 let playing = null;
+const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
+function renderSys() {
+  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td>" + t + "</td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
+}
 async function loadSoundFiles() {
+  renderSys();
   try {
     const d = (await api("/api/sounds")).json;
     $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td>" + esc(f.name) + "</td><td>" + (f.size / 1048576).toFixed(2) + " МБ</td><td>" + (f.durationMs ? fmtDur(f.durationMs / 1000) + " (" + Math.round(f.durationMs / 1000) + " с)" : "?") + "</td><td>" +
@@ -685,10 +801,6 @@ document.addEventListener("click", e => {
     if (playing === n) { await post("/api/sounds/stop"); playing = null; loadSoundFiles(); return "остановлено"; }
     await post("/api/sounds/play?name=" + encodeURIComponent(n) + "&volume=" + $("#sdVol").value); playing = n; loadSoundFiles(); return "играет " + n;
   });
-});
-$("#sdSys").onclick = () => run("#sdMsg", async () => {
-  if (playing === "system:alarm") { await post("/api/sounds/stop"); playing = null; return "остановлено"; }
-  await post("/api/sounds/play?name=system:alarm&volume=" + $("#sdVol").value); playing = "system:alarm"; return "играет системный сигнал";
 });
 $("#sdUpload").onclick = () => run("#sdMsg", async () => {
   const files = $("#sdFile").files; if (!files.length) throw new Error("выберите файлы");
