@@ -8,8 +8,8 @@ import java.io.InputStream
 
 /** Звуковые файлы (mp3 и другие), загруженные через веб-интерфейс. Лежат во внутренней папке приложения. */
 object Sounds {
-    private const val MAX_FILE = 30L * 1024 * 1024
-    private const val MAX_TOTAL = 200L * 1024 * 1024
+    const val MAX_FILE = 30L * 1024 * 1024
+    const val MAX_TOTAL = 200L * 1024 * 1024
     private val NAME = Regex("""[\p{L}0-9 _.()\-]{1,60}\.(mp3|wav|ogg|m4a|aac|flac)""", RegexOption.IGNORE_CASE)
 
     private lateinit var dir: File
@@ -82,4 +82,12 @@ object Sounds {
     }
 
     fun delete(name: String): Boolean = file(name).delete()
+
+    @Synchronized
+    fun clearAll() {
+        dir.listFiles()?.forEach { it.delete() }
+        durations.clear()
+    }
+
+    fun names(): List<String> = dir.listFiles()?.filter { it.isFile && NAME.matches(it.name) }?.map { it.name }?.sorted() ?: emptyList()
 }

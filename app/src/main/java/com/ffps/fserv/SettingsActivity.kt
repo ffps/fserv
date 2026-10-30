@@ -61,10 +61,8 @@ class SettingsActivity : Activity() {
         }
 
         status = TextView(this).apply {
-            textSize = 18f
+            textSize = 14f
             setTextColor(Color.GRAY)
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
         }
         root.addView(status, full())
 

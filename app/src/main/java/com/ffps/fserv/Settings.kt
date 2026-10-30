@@ -51,6 +51,36 @@ object Settings {
         }
     }
 
+    /**
+     * Восстановление из резервной копии: настройки из копии заменяют текущие, кроме состояния службы,
+     * версии схемы и отметок последнего срабатывания расписаний (иначе после перезапуска расписание сработает повторно).
+     */
+    @Synchronized
+    fun replaceAll(n: JSONObject) {
+        for (k in listOf("serviceEnabled", "schema", "lastFired")) {
+            if (o.has(k)) n.put(k, o.get(k)) else n.remove(k)
+        }
+        n.put("schema", 2)
+        o = n
+        save()
+    }
+
+    /**
+     * Сброс к исходным: остаются только то, без чего администратор потеряет доступ к устройству
+     * (пароль, порт, автозапуск, состояние службы) и служебные отметки расписаний.
+     */
+    @Synchronized
+    fun resetUser() {
+        val n = JSONObject()
+        for (k in listOf("password", "webPort", "autostart", "serviceEnabled", "schema", "lastFired")) if (o.has(k)) n.put(k, o.get(k))
+        o = n
+        save()
+    }
+
+    /** Содержимое настроек для резервной копии. */
+    @Synchronized
+    fun exportJson(): JSONObject = JSONObject(o.toString())
+
     private fun save() {
         val tmp = File(file.parentFile, "settings.json.tmp")
         tmp.writeText(o.toString(2))

@@ -33,7 +33,9 @@ object Telegram {
     private val lock = Object()
     private val items = ArrayList<Item>()
     private var thread: Thread? = null
-    private val tf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    @Volatile private var running = false
+    private var loopFails = 0
+    private val tf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
     @Volatile var lastError = ""
     @Volatile var lastSentAt = 0L
@@ -70,12 +72,14 @@ object Telegram {
 
     @Synchronized
     fun start() {
-        if (thread?.isAlive == true) return
+        if (thread?.isAlive == true && running) return
+        running = true
         thread = Thread({ loop() }, "telegram-outbox").also { it.isDaemon = true; it.start() }
     }
 
     @Synchronized
     fun stop() {
+        running = false
         thread?.interrupt()
         thread = null
     }
@@ -124,14 +128,17 @@ object Telegram {
     )
 
     private fun loop() {
-        while (!Thread.currentThread().isInterrupted) {
+        while (running && !Thread.currentThread().isInterrupted) {
             try {
                 step()
+                loopFails = 0
             } catch (e: InterruptedException) {
                 return
             } catch (e: Throwable) {
-                FLog.e("telegram", "сбой цикла отправки", e)
-                try { Thread.sleep(5000) } catch (ie: InterruptedException) { return }
+                // Неизвестный сбой не должен превращаться в быстрый цикл повторов: пауза растёт до 5 минут.
+                loopFails++
+                FLog.e("telegram", "сбой цикла отправки (подряд $loopFails)", e)
+                try { Thread.sleep(BACKOFF[minOf(loopFails - 1, BACKOFF.size - 1)]) } catch (ie: InterruptedException) { return }
             }
         }
     }
@@ -156,9 +163,8 @@ object Telegram {
             return
         }
         val delayed = System.currentTimeMillis() - m.createdAt
-        val text = if (delayed > DELAY_NOTE_MS)
-            m.text + "\n\n(событие: ${tf.format(Date(m.createdAt))}, отправлено с задержкой ${delayed / 60000} мин)"
-        else m.text
+        val text = htmlEscape(m.text) +
+            if (delayed > DELAY_NOTE_MS) "\n\n<i>Отправлено в ${tf.format(Date(m.createdAt))}</i>" else ""
         try {
             send(text)
             synchronized(lock) { items.remove(m); saveLocked() }
@@ -170,8 +176,16 @@ object Telegram {
             fail(m, e.message ?: "ошибка", e.code, e.retryAfterSec)
         } catch (e: java.io.IOException) {
             fail(m, e.message ?: "сеть", 0, 0)
+        } catch (e: InterruptedException) {
+            throw e
+        } catch (e: RuntimeException) {
+            // Любой иной сбой при отправке: повтор только по расписанию отсрочек, а не сразу.
+            FLog.e("telegram", "сбой при отправке", e)
+            fail(m, "${e.javaClass.simpleName}: ${e.message}", 0, 0)
         }
     }
+
+    private fun htmlEscape(t: String) = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     private fun fail(m: Item, msg: String, code: Int, retryAfterSec: Int) {
         m.attempts++
@@ -207,7 +221,7 @@ object Telegram {
     }
 
     private fun send(text: String) {
-        call("sendMessage", obj("chat_id" to Settings.telegramChatId, "text" to text, "disable_web_page_preview" to true))
+        call("sendMessage", obj("chat_id" to Settings.telegramChatId, "text" to text, "parse_mode" to "HTML", "disable_web_page_preview" to true))
     }
 
     /**

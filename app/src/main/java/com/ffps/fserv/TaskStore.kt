@@ -117,6 +117,13 @@ object TaskStore {
         return save(pretty(root))
     }
 
+    /** Полная замена конфига и очистка истории версий (восстановление и сброс). */
+    @Synchronized
+    fun replaceAll(text: String?) {
+        histDir.listFiles()?.forEach { it.delete() }
+        file.writeText(text ?: DEFAULT)
+    }
+
     /** null = сохранено; иначе текст ошибки (файл не изменён). */
     @Synchronized
     fun save(text: String): String? {

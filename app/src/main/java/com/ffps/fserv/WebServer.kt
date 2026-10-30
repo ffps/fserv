@@ -215,6 +215,39 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                     fail(Response.Status.NOT_FOUND, "экран киоска не создан: откройте его на устройстве кнопкой Open kiosk")
             }
 
+            get && uri == "/api/backup" -> {
+                val name = Backup.nextName(ctx)
+                val tmp = File(ctx.cacheDir, "backup.zip")
+                tmp.outputStream().use { Backup.write(ctx, it) }
+                Journal.add("backup", "Выгружена копия настроек $name")
+                FLog.i("backup", "выгружена копия $name (${tmp.length()} байт)")
+                NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "application/zip", tmp.inputStream(), tmp.length()).also {
+                    it.addHeader("Content-Disposition", "attachment; filename=\"$name\"")
+                    it.addHeader("Cache-Control", "no-store")
+                }
+            }
+            post && uri == "/api/restore" -> {
+                val f = Backup.receive(ctx, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
+                try {
+                    val err = Backup.validate(f)
+                    if (err != null) fail(Response.Status.BAD_REQUEST, "архив не подходит, ничего не изменено: $err")
+                    else {
+                        Backup.restore(ctx, f)
+                        FLog.i("backup", "настройки восстановлены из копии")
+                        Journal.add("backup", "Настройки восстановлены из копии, приложение перезапускается")
+                        Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
+                        ok("настройки восстановлены, приложение перезапускается")
+                    }
+                } finally { f.delete() }
+            }
+            post && uri == "/api/reset" -> {
+                if (q(s, "confirm") != "1") return fail(Response.Status.BAD_REQUEST, "нужен параметр confirm=1")
+                Backup.reset(ctx)
+                FLog.i("backup", "настройки сброшены к исходным")
+                Journal.add("backup", "Настройки и пользовательские файлы сброшены к исходным, приложение перезапускается")
+                Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
+                ok("всё сброшено, приложение перезапускается (пароль и порт сохранены)")
+            }
             post && uri == "/api/restart-app" -> {
                 FLog.i("web", "запрошен перезапуск приложения")
                 Journal.add("power", "Перезапуск приложения (из веб-интерфейса)")
@@ -423,6 +456,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/camera/test" to "ход и итог стресс-теста камеры",
         "POST /api/camera/test" to "запустить стресс-тест; ?mode=continuous&minutes=10 или ?mode=cycles&count=50&gap=3",
         "POST /api/camera/test/stop" to "остановить стресс-тест",
+        "GET /api/backup" to "выгрузить все настройки, задачи, звуки и свои страницы одним zip (fserv.ДАТА.NN.zip)",
+        "POST /api/restore" to "восстановить из zip (тело = файл): сначала проверка, затем замена всех настроек и перезапуск",
+        "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1); пароль и порт остаются",
         "POST /api/restart-app" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
         "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
         "GET /" to "веб-интерфейс",

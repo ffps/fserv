@@ -86,7 +86,7 @@ object Net {
                 }
                 return Resp(code, "", via)
             }
-            val text = stream?.use { String(it.readBytes(), Charsets.UTF_8) } ?: ""
+            val text = if (stream == null) "" else String(readAll(stream), Charsets.UTF_8)
             return Resp(code, text, via)
         } catch (e: java.io.IOException) {
             FLog.w("net", "$method ${url.substringBefore("?").take(120)} [$purpose, $via] не удалось за ${System.currentTimeMillis() - t0} мс: ${e.javaClass.simpleName}: ${e.message}")
@@ -94,5 +94,29 @@ object Net {
         } finally {
             c.disconnect()
         }
+    }
+
+    /**
+     * Читает тело ответа. Платформенный OkHttp на старых Android (8.0) при закрытии потока после последнего
+     * байта иногда бросает NullPointerException: данные к этому моменту уже получены, поэтому ошибка при закрытии
+     * после успешного чтения игнорируется. Иначе запрос выглядел бы неудавшимся при уже доставленном сообщении.
+     */
+    private fun readAll(ins: java.io.InputStream): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        try {
+            while (true) {
+                val n = ins.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
+        } catch (e: java.io.IOException) {
+            throw e
+        } catch (e: RuntimeException) {
+            if (out.size() == 0) throw java.io.IOException("сбой чтения ответа: ${e.javaClass.simpleName}", e)
+            FLog.w("net", "ошибка платформы при завершении чтения ответа (данные получены): ${e.javaClass.simpleName}")
+        }
+        try { ins.close() } catch (e: Exception) {}
+        return out.toByteArray()
     }
 }

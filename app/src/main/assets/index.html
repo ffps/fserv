@@ -23,6 +23,8 @@
   section.on { display:block; }
   h2 { margin:0 0 14px; font-size:17px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-bottom:14px; }
+  table.kv { width:auto; min-width:min(520px,100%); }
+  table.kv td:first-child { color:var(--dim); white-space:nowrap; padding-right:24px; }
   .card { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
   .card .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
   .card .v { font-size:18px; margin-top:2px; word-break:break-word; }
@@ -74,12 +76,10 @@
   <button data-t="journal">Журнал</button>
   <button data-t="config">Задачи</button>
   <button data-t="sound">Звук</button>
-  <button data-t="settings">Настройки</button>
   <button data-t="comm">Связь</button>
   <button data-t="camera">Камера</button>
-  <button data-t="update">Обновления</button>
   <button data-t="pages">Страницы</button>
-  <button data-t="power">Питание</button>
+  <button data-t="system">Система</button>
 </nav>
 <main>
 
@@ -192,28 +192,6 @@
   <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>{"play": "alarm.mp3", "volume": 80, "fade_in": "5s", "fade_out": "3s"}</code>; список имён <code>["a.mp3", "b.mp3"]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
 </section>
 
-<section id="settings">
-  <h2>Настройки</h2>
-  <div class="f">
-    <label for="sLevel">Уровень лога</label>
-    <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
-    <label for="sTmo">Таймаут сети, секунд</label>
-    <input id="sTmo" type="number" min="2" max="120">
-    <label for="sApp">Перезапуск приложения (cron)</label>
-    <input id="sApp" placeholder="например 30 3 * * *   (пусто = выключено)">
-    <label for="sReboot">Перезагрузка устройства (cron)</label>
-    <input id="sReboot" placeholder="например 0 4 * * *   (пусто = выключено)">
-    <label for="sPort">Порт веб-интерфейса</label>
-    <input id="sPort" type="number" min="1024" max="65535">
-    <label for="sBoot">Автозапуск службы</label>
-    <label><input id="sBoot" type="checkbox"> запускать при включении устройства</label>
-    <label for="sPass">Новый пароль</label>
-    <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
-  </div>
-  <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
-  <div class="msg" id="sMsg"></div>
-  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
-</section>
 
 <section id="comm">
   <h2>Telegram</h2>
@@ -261,7 +239,7 @@
   </div>
   <div class="msg" id="camMsg"></div>
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-    <img id="camImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:240px;height:320px;max-width:100%;background:#222;border-radius:8px;object-fit:contain">
+    <img id="camImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:240px;height:320px;max-width:100%;border:1px solid var(--line);border-radius:8px;object-fit:contain">
     <div style="flex:1;min-width:280px"><canvas id="camChart" width="640" height="200" style="width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></canvas>
     <p class="hint">Оценка движения: доля ячеек кадра (в процентах), изменившихся с прошлого обработанного кадра. Красная линия: порог площади. Зелёные точки внизу: движение определено.</p></div>
   </div>
@@ -292,17 +270,38 @@
   <p class="hint">Непрерывный режим проверяет устойчивость долгой работы (кадры не должны пропадать, температура и число открытых файлов расти), циклы проверяют открытие и закрытие камеры, как будет делать будильник. Итог пишется в журнал. Во время теста держите устройство на зарядке.</p>
 </section>
 
-<section id="update">
-  <h2>Обновления</h2>
-  <div class="grid" id="upCards"></div>
-  <div class="row">
-    <button class="btn sec" id="upCheck">Проверить сейчас</button>
-    <button class="btn" id="upInstall">Скачать и установить</button>
+
+<section id="system">
+  <h2>Параметры</h2>
+  <div class="f">
+    <label for="sLevel">Уровень лога</label>
+    <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+    <label for="sTmo">Таймаут сети, секунд</label>
+    <input id="sTmo" type="number" min="2" max="120">
+    <label for="sApp">Перезапуск приложения (cron)</label>
+    <input id="sApp" placeholder="например 30 3 * * *   (пусто = выключено)">
+    <label for="sReboot">Перезагрузка устройства (cron)</label>
+    <input id="sReboot" placeholder="например 0 4 * * *   (пусто = выключено)">
+    <label for="sPort">Порт веб-интерфейса</label>
+    <input id="sPort" type="number" min="1024" max="65535">
+    <label for="sBoot">Автозапуск службы</label>
+    <label><input id="sBoot" type="checkbox"> запускать при включении устройства</label>
+    <label for="sPass">Новый пароль</label>
+    <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
+  <div class="msg" id="sMsg"></div>
+  <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
+
+  <h2 style="margin-top:26px">Обновление</h2>
+  <table class="kv"><tbody id="upTable"></tbody></table>
+  <div class="row" style="margin-top:12px">
+    <button class="btn sec" id="upCheck">Проверить</button>
+    <button class="btn" id="upInstall" style="display:none">Скачать и установить</button>
   </div>
   <div class="msg" id="upMsg"></div>
   <pre id="upNotes" style="display:none"></pre>
-  <h2 style="margin-top:22px">Параметры</h2>
-  <div class="f">
+  <div class="f" style="margin-top:14px">
     <label for="upRepo">Репозиторий GitHub</label>
     <input id="upRepo" placeholder="владелец/репозиторий">
     <label for="upCron">Проверка по расписанию (cron)</label>
@@ -311,8 +310,26 @@
   <div class="row" style="margin-top:14px"><button class="btn" id="upSave">Сохранить</button></div>
   <div class="msg" id="upSMsg"></div>
   <p class="hint">По расписанию выполняется только проверка: о новой версии придёт сообщение в Telegram. Устанавливается обновление только по кнопке. На устройстве должна быть разрешена установка из этого приложения (окно настроек, кнопка «Allow app updates»); если система запросит подтверждение, нажмите «Установить» на экране устройства. Откатиться на старую версию Android не даёт: чтобы вернуть прежнее поведение, выпускается новая версия с исправлением.</p>
-</section>
 
+  <h2 style="margin-top:26px">Перезапуск</h2>
+  <div class="row">
+    <button class="btn sec" id="pRestart">Перезапустить приложение</button>
+    <button class="btn danger" id="pReboot">Перезагрузить устройство</button>
+  </div>
+  <div class="msg" id="pMsg"></div>
+  <p class="hint">«Перезапустить приложение» заново поднимает веб-сервер, планировщик и киоск, не закрывая экран.</p>
+  <p class="hint" id="pHint"></p>
+
+  <h2 style="margin-top:26px">Конфигурация</h2>
+  <div class="row">
+    <button class="btn sec" id="bkSave">Сохранить</button>
+    <button class="btn sec" id="bkRestore">Восстановить</button>
+    <button class="btn danger" id="bkReset">Очистить</button>
+    <input type="file" id="bkFile" accept=".zip,application/zip" style="display:none">
+  </div>
+  <div class="msg" id="bkMsg"></div>
+  <p class="hint"><b>Сохранить</b> скачивает один файл <code>fserv.ДАТА.NN.zip</code>: настройки (settings.json, в том числе токен бота и пароли), задачи (tasks.json), загруженные звуки (sounds/) и свои версии страниц (pages/). <b>Восстановить</b> сначала проверяет архив целиком; если он годится, удаляет все текущие настройки и файлы, раскладывает содержимое архива и перезапускает приложение. Если порт или пароль в копии другие, после перезапуска откройте страницу по новому адресу. <b>Очистить</b> удаляет звуки, свои страницы, историю задач, очередь Telegram, кэш обновлений и журнал, возвращает настройки к исходным и перезапускает приложение. Пароль, порт, автозапуск и состояние службы остаются, чтобы не потерять доступ к устройству.</p>
+</section>
 <section id="pages">
   <h2>Страницы</h2>
   <div class="row">
@@ -330,16 +347,6 @@
   <p class="hint">Заменённые страницы хранятся во внутренней памяти приложения (путь показан выше; без root или adb до этого файла не добраться, меняйте страницу здесь, в редакторе) и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
 </section>
 
-<section id="power">
-  <h2>Питание</h2>
-  <div class="row">
-    <button class="btn sec" id="pRestart">Перезапустить приложение</button>
-    <button class="btn danger" id="pReboot">Перезагрузить устройство</button>
-  </div>
-  <div class="msg" id="pMsg"></div>
-  <p class="hint">«Перезапустить приложение» заново поднимает веб-сервер, планировщик и киоск, не закрывая экран.</p>
-  <p class="hint" id="pHint"></p>
-</section>
 
 </main>
 
@@ -364,10 +371,35 @@ function say(id, text, ok) {
   void e.offsetWidth; // перезапуск анимации: повторный одинаковый ответ тоже заметен
   e.textContent = hhmmss() + "  " + text; e.className = "msg flash " + (ok ? "ok" : "err");
 }
-async function run(msgId, fn) {
+async function run(msgId, fn, btn) {
   say(msgId, "");
-  try { const m = await fn(); say(msgId, m, true); } catch (e) { say(msgId, e.message, false); }
+  try { const m = await fn(); if (btn) rebase(btn); say(msgId, m, true); } catch (e) { say(msgId, e.message, false); }
 }
+
+// ---- кнопки «Сохранить» видны только при несохранённых изменениях ----
+const DIRTY = {};
+function val(ids) { return JSON.stringify(ids.map(i => { const e = document.getElementById(i); return e.type === "checkbox" ? e.checked : e.value; })); }
+function track(btn, ids, extra) { DIRTY[btn] = {ids: ids, extra: extra}; document.getElementById(btn).style.display = "none"; }
+function rebase(btn) { const d = DIRTY[btn]; if (d) { d.base = val(d.ids); refreshDirty(); } }
+function refreshDirty() {
+  for (const b in DIRTY) {
+    const d = DIRTY[b];
+    const dirty = d.extra ? d.extra() : (d.base !== undefined && val(d.ids) !== d.base);
+    document.getElementById(b).style.display = dirty ? "" : "none";
+  }
+}
+document.addEventListener("input", refreshDirty);
+document.addEventListener("change", refreshDirty);
+setInterval(refreshDirty, 500);
+track("sSave", ["sLevel", "sTmo", "sApp", "sReboot", "sPort", "sBoot", "sPass"]);
+track("upSave", ["upRepo", "upCron"]);
+track("tgSave", ["tgToken", "tgChat"]);
+track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
+track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
+track("cfgSave", ["cfgText"]);
+track("gSave", ["gVol", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
+track("pgSave", ["pgText"]);
+track("tkSave", [], () => typeof tkDirty === "function" && (tkDirty() || tkOrig === ""));
 
 // ---- копирование (на http:// буфер обмена браузера закрыт, поэтому есть запасной путь) ----
 async function copyText(text) {
@@ -423,20 +455,21 @@ async function loadComm() {
     $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + dt(t.lastSentAt) : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
     const ob = (await api("/api/outbox")).json;
     $("#obBody").innerHTML = ob.length ? ob.map(i => "<tr><td>" + esc(dt(i.created)) + "</td><td>" + esc(i.text) + "</td><td>" + i.attempts + "</td><td>" + esc(i.nextTry ? dt(i.nextTry) : "") + "</td><td>" + esc(i.lastError) + "</td></tr>").join("") : '<tr><td colspan="5" style="color:var(--dim)">пусто</td></tr>';
+    rebase("tgSave"); rebase("pxSave");
   } catch (e) { say("#tgMsg", e.message, false); }
 }
 $("#tgSave").onclick = () => run("#tgMsg", async () => {
   const patch = {telegramChatId: $("#tgChat").value.trim()};
   if ($("#tgToken").value.trim()) patch.telegramToken = $("#tgToken").value.trim();
   await post("/api/settings", JSON.stringify(patch)); loadComm(); return "сохранено";
-});
+}, "tgSave");
 $("#tgTest").onclick = () => run("#tgMsg", async () => { say("#tgMsg", "отправляю через очередь…", true); try { return (await post("/api/telegram/test")).json.message; } finally { loadComm(); } });
 $("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/outbox/clear"); loadComm(); return r.json.message; }); };
 $("#pxSave").onclick = () => run("#pxMsg", async () => {
   const px = {host: $("#pxHost").value.trim(), port: parseInt($("#pxPort").value || "1080", 10), user: $("#pxUser").value};
   if ($("#pxPass").value) px.password = $("#pxPass").value;
   await post("/api/settings", JSON.stringify({proxy: px})); loadComm(); return "сохранено";
-});
+}, "pxSave");
 for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"]]) {
   $(id).onchange = () => run("#pxuMsg", async () => {
     try { await post("/api/settings", JSON.stringify({proxy: {[k]: $(id).checked}})); }
@@ -491,7 +524,7 @@ async function loadCamera(full) {
       $("#cmInt").value = k.intervalMs; $("#cmThr").value = k.cellThreshold; $("#cmArea").value = k.areaPercent;
       const opts = (c.resolutions || []).slice(); if (!opts.includes(k.resolution)) opts.unshift(k.resolution);
       $("#cmRes").innerHTML = opts.map(r => "<option>" + esc(r) + "</option>").join("");
-      $("#cmRot").value = String(k.rotation); $("#cmRes").value = k.resolution; $("#cmKeep").checked = k.keepRunning;
+      $("#cmRot").value = String(k.rotation); $("#cmRes").value = k.resolution; $("#cmKeep").checked = k.keepRunning; rebase("cmSave");
     }
     if (!camBusy) setCamBtn(c.owners.includes("manual"));
     const t = (await api("/api/camera/test")).json;
@@ -526,7 +559,7 @@ $("#cmSave").onclick = () => run("#cmMsg", async () => {
     rotation: Number($("#cmRot").value), resolution: $("#cmRes").value, keepRunning: $("#cmKeep").checked};
   await post("/api/settings", JSON.stringify({camera: cam})); loadCamera(true);
   return "сохранено (новое разрешение применится при следующем открытии камеры)";
-});
+}, "cmSave");
 let ctRunning = false;
 function setCtBtn(on) {
   ctRunning = on; const b = $("#ctToggle");
@@ -542,27 +575,30 @@ setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
 // ---- обновления ----
 let upTimer = null;
 const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
+function kvRow(k, v) { return "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>"; }
 async function loadUpdate() {
   try {
     const u = (await api("/api/update")).json, st = (await api("/api/settings")).json;
-    if (document.activeElement !== $("#upRepo")) $("#upRepo").value = st.updateRepo;
-    if (document.activeElement !== $("#upCron")) $("#upCron").value = st.updateCheckCron;
+    if (document.activeElement !== $("#upRepo") && document.activeElement !== $("#upCron")) {
+      const dirty = DIRTY.upSave && DIRTY.upSave.base !== undefined && val(DIRTY.upSave.ids) !== DIRTY.upSave.base;
+      if (!dirty) { $("#upRepo").value = st.updateRepo; $("#upCron").value = st.updateCheckCron; rebase("upSave"); }
+    }
     const l = u.latest;
-    $("#upCards").innerHTML = card("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
-      card("Последняя на GitHub", l ? l.versionName + " (" + l.versionCode + ")" : "ещё не проверялась") +
-      card("Статус", u.state !== "idle" ? (ST[u.state] || u.state) + (u.state === "downloading" && u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
-      card("Проверка", u.lastCheck ? dt(u.lastCheck) : "не выполнялась") +
-      card("Установка разрешена", u.canInstall ? "да" : "нет (кнопка Allow app updates на устройстве)") +
-      (u.lastError ? card("Ошибка", u.lastError) : "");
-    $("#upInstall").disabled = !u.available || (u.state !== "idle" && u.state !== "confirm");
-    const n = $("#upNotes"); n.style.display = l && l.notes ? "block" : "none"; n.textContent = l ? l.notes : "";
+    $("#upTable").innerHTML = kvRow("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
+      kvRow("Последняя на GitHub", l ? l.versionName + " (" + l.versionCode + ")" : "ещё не проверялась") +
+      kvRow("Статус", u.state !== "idle" ? (ST[u.state] || u.state) + (u.state === "downloading" && u.progress.total > 0 ? " " + Math.round(100 * u.progress.bytes / u.progress.total) + "%" : "") : (u.available ? "доступно обновление" : (l ? "обновлений нет" : "—"))) +
+      kvRow("Проверка", u.lastCheck ? dt(u.lastCheck) : "не выполнялась") +
+      kvRow("Установка разрешена", u.canInstall ? "да" : "нет (кнопка Allow app updates на устройстве)") +
+      (u.lastError ? kvRow("Ошибка", u.lastError) : "");
+    const ib = $("#upInstall"); ib.style.display = u.available ? "" : "none"; ib.disabled = u.state !== "idle" && u.state !== "confirm";
+    const n = $("#upNotes"); n.style.display = u.available && l && l.notes ? "block" : "none"; n.textContent = l ? l.notes : "";
     clearTimeout(upTimer);
-    if (current === "update" && u.state !== "idle" && u.state !== "confirm") upTimer = setTimeout(loadUpdate, 1500);
+    if (current === "system" && u.state !== "idle" && u.state !== "confirm") upTimer = setTimeout(loadUpdate, 1500);
   } catch (e) { say("#upMsg", e.message, false); }
 }
 $("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName : "обновлений нет"; });
 $("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
-$("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({updateRepo: $("#upRepo").value.trim(), updateCheckCron: $("#upCron").value.trim()})); return "сохранено"; });
+$("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({updateRepo: $("#upRepo").value.trim(), updateCheckCron: $("#upCron").value.trim()})); return "сохранено"; }, "upSave");
 
 function onTab() {
   if (current === "status") loadStatus();
@@ -570,12 +606,10 @@ function onTab() {
   if (current === "journal") loadJournal();
   if (current === "config") { loadTasksEditor(true).then(loadTasks); loadConfig(); loadHist(); }
   if (current === "sound") loadSound();
-  if (current === "settings") loadSettings();
+  if (current === "system") { loadSettings(); loadUpdate(); loadPower(); }
   if (current === "comm") loadComm();
   if (current === "camera") loadCamera(true);
-  if (current === "update") loadUpdate();
   if (current === "pages") loadPage();
-  if (current === "power") loadPower();
 }
 
 // ---- состояние ----
@@ -632,14 +666,14 @@ $("#jRefresh").onclick = loadJournal;
 $("#jClear").onclick = () => { if (confirm("Очистить журнал событий?")) run("#jMsg", async () => { await post("/api/journal/clear"); loadJournal(); return "журнал очищен"; }); };
 
 // ---- конфиг задач ----
-async function loadConfig() { try { $("#cfgText").value = (await api("/api/config")).text; say("#cfgMsg", ""); } catch (e) { say("#cfgMsg", e.message, false); } }
+async function loadConfig() { try { $("#cfgText").value = (await api("/api/config")).text; say("#cfgMsg", ""); rebase("cfgSave"); } catch (e) { say("#cfgMsg", e.message, false); } }
 async function loadHist() {
   try {
     const h = (await api("/api/config/history")).json;
     $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
   } catch (e) {}
 }
-$("#cfgSave").onclick = () => run("#cfgMsg", async () => { await post("/api/config", $("#cfgText").value); loadHist(); return "сохранено"; });
+$("#cfgSave").onclick = () => run("#cfgMsg", async () => { await post("/api/config", $("#cfgText").value); loadHist(); return "сохранено"; }, "cfgSave");
 $("#cfgReload").onclick = loadConfig;
 $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); await loadConfig(); loadHist(); return "восстановлено"; }); };
 
@@ -665,6 +699,7 @@ const num = v => (v === "" || v == null) ? undefined : Number(v);
 async function loadGlobal() {
   const text = (await api("/api/config")).text;
   cfgObj = JSON.parse(text);
+  if (DIRTY.cfgSave && val(DIRTY.cfgSave.ids) === DIRTY.cfgSave.base) { $("#cfgText").value = text; rebase("cfgSave"); }
   const v = cfgObj.voice || {};
   $("#gVol").value = v.volume ?? ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
   $("#gZones").value = cfgObj.zones && Object.keys(cfgObj.zones).length ? JSON.stringify(cfgObj.zones, null, 2) : "";
@@ -673,7 +708,7 @@ async function loadGlobal() {
     const names = (vi.voices || []).map(x => x.name); if (v.voice && !names.includes(v.voice)) names.unshift(v.voice);
     $("#gVoice").innerHTML = '<option value="">по умолчанию</option>' + names.map(n => "<option>" + esc(n) + "</option>").join("");
   } catch (e) {}
-  $("#gVoice").value = v.voice || "";
+  $("#gVoice").value = v.voice || ""; rebase("gSave");
 }
 $("#gSave").onclick = () => run("#gMsg", async () => {
   const voice = {};
@@ -686,7 +721,7 @@ $("#gSave").onclick = () => run("#gMsg", async () => {
   if (zt) { try { zones = JSON.parse(zt); } catch (e) { throw new Error("зоны: " + e.message); } }
   await post("/api/config/global", JSON.stringify({voice: voice, zones: zones}));
   await loadGlobal(); return "сохранено";
-});
+}, "gSave");
 
 function fillSelect(selectId) {
   const sel = $("#tkSel"), ts = cfgObj.tasks || [];
@@ -731,7 +766,7 @@ $("#tkSave").onclick = () => run("#tkMsg", async () => {
   let t; try { t = JSON.parse($("#tkText").value); } catch (e) { throw new Error("это не JSON: " + e.message); }
   await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig), $("#tkText").value);
   tkOrig = t.id; await loadTasksEditor(true); loadTasks(); return "задача «" + t.id + "» сохранена";
-});
+}, "tkSave");
 $("#tkDel").onclick = () => {
   if (!tkOrig) { loadTasksEditor(false); return; }
   if (confirm("Удалить задачу «" + tkOrig + "»?")) run("#tkMsg", async () => { await post("/api/tasks/delete?id=" + encodeURIComponent(tkOrig)); tkOrig = ""; await loadTasksEditor(false); loadTasks(); return "задача удалена"; });
@@ -820,7 +855,7 @@ async function loadSettings() {
     const s = (await api("/api/settings")).json;
     $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
     $("#sPort").value = s.webPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
-    say("#sMsg", "");
+    say("#sMsg", ""); rebase("sSave");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
@@ -830,17 +865,17 @@ $("#sSave").onclick = () => run("#sMsg", async () => {
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
   return r.restartRequired ? "сохранено; веб-сервер перезапускается на новом порту " + r.settings.webPort : "сохранено";
-});
+}, "sSave");
 
 // ---- страницы ----
 async function loadPage() {
   try {
     const p = (await api("/api/ui?name=" + $("#pgName").value)).json;
-    $("#pgText").value = p.html; $("#pgState").textContent = (p.custom ? "используется ваша версия" : "используется встроенная версия") + ". Файл на устройстве: " + p.path; say("#pgMsg", "");
+    $("#pgText").value = p.html; rebase("pgSave"); $("#pgState").textContent = (p.custom ? "используется ваша версия" : "используется встроенная версия") + ". Файл на устройстве: " + p.path; say("#pgMsg", "");
   } catch (e) { say("#pgMsg", e.message, false); }
 }
 $("#pgName").onchange = loadPage;
-$("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; });
+$("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; }, "pgSave");
 $("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/ui/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
 $("#camImg").onload = function () { if (this.naturalWidth > 1) { this.style.width = this.naturalWidth + "px"; this.style.height = this.naturalHeight + "px"; } };
 $("#pgShow").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/show"); return r.json.message; });
@@ -863,6 +898,33 @@ $("#pRestart").onclick = () => { if (confirm("Перезапустить при�
   }
   throw new Error("веб-сервер не ответил за 40 секунд, проверьте строку состояния на устройстве"); }); };
 $("#pReboot").onclick = () => { if (confirm("Перезагрузить устройство?")) run("#pMsg", async () => { await post("/api/reboot?confirm=1"); return "перезагрузка запущена"; }); };
+
+// ---- резервная копия ----
+$("#bkSave").onclick = () => { say("#bkMsg", "копия скачивается браузером", true); location.href = "/api/backup"; };
+$("#bkRestore").onclick = () => { say("#bkMsg", ""); $("#bkFile").value = ""; $("#bkFile").click(); };
+$("#bkFile").onchange = () => {
+  const f = $("#bkFile").files[0]; if (!f) return;
+  if (!confirm("Восстановить настройки из файла «" + f.name + "»?\n\nСначала архив будет проверен. Если он годится, ВСЕ текущие настройки, звуки и свои страницы будут удалены и заменены содержимым архива, затем приложение перезапустится.")) return;
+  run("#bkMsg", async () => {
+    say("#bkMsg", "загружаю и проверяю…", true);
+    const r = await fetch("/api/restore", {method: "POST", body: f, cache: "no-store"});
+    const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) {}
+    if (!r.ok || j.ok === false) throw new Error(j.error || "ошибка " + r.status);
+    return await afterRestart(j.message);
+  });
+};
+async function afterRestart(msg) {
+  say("#bkMsg", msg + ". Жду перезапуска…", true);
+  await new Promise(r => setTimeout(r, 3000));
+  for (let n = 0; n < 40; n++) {
+    try { await api("/api/info"); location.reload(); return "готово"; } catch (e) { await new Promise(r => setTimeout(r, 1000)); }
+  }
+  return msg + ". Веб-сервер пока не ответил: если в копии другой порт или пароль, откройте страницу по новому адресу.";
+}
+$("#bkReset").onclick = () => {
+  if (!confirm("Очистить всё?\n\nБудут удалены звуки, свои страницы, история задач, очередь Telegram, кэш обновлений и журнал, настройки вернутся к исходным (токен бота, прокси, камера, расписания). Пароль, порт, автозапуск и состояние службы останутся. Приложение перезапустится.\n\nПеред этим можно скачать копию кнопкой «Сохранить».")) return;
+  run("#bkMsg", async () => { const r = await post("/api/reset?confirm=1"); return await afterRestart(r.json.message); });
+};
 
 // ---- автообновление ----
 setInterval(() => {
