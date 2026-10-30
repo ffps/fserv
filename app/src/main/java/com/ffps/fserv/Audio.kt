@@ -29,6 +29,12 @@ object Audio {
     fun play(
         ctx: Context, source: String, volumePct: Int?, fadeInMs: Long, fadeOutMs: Long,
         forMs: Long?, loop: Boolean, cancel: () -> Boolean
+    ): String? = play(ctx, source, volumePct, fadeInMs, fadeOutMs, forMs, loop, null, java.util.Random(), cancel)
+
+    /** То же, но с паузами между повторами при loop: список паузы берётся по номеру повтора (после конца списка последнее). */
+    fun play(
+        ctx: Context, source: String, volumePct: Int?, fadeInMs: Long, fadeOutMs: Long,
+        forMs: Long?, loop: Boolean, pauses: List<Dur.Span>?, rnd: java.util.Random, cancel: () -> Boolean
     ): String? {
         if (volumePct != null) setVolume(ctx, volumePct)
         val mp = MediaPlayer()
@@ -50,7 +56,7 @@ object Audio {
                 if (!f.isFile) return "файл «$source» не найден"
                 mp.setDataSource(f.absolutePath)
             }
-            mp.isLooping = loop
+            mp.isLooping = loop && pauses == null
             mp.prepare()
             val natural = mp.duration.toLong().coerceAtLeast(0)
             val total = when {
@@ -68,13 +74,25 @@ object Audio {
             mp.start()
             val t0 = SystemClock.elapsedRealtime()
             var lastG = if (fadeIn > 0) 0f else 1f
+            var pauseUntil = 0L
+            var repeats = 0
             while (true) {
                 val pos = SystemClock.elapsedRealtime() - t0
-                if (pos >= total || completed) break
+                if (pos >= total) break
+                if (completed) {
+                    if (loop && pauses != null) {
+                        completed = false
+                        pauseUntil = SystemClock.elapsedRealtime() + Dur.pick(pauses, repeats++, rnd)
+                    } else break
+                }
+                if (pauseUntil > 0L && SystemClock.elapsedRealtime() >= pauseUntil) {
+                    pauseUntil = 0L
+                    mp.start()
+                }
                 if (cancel()) {
                     // остановка по просьбе: плавное затухание от текущего уровня (не дольше 3 с)
                     val dur = minOf(fadeOut, 3000L)
-                    if (dur > 0) {
+                    if (dur > 0 && pauseUntil == 0L) {
                         val t1 = SystemClock.elapsedRealtime()
                         while (SystemClock.elapsedRealtime() - t1 < dur) {
                             val k = lastG * (1f - (SystemClock.elapsedRealtime() - t1).toFloat() / dur)

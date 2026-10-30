@@ -333,10 +333,10 @@ object TaskEngine {
     private fun repeat(r: Run, s: JSONObject, p: String) {
         val cfg = s.getJSONObject("repeat")
         val times = Dur.sampleCount(Dur.parseCount(cfg.opt("times"), "times"), r.rnd)
-        val every = if (cfg.has("every")) Dur.parse(cfg.opt("every"), "every") else null
+        val every = if (cfg.has("every")) Dur.parseList(cfg.opt("every"), "every") else null
         val until = cfg.optString("until").takeIf { it.isNotEmpty() }
         val body = s.optJSONArray("do") ?: JSONArray()
-        log(r, p, "repeat: $times раз" + (every?.let { ", каждые ${Dur.human(it.minMs)}${if (it.isRange) "…${Dur.human(it.maxMs)}" else ""}" } ?: "") + (until?.let { ", до «$it»" } ?: ""))
+        log(r, p, "repeat: $times раз" + (every?.let { l -> ", каждые " + l.joinToString(", ") { Dur.human(it.minMs) + if (it.isRange) "…${Dur.human(it.maxMs)}" else "" } + if (l.size > 1) " (дальше как последнее)" else "" } ?: "") + (until?.let { ", до «$it»" } ?: ""))
         for (i in 1..times) {
             check(r)
             val started = System.currentTimeMillis()
@@ -347,7 +347,7 @@ object TaskEngine {
                 return
             }
             if (i < times && every != null) {
-                val gap = every.sample(r.rnd) - (System.currentTimeMillis() - started)
+                val gap = Dur.pick(every, i - 1, r.rnd) - (System.currentTimeMillis() - started)
                 if (gap > 0) {
                     log(r, p, "до следующей итерации ${Dur.human(gap)}" + if (r.info.dry) " (пропущено в пробном запуске)" else "")
                     if (!r.info.dry) sleep(r, gap)
@@ -365,13 +365,14 @@ object TaskEngine {
         val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else null
         val loop = s.optBoolean("loop", false)
         val wait = s.optBoolean("wait", true)
+        val pauses = if (s.has("pause")) Dur.parseList(s.opt("pause"), "pause") else null
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
         log(r, p, "play: $name, громкость ${vol ?: "как есть"}, нарастание ${Dur.human(fadeIn)}, затухание ${Dur.human(fadeOut)}" +
-            (forMs?.let { ", ${Dur.human(it)}" } ?: "") + (if (loop) ", по кругу" else "") + (if (!wait) ", не ждать конца" else ""))
+            (forMs?.let { ", ${Dur.human(it)}" } ?: "") + (if (loop) ", по кругу" else "") + (pauses?.let { l -> ", паузы " + l.joinToString(", ") { Dur.human(it.minMs) + if (it.isRange) "…${Dur.human(it.maxMs)}" else "" } } ?: "") + (if (!wait) ", не ждать конца" else ""))
         if (r.info.dry) return
         if (!wait) stopBackground(r)
         val job = Runnable {
-            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop) { r.stopRequested() || (!wait && r.bgStop) }?.let {
+            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop, pauses, r.rnd) { r.stopRequested() || (!wait && r.bgStop) }?.let {
                 log(r, p, "ошибка звука: $it")
                 if (wait) throw StepError(it)
             }

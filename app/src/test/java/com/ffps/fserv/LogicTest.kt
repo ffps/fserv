@@ -32,6 +32,14 @@ class LogicTest {
         }
     }
 
+    @Test fun lists() {
+        val l = Dur.parseList("3s, 5s,10s,20s", "t")
+        val r = Random(1)
+        assertEquals(listOf(3000L, 5000L, 10000L, 20000L, 20000L, 20000L), (0..5).map { Dur.pick(l, it, r) })
+        assertEquals(2, Dur.parseList(org.json.JSONArray("[\"1m\", \"30s..40s\"]"), "t").size)
+        assertEquals(1, Dur.parseList(7, "t").size)
+    }
+
     @Test fun counts() {
         assertEquals(6..6, Dur.parseCount(6, "t"))
         assertEquals(3..5, Dur.parseCount("3..5", "t"))
@@ -114,6 +122,10 @@ class LogicTest {
         // в фоновом режиме loop без for допустим, звук гасит stop_sound
         assertNull(check(task("""[{"play": "system:alarm", "loop": true, "wait": false}, {"stop_sound": true}]""")))
         expectError(task("""[{"stop_sound": "yes"}]"""), "stop_sound")
+        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "for": "1m", "pause": "3s,5s,10s..20s"}]""")))
+        assertNull(check(task("""[{"repeat": {"times": 4, "every": ["3m", "1m"]}, "do": [{"log": "x"}]}]""")))
+        expectError(task("""[{"play": "system:alarm", "pause": "3s"}]"""), "loop")
+        expectError(task("""[{"play": "system:alarm", "loop": true, "for": "1m", "pause": "3s,xx"}]"""), "длительность")
         expectError(task("""[{"play": "system:alarm", "fade": 1}]"""), "лишнее поле")
         expectError(task("""[{"repeat": {"every": "1m"}, "do": []}]"""), "times")
         expectError(task("""[{"repeat": {"times": 2}}]"""), "do")

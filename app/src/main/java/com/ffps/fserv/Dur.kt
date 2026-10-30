@@ -71,6 +71,24 @@ object Dur {
         }
     }
 
+    /**
+     * Список длительностей для последовательных повторов: "3s,5s,10s,20s" или массив ["3s", "5s"].
+     * Первый повтор берёт первое значение, второй второе и так далее, а после конца списка повторяется последнее.
+     * Каждый элемент может быть диапазоном ("10s..20s").
+     */
+    fun parseList(v: Any?, what: String): List<Span> {
+        val items: List<Any?> = when (v) {
+            is org.json.JSONArray -> (0 until v.length()).map { v.opt(it) }
+            is String -> v.split(",").map { it.trim() }
+            else -> listOf(v)
+        }
+        if (items.isEmpty()) throw IllegalArgumentException("$what: список пуст")
+        return items.map { parse(it, what) }
+    }
+
+    /** Значение для повтора номер [n] (с нуля): после конца списка берётся последнее. */
+    fun pick(list: List<Span>, n: Int, r: Random): Long = list[minOf(n, list.size - 1)].sample(r)
+
     /** Целое или диапазон целых: 3 или "3..5". */
     fun parseCount(v: Any?, what: String): IntRange {
         return when (v) {

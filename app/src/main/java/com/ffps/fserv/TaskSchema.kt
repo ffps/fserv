@@ -18,7 +18,7 @@ object TaskSchema {
     private val ACTIONS = listOf("say", "play", "telegram", "wait", "watch", "if", "repeat", "stop", "stop_sound", "log", "ask", "chat")
     private val MODIFIERS = mapOf(
         "say" to setOf("volume"),
-        "play" to setOf("volume", "fade_in", "fade_out", "for", "loop", "wait"),
+        "play" to setOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "telegram" to emptySet(),
         "wait" to emptySet(),
         "watch" to emptySet(),
@@ -203,6 +203,10 @@ object TaskSchema {
                     try { Dur.parse(s.opt(k), k) } catch (e: IllegalArgumentException) { return e.message }
                 }
                 if (s.has("loop") && s.opt("loop") !is Boolean) return "loop: true или false"
+                if (s.has("pause")) {
+                    if (!s.optBoolean("loop")) return "pause: работает только вместе с loop: true (пауза между повторами звука); для паузы после звука используйте шаг {\"wait\": \"3s\"}"
+                    try { Dur.parseList(s.opt("pause"), "pause") } catch (e: IllegalArgumentException) { return e.message }
+                }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
                 if (s.optBoolean("loop") && !s.has("for") && s.optBoolean("wait", true)) return "loop: true требует поля for либо \"wait\": false (иначе звук не остановится; в фоновом режиме его гасит шаг stop_sound или конец задачи)"
             }
@@ -221,7 +225,7 @@ object TaskSchema {
                 for (k in r.keys()) if (k !in REPEAT_KEYS) return "repeat: неизвестное поле «$k» (допустимы: ${REPEAT_KEYS.joinToString(", ")})"
                 if (!r.has("times")) return "repeat: нужно поле times"
                 try { Dur.parseCount(r.opt("times"), "times") } catch (e: IllegalArgumentException) { return "repeat: ${e.message}" }
-                if (r.has("every")) try { Dur.parse(r.opt("every"), "every") } catch (e: IllegalArgumentException) { return "repeat: ${e.message}" }
+                if (r.has("every")) try { Dur.parseList(r.opt("every"), "every") } catch (e: IllegalArgumentException) { return "repeat: ${e.message}" }
                 if (r.has("until")) cond(r.opt("until"), c, "until")?.let { return "repeat: $it" }
                 val body = s.opt("do") as? JSONArray ?: return "repeat: нужно поле do (список шагов, снаружи объекта repeat)"
                 steps(body, c, "$p.do", depth + 1)?.let { return it }
