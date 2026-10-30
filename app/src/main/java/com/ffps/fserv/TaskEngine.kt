@@ -44,6 +44,9 @@ object TaskEngine {
         val deadline = System.currentTimeMillis() + deadlineMs
         @Volatile var cancelled = false
         val bg = ArrayList<Thread>()
+        /** Звук, запущенный с "wait": false. Он один: новый заменяет прежний, шаг stop_sound гасит его. */
+        @Volatile var bgThread: Thread? = null
+        @Volatile var bgStop = false
         val voice: JSONObject? = root.optJSONObject("voice")
         fun stopRequested(): Boolean = cancelled || System.currentTimeMillis() > deadline
         fun title(): String = task.optString("title").ifEmpty { task.optString("id") }
@@ -291,6 +294,10 @@ object TaskEngine {
                 }
             }
             s.has("play") -> play(r, s, p)
+            s.has("stop_sound") -> {
+                val was = if (r.info.dry) false else stopBackground(r)
+                log(r, p, "stop_sound: " + if (r.info.dry) "в пробном запуске пропущено" else if (was) "фоновый звук остановлен" else "фонового звука не было")
+            }
             s.has("telegram") -> {
                 val text = fill(r, s.optString("telegram"))
                 log(r, p, "telegram: $text")
@@ -362,8 +369,9 @@ object TaskEngine {
         log(r, p, "play: $name, громкость ${vol ?: "как есть"}, нарастание ${Dur.human(fadeIn)}, затухание ${Dur.human(fadeOut)}" +
             (forMs?.let { ", ${Dur.human(it)}" } ?: "") + (if (loop) ", по кругу" else "") + (if (!wait) ", не ждать конца" else ""))
         if (r.info.dry) return
+        if (!wait) stopBackground(r)
         val job = Runnable {
-            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop) { r.stopRequested() }?.let {
+            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop) { r.stopRequested() || (!wait && r.bgStop) }?.let {
                 log(r, p, "ошибка звука: $it")
                 if (wait) throw StepError(it)
             }
@@ -372,10 +380,23 @@ object TaskEngine {
             job.run()
             check(r)
         } else {
+            r.bgStop = false
             val th = Thread({ try { job.run() } catch (e: Exception) {} }, "task-audio")
             r.bg.add(th)
+            r.bgThread = th
             th.start()
         }
+    }
+
+    /** Гасит фоновый звук задачи (с затуханием fade_out) и ждёт его окончания. */
+    private fun stopBackground(r: Run): Boolean {
+        val th = r.bgThread ?: return false
+        if (!th.isAlive) { r.bgThread = null; return false }
+        r.bgStop = true
+        try { th.join(4000) } catch (e: InterruptedException) {}
+        r.bgThread = null
+        r.bgStop = false
+        return true
     }
 
     private fun watch(r: Run, w: JSONObject, p: String) {

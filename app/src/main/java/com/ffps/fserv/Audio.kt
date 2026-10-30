@@ -55,6 +55,7 @@ object Audio {
             val natural = mp.duration.toLong().coerceAtLeast(0)
             val total = when {
                 forMs != null && loop -> forMs
+                loop -> Long.MAX_VALUE / 4 // по кругу до остановки
                 forMs != null -> minOf(forMs, if (natural > 0) natural else forMs)
                 natural > 0 -> natural
                 else -> 30_000L
@@ -66,12 +67,28 @@ object Audio {
             mp.setVolume(if (fadeIn > 0) 0f else 1f, if (fadeIn > 0) 0f else 1f)
             mp.start()
             val t0 = SystemClock.elapsedRealtime()
+            var lastG = if (fadeIn > 0) 0f else 1f
             while (true) {
                 val pos = SystemClock.elapsedRealtime() - t0
-                if (pos >= total || completed || cancel()) break
+                if (pos >= total || completed) break
+                if (cancel()) {
+                    // остановка по просьбе: плавное затухание от текущего уровня (не дольше 3 с)
+                    val dur = minOf(fadeOut, 3000L)
+                    if (dur > 0) {
+                        val t1 = SystemClock.elapsedRealtime()
+                        while (SystemClock.elapsedRealtime() - t1 < dur) {
+                            val k = lastG * (1f - (SystemClock.elapsedRealtime() - t1).toFloat() / dur)
+                            val gg = (k * k).coerceIn(0f, 1f)
+                            mp.setVolume(gg, gg)
+                            Thread.sleep(40)
+                        }
+                    }
+                    break
+                }
                 var g = 1f
                 if (fadeIn > 0 && pos < fadeIn) g = pos.toFloat() / fadeIn
                 if (fadeOut > 0 && pos > total - fadeOut) g = minOf(g, (total - pos).toFloat() / fadeOut)
+                lastG = g
                 g = (g * g).coerceIn(0f, 1f) // квадрат ближе к восприятию громкости, чем линейная кривая
                 mp.setVolume(g, g)
                 Thread.sleep(40)

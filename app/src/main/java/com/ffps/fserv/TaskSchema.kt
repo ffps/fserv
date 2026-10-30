@@ -15,7 +15,7 @@ object TaskSchema {
     private val ROOT_KEYS = setOf("version", "voice", "zones", "tasks", "comment")
     private val TASK_KEYS = setOf("id", "title", "enabled", "cron", "late_ok", "timeout", "steps", "comment")
     private val VOICE_KEYS = setOf("volume", "rate", "pitch", "lang", "voice", "comment")
-    private val ACTIONS = listOf("say", "play", "telegram", "wait", "watch", "if", "repeat", "stop", "log", "ask", "chat")
+    private val ACTIONS = listOf("say", "play", "telegram", "wait", "watch", "if", "repeat", "stop", "stop_sound", "log", "ask", "chat")
     private val MODIFIERS = mapOf(
         "say" to setOf("volume"),
         "play" to setOf("volume", "fade_in", "fade_out", "for", "loop", "wait"),
@@ -25,6 +25,7 @@ object TaskSchema {
         "if" to setOf("then", "else"),
         "repeat" to setOf("do"),
         "stop" to emptySet(),
+        "stop_sound" to emptySet(),
         "log" to emptySet()
     )
     private val WATCH_KEYS = setOf("motion", "for", "poll", "save_as", "threshold", "area", "zone", "comment")
@@ -184,6 +185,7 @@ object TaskSchema {
                 if (v !is String || (v.isBlank() && a != "stop")) return "$a: нужен непустой текст"
                 tpl(v, c)?.let { return "$a: $it" }
             }
+            "stop_sound" -> if (v != true) return "stop_sound: пишите true (останавливает звук, запущенный с \"wait\": false)"
             "wait" -> try { Dur.parse(v, "wait") } catch (e: IllegalArgumentException) { return e.message }
             "play" -> {
                 val names = when (v) {
@@ -201,7 +203,7 @@ object TaskSchema {
                 }
                 if (s.has("loop") && s.opt("loop") !is Boolean) return "loop: true или false"
                 if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
-                if (s.optBoolean("loop") && !s.has("for")) return "loop: true требует поля for (иначе звук не остановится)"
+                if (s.optBoolean("loop") && !s.has("for") && s.optBoolean("wait", true)) return "loop: true требует поля for либо \"wait\": false (иначе звук не остановится; в фоновом режиме его гасит шаг stop_sound или конец задачи)"
             }
             "watch" -> return watch(v, c)
             "if" -> {

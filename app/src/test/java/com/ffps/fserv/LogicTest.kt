@@ -111,6 +111,9 @@ class LogicTest {
         expectError(task("""[{"wait": "5x"}]"""), "длительность")
         expectError(task("""[{"play": "a.mp3"}]"""), "a.mp3", files = { false })
         expectError(task("""[{"play": "system:alarm", "loop": true}]"""), "for")
+        // в фоновом режиме loop без for допустим, звук гасит stop_sound
+        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "wait": false}, {"stop_sound": true}]""")))
+        expectError(task("""[{"stop_sound": "yes"}]"""), "stop_sound")
         expectError(task("""[{"play": "system:alarm", "fade": 1}]"""), "лишнее поле")
         expectError(task("""[{"repeat": {"every": "1m"}, "do": []}]"""), "times")
         expectError(task("""[{"repeat": {"times": 2}}]"""), "do")
