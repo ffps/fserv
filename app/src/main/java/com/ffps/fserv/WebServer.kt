@@ -109,7 +109,23 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/stop" ->
                 if (TaskEngine.cancelCurrent()) ok("остановка запрошена") else fail(Response.Status.CONFLICT, "сейчас ничего не выполняется")
 
-            get && uri == "/api/sounds" -> json(Response.Status.OK, obj("files" to Sounds.list(), "totalBytes" to Sounds.totalSize()))
+            get && uri == "/api/sounds" -> json(Response.Status.OK, obj("files" to Sounds.list(), "totalBytes" to Sounds.totalSize(), "playing" to Audio.previewing()))
+            get && uri == "/api/sounds/file" -> {
+                val name = q(s, "name") ?: ""
+                if (name.startsWith("system:")) {
+                    val r = try { Audio.systemSound(ctx, name) } catch (e: Exception) { null }
+                    if (r == null) fail(Response.Status.NOT_FOUND, "системный сигнал недоступен для скачивания")
+                    else NanoHTTPD.newChunkedResponse(Response.Status.OK, r.second, r.first).also { it.addHeader("Cache-Control", "no-store") }
+                } else {
+                    val f = Sounds.file(name)
+                    if (!f.isFile) fail(Response.Status.NOT_FOUND, "файла нет")
+                    else {
+                        val ext = f.extension.lowercase()
+                        val mime = when (ext) { "mp3" -> "audio/mpeg"; "wav" -> "audio/wav"; "ogg" -> "audio/ogg"; "m4a" -> "audio/mp4"; "aac" -> "audio/aac"; else -> "audio/flac" }
+                        NanoHTTPD.newFixedLengthResponse(Response.Status.OK, mime, f.inputStream(), f.length()).also { it.addHeader("Cache-Control", "no-store") }
+                    }
+                }
+            }
             post && uri == "/api/sounds" -> {
                 val name = Sounds.checkName(q(s, "name"))
                 Sounds.save(name, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
@@ -364,22 +380,22 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         )
     }
 
-    /** Проверка прокси: запрос к каждому из трёх адресов через него, независимо от галочек. Любой HTTP-ответ означает, что связь есть. */
+    /** Проверка связи: запрос к каждому из трёх адресов; через прокси, если для адреса стоит галочка, иначе напрямую. Любой HTTP-ответ означает, что связь есть. */
     private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
         val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"))
         require(name == null || all.any { it.first == name }) { "name: telegram, llm или updates" }
-        val targets = all.filter { name == null || it.first == name }.map { it.second }
+        val targets = all.filter { name == null || it.first == name }.map { Triple(it.first, it.second.first, it.second.second) }
         val lines = ArrayList<String>()
         var bad = 0
-        for ((title, url) in targets) {
+        for ((purpose, title, url) in targets) {
             val t0 = System.currentTimeMillis()
             try {
-                val r = Net.request("test", "GET", url)
-                lines.add("$title: связь есть (HTTP ${r.code}, ${System.currentTimeMillis() - t0} мс)")
+                val r = Net.request(purpose, "GET", url)
+                lines.add("$title: связь есть, ${if (r.via == "напрямую") "без прокси" else "через прокси"} (HTTP ${r.code}, ${System.currentTimeMillis() - t0} мс)")
             } catch (e: Exception) {
                 bad++
-                lines.add("$title: НЕТ СВЯЗИ: ${e.message}")
+                lines.add("$title: НЕТ СВЯЗИ (${if (Settings.proxyCfg(purpose) == null) "без прокси" else "через прокси"}): ${e.message}")
             }
         }
         val text = lines.joinToString("\n")
@@ -434,14 +450,15 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/telegram/send" to "поставить в очередь сообщение (тело: текст)",
         "GET /api/outbox" to "очередь неотправленных сообщений",
         "POST /api/outbox/clear" to "очистить очередь",
-        "POST /api/proxy/test" to "проверить прокси: запрос к Telegram, Gemini и GitHub через него; ?name=telegram|llm|updates проверяет один адрес",
+        "POST /api/proxy/test" to "проверить связь: запрос к Telegram, Gemini и GitHub (через прокси, если стоит галочка, иначе напрямую); ?name=telegram|llm|updates проверяет один адрес",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
         "GET /api/tasks" to "задачи, ближайшие запуски, ход и итоги выполнения",
         "POST /api/tasks/run" to "запустить задачу; ?id=wakeup&dry=1 (пробный) &assume=moved:true (результат watch в пробном запуске)",
         "POST /api/tasks/stop" to "остановить выполняющуюся задачу",
-        "GET /api/sounds" to "загруженные звуки",
+        "GET /api/sounds" to "загруженные звуки; playing — что звучит на устройстве при прослушивании",
+        "GET /api/sounds/file" to "отдать звук для прослушивания в браузере; ?name=alarm.mp3 или system:alarm",
         "POST /api/sounds" to "загрузить звук: тело файла, ?name=alarm.mp3",
         "POST /api/sounds/delete" to "удалить звук; ?name=",
         "POST /api/sounds/play" to "прослушать звук; ?name=alarm.mp3&volume=80 (или system:alarm)",

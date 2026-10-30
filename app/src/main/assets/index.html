@@ -818,16 +818,32 @@ async function loadSound() {
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {
-  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td>" + t + "</td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
+  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
 }
+let sdTimer = null;
 async function loadSoundFiles() {
-  renderSys();
   try {
     const d = (await api("/api/sounds")).json;
-    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td>" + esc(f.name) + "</td><td>" + (f.size / 1048576).toFixed(2) + " МБ</td><td>" + (f.durationMs ? fmtDur(f.durationMs / 1000) + " (" + Math.round(f.durationMs / 1000) + " с)" : "?") + "</td><td>" +
+    playing = d.playing || null; renderSys();
+    clearTimeout(sdTimer);
+    if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
+    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + (f.size / 1048576).toFixed(2) + " МБ</td><td>" + (f.durationMs ? fmtDur(f.durationMs / 1000) + " (" + Math.round(f.durationMs / 1000) + " с)" : "?") + "</td><td>" +
       '<button class="btn sm sec" data-sd="' + esc(f.name) + '" data-act="play">' + (playing === f.name ? "■" : "▶") + '</button> <button class="btn sm danger" data-sd="' + esc(f.name) + '" data-act="del">Удалить</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
   } catch (e) { say("#sdMsg", e.message, false); }
 }
+let bAudio = null, bName = null;
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-bp]"); if (!a) return;
+  e.preventDefault();
+  const n = a.dataset.bp;
+  if (bAudio) { bAudio.pause(); bAudio = null; }
+  if (bName === n) { bName = null; say("#sdMsg", "остановлено", true); return; }
+  bName = n; bAudio = new Audio("/api/sounds/file?name=" + encodeURIComponent(n));
+  bAudio.volume = Math.max(0, Math.min(1, Number($("#sdVol").value) / 100 || 1));
+  bAudio.onended = () => { bName = null; };
+  bAudio.onerror = () => { bName = null; say("#sdMsg", "браузер не смог воспроизвести " + n, false); };
+  bAudio.play().then(() => say("#sdMsg", "играет в браузере: " + n, true)).catch(err => { bName = null; say("#sdMsg", "не удалось воспроизвести: " + err.message, false); });
+});
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-sd]"); if (!b) return;
   const n = b.dataset.sd;

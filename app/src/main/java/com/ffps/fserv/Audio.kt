@@ -88,13 +88,35 @@ object Audio {
     // ---- пробное воспроизведение из веб-интерфейса ----
     @Volatile private var previewStop = false
     @Volatile private var previewThread: Thread? = null
+    @Volatile private var previewName: String? = null
+
+    /** Что сейчас звучит в пробном воспроизведении (имя или system:...), либо null. */
+    fun previewing(): String? = previewName
+
+    /** Поток для скачивания системного сигнала браузером: null, если сигнала нет. */
+    fun systemSound(ctx: Context, source: String): Pair<java.io.InputStream, String>? {
+        val type = when (source) {
+            "system:alarm" -> RingtoneManager.TYPE_ALARM
+            "system:notification" -> RingtoneManager.TYPE_NOTIFICATION
+            "system:ringtone" -> RingtoneManager.TYPE_RINGTONE
+            else -> return null
+        }
+        val uri = RingtoneManager.getDefaultUri(type) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE) ?: return null
+        val ins = ctx.contentResolver.openInputStream(uri) ?: return null
+        return ins to (ctx.contentResolver.getType(uri)?.takeIf { it.startsWith("audio/") || it == "application/ogg" } ?: "audio/mpeg")
+    }
 
     fun preview(ctx: Context, name: String, volumePct: Int?) {
         stopPreview()
         previewStop = false
+        previewName = name
         previewThread = Thread({
-            val err = play(ctx, name, volumePct, 0, 0, 60_000L, false) { previewStop }
-            if (err != null) FLog.w("audio", "пробное воспроизведение: $err")
+            try {
+                val err = play(ctx, name, volumePct, 0, 0, 60_000L, false) { previewStop }
+                if (err != null) FLog.w("audio", "пробное воспроизведение: $err")
+            } finally {
+                if (previewThread === Thread.currentThread()) previewName = null
+            }
         }, "audio-preview").also { it.start() }
     }
 
