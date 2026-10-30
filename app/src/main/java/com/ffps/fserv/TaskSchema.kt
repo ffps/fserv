@@ -163,7 +163,8 @@ object TaskSchema {
     }
 
     private fun step(s: JSONObject, c: Ctx, p: String, depth: Int): String? {
-        val present = ACTIONS.filter { s.has(it) }
+        // «wait» у play — модификатор (не ждать конца звука), а не отдельное действие
+        val present = ACTIONS.filter { s.has(it) }.let { if ("play" in it) it - "wait" else it }
         if (present.isEmpty()) {
             val unknown = s.keys().asSequence().filter { it != "comment" }.toList()
             return "не найдено действие (нужно одно из: ${ACTIONS.joinToString(", ")})" + if (unknown.isNotEmpty()) "; встретилось: ${unknown.joinToString(", ")}" else ""
