@@ -56,6 +56,9 @@ dependencies {
     // Встроенный HTTP-сервер (веб-интерфейс и API)
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
+    // Собственный HTTP-клиент: платформенный в Android 8.0 падает с NullPointerException при закрытии соединения
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
     // Тесты логики (длительности, условия, схема задач) выполняются на обычной JVM
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20231013'
