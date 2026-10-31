@@ -197,7 +197,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 ok("журнал очищен")
             }
 
-            get && uri == "/api/config" -> text(Response.Status.OK, "application/json", TaskStore.read())
+            get && uri == "/api/config" -> text(Response.Status.OK, "text/plain", TaskStore.read())
+            get && uri == "/api/config/tasks" -> json(Response.Status.OK, TaskStore.overview())
+            get && uri == "/api/tasks/text" -> {
+                val t = TaskStore.taskText(q(s, "id") ?: "")
+                if (t == null) fail(Response.Status.NOT_FOUND, "задачи нет") else text(Response.Status.OK, "text/plain", t)
+            }
+            get && uri == "/api/config/global" -> text(Response.Status.OK, "text/plain", TaskStore.globalText())
             post && uri == "/api/config" -> saveConfig(body(s))
             post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", body(s))
             post && uri == "/api/tasks/delete" -> {
@@ -206,8 +212,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 if (err == null) { Journal.add("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
             post && uri == "/api/config/global" -> {
-                val patch = try { JSONObject(body(s)) } catch (e: JSONException) { return fail(Response.Status.BAD_REQUEST, "тело запроса не JSON") }
-                val err = TaskStore.saveGlobal(patch)
+                val err = TaskStore.saveGlobal(body(s))
                 if (err == null) { Journal.add("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
             }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
@@ -237,23 +242,22 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 else json(Response.Status.OK, obj("day" to day, "photos" to PhotoStore.list(day)))
             }
             get && uri == "/api/photos/file" -> {
-                val f = PhotoStore.file(q(s, "day") ?: "", q(s, "name") ?: "")
-                if (f == null) fail(Response.Status.NOT_FOUND, "фото нет")
-                else if (q(s, "thumb") == "1") {
-                    val t = PhotoStore.thumb(f)
-                    if (t == null) fail(Response.Status.INTERNAL_ERROR, "не удалось уменьшить фото")
-                    else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", java.io.ByteArrayInputStream(t), t.size.toLong())
+                val data = PhotoStore.read(q(s, "day") ?: "", q(s, "name") ?: "")
+                if (data == null) fail(Response.Status.NOT_FOUND, "фото нет")
+                else {
+                    val out = if (q(s, "thumb") == "1") PhotoStore.thumb(data) else data
+                    if (out == null) fail(Response.Status.INTERNAL_ERROR, "не удалось уменьшить фото")
+                    else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", java.io.ByteArrayInputStream(out), out.size.toLong())
                         .also { it.addHeader("Cache-Control", "private, max-age=3600") }
-                } else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", f.inputStream(), f.length())
-                    .also { it.addHeader("Cache-Control", "private, max-age=3600") }
+                }
             }
             post && uri == "/api/photos/delete" -> {
                 if (PhotoStore.delete(q(s, "day") ?: "", q(s, "name") ?: "")) ok("фото удалено") else fail(Response.Status.NOT_FOUND, "фото нет")
             }
             post && uri == "/api/photos/take" -> try {
-                val f = PhotoStore.shoot(ctx, "web-photo", "web")
-                Journal.add("photo", "Снимок из веб-интерфейса: ${PhotoStore.relative(f)}")
-                json(Response.Status.OK, obj("ok" to true, "message" to "снято: ${PhotoStore.relative(f)}", "day" to f.parentFile?.name, "name" to f.name))
+                val path = PhotoStore.shoot(ctx, "web-photo", "web")
+                Journal.add("photo", "Снимок из веб-интерфейса: $path")
+                json(Response.Status.OK, obj("ok" to true, "message" to "снято: $path", "day" to path.substringBeforeLast('/').substringAfterLast('/'), "name" to path.substringAfterLast('/')))
             } catch (e: IllegalStateException) {
                 fail(Response.Status.CONFLICT, e.message ?: "не удалось снять")
             }
@@ -429,7 +433,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
-    private fun voiceCfg(): JSONObject? = try { JSONObject(TaskStore.read()).optJSONObject("voice") } catch (e: Exception) { null }
+    private fun voiceCfg(): JSONObject? = try { Script.parse(TaskStore.read()).root.optJSONObject("voice") } catch (e: Exception) { null }
 
     private fun screenInfo(): JSONObject {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -459,11 +463,14 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/logs/clear" to "очистить лог",
         "GET /api/journal" to "журнал событий, новые первыми; ?limit=100",
         "POST /api/journal/clear" to "очистить журнал",
-        "GET /api/config" to "JSON-конфиг задач как текст",
-        "POST /api/tasks/save" to "сохранить одну задачу (тело: JSON задачи); ?id=прежний_id, пусто для новой",
+        "GET /api/config" to "файл задач (текст на языке сценариев)",
+        "GET /api/config/tasks" to "для редактора: задачи с текстом каждой и общие строки voice/zone",
+        "GET /api/tasks/text" to "текст одной задачи; ?id=",
+        "GET /api/config/global" to "общие строки voice и zone",
+        "POST /api/tasks/save" to "сохранить одну задачу (тело: текст задачи, строки task …); ?id=прежний_id, пусто для новой; заменяются только её строки",
         "POST /api/tasks/delete" to "удалить задачу; ?id=",
-        "POST /api/config/global" to "сохранить общие разделы voice и zones (тело: {\"voice\": {...}, \"zones\": {...}})",
-        "POST /api/config" to "сохранить конфиг задач (тело: JSON-текст), с проверкой и историей версий",
+        "POST /api/config/global" to "заменить все строки voice и zone (тело: текст этих строк)",
+        "POST /api/config" to "сохранить файл задач целиком (тело: текст), с проверкой и историей версий",
         "GET /api/config/history" to "сохранённые версии конфига",
         "POST /api/config/restore" to "восстановить версию конфига; ?name=файл",
         "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
@@ -560,7 +567,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     private fun saveTaskReq(originalId: String, bodyText: String): Response {
         val err = TaskStore.saveTask(bodyText, originalId)
         if (err != null) return fail(Response.Status.BAD_REQUEST, err)
-        val id = try { JSONObject(bodyText).optString("id") } catch (e: Exception) { "" }
+        val id = try { Script.parse(bodyText).tasks.firstOrNull()?.id ?: "" } catch (e: Exception) { "" }
         FLog.i("web", "задача «$id» сохранена")
         Journal.add("config", if (originalId.isEmpty()) "Добавлена задача «$id»" else "Изменена задача «$id»")
         return ok("задача сохранена")

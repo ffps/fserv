@@ -2,101 +2,75 @@ package com.ffps.fserv
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.IdentityHashMap
 
 /**
- * Проверка схемы tasks.json (версия 1). Возвращает понятное описание первой найденной проблемы
- * или null, если конфиг верный. Опечатки в именах полей считаются ошибками, чтобы задача не работала
- * молча не так, как задумано. Без зависимостей от Android.
+ * Проверка дерева сценария, которое строит [Script]. Возвращает описание первой найденной проблемы в виде
+ * «строка N: …» (N совпадает с номером строки в редакторе) или null, если всё верно. Опечатки в именах параметров
+ * отвергает уже [Script]; здесь проверяются значения, ссылки на переменные, зоны и файлы. Без зависимостей от Android.
  */
 object TaskSchema {
     val BUILTINS = setOf("time", "date", "weekday", "task")
     val SYSTEM_SOUNDS = setOf("system:alarm", "system:notification", "system:ringtone")
 
-    private val ROOT_KEYS = setOf("version", "voice", "zones", "tasks", "comment")
-    private val TASK_KEYS = setOf("id", "title", "enabled", "cron", "late_ok", "timeout", "steps", "comment")
-    private val VOICE_KEYS = setOf("volume", "rate", "pitch", "lang", "voice", "comment")
-    private val ACTIONS = listOf("say", "play", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log", "ask", "chat")
-    private val MODIFIERS = mapOf(
-        "say" to setOf("volume", "wait"),
-        "play" to setOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
-        "telegram" to emptySet(),
-        "photo" to emptySet(),
-        "delay" to emptySet(),
-        "watch" to emptySet(),
-        "background" to emptySet(),
-        "stop_background" to emptySet(),
-        "if" to setOf("then", "else"),
-        "repeat" to setOf("do"),
-        "stop" to emptySet(),
-        "log" to emptySet()
-    )
-    private val WATCH_KEYS = setOf("motion", "for", "poll", "save_as", "threshold", "area", "zone", "comment")
-    private val REPEAT_KEYS = setOf("times", "every", "until", "comment")
-    private val ID_RE = Regex("[A-Za-z0-9_-]{1,40}")
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
     private val TPL_RE = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""")
     private const val MAX_DEPTH = 8
     private const val MAX_STEPS = 300
+    private const val MAX_FILES = 10
 
-    private class Ctx(val zones: Set<String>, val fileExists: (String) -> Boolean, val taskVars: Set<String>) {
+    private class Ctx(
+        val lines: IdentityHashMap<Any, Int>, val zones: Set<String>, val fileExists: (String) -> Boolean,
+        val taskVars: Set<String>, val photoVars: Set<String>
+    ) {
         var steps = 0
         var inBg = false
+        fun err(node: Any?, msg: String): String = "строка ${lines[node] ?: 0}: $msg"
     }
 
-    fun validate(root: JSONObject, fileExists: (String) -> Boolean = { true }): String? {
-        for (k in root.keys()) if (k !in ROOT_KEYS) return "неизвестное поле «$k» (допустимы: ${ROOT_KEYS.joinToString(", ")})"
-        if (root.has("version") && root.opt("version") != 1) return "version: поддерживается только 1"
-        if (root.has("voice")) voice(root.opt("voice"))?.let { return "voice: $it" }
+    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, fileExists: (String) -> Boolean = { true }): String? {
+        fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
+        root.optJSONObject("voice")?.let { v -> voice(v)?.let { return err(v, it) } }
         val zones = HashSet<String>()
-        if (root.has("zones")) {
-            val z = root.opt("zones") as? JSONObject ?: return "zones: должен быть объектом {имя: {...}}"
+        root.optJSONObject("zones")?.let { z ->
             for (name in z.keys()) {
-                if (!VAR_RE.matches(name)) return "zones: имя «$name» должно состоять из латинских букв, цифр и _"
-                zone(z.opt(name))?.let { return "zones.$name: $it" }
+                val zo = z.getJSONObject(name)
+                zone(zo)?.let { return err(zo, "zone $name: $it") }
                 zones.add(name)
             }
         }
-        val tasks = root.opt("tasks")
-        if (root.has("tasks") && tasks !is JSONArray) return "поле «tasks» должно быть массивом [...]"
-        if (tasks is JSONArray) {
-            val ids = HashSet<String>()
-            for (i in 0 until tasks.length()) {
-                val t = tasks.opt(i) as? JSONObject ?: return "задача №${i + 1}: должна быть объектом {...}"
-                val id = t.optString("id")
-                if (id.isBlank()) return "задача №${i + 1}: нужно поле id"
-                if (!ID_RE.matches(id)) return "задача №${i + 1}: id «$id» может содержать латинские буквы, цифры, _ и -, до 40 знаков"
-                if (!ids.add(id)) return "id «$id» повторяется"
-                task(id, t, Ctx(zones, fileExists, collectVars(t.opt("steps"))))?.let { return "задача «$id»: $it" }
-            }
+        val tasks = root.optJSONArray("tasks") ?: JSONArray()
+        for (i in 0 until tasks.length()) {
+            val t = tasks.getJSONObject(i)
+            val vars = HashSet<String>()
+            val photos = HashSet<String>()
+            collectVars(t.opt("steps"), vars, photos)
+            task(t, Ctx(lines, zones, fileExists, vars, photos))?.let { return it }
         }
         return null
     }
 
-    private fun voice(v: Any?): String? {
-        val o = v as? JSONObject ?: return "должно быть объектом"
-        for (k in o.keys()) if (k !in VOICE_KEYS) return "неизвестное поле «$k» (допустимы: ${VOICE_KEYS.joinToString(", ")})"
-        if (o.has("volume") && !(o.opt("volume") is Number && o.optInt("volume", -1) in 0..100)) return "volume: число от 0 до 100"
-        if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "rate: число от 0.3 до 3 (1 = обычная скорость)"
-        if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "pitch: число от 0.3 до 2 (1 = обычный тон)"
-        if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "lang: например ru-RU"
+    private fun voice(o: JSONObject): String? {
+        if (o.has("volume") && !(o.opt("volume") is Number && o.optInt("volume", -1) in 0..100)) return "voice: volume — число от 0 до 100"
+        if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "voice: rate — число от 0.3 до 3 (1 = обычная скорость)"
+        if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "voice: pitch — число от 0.3 до 2 (1 = обычный тон)"
+        if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "voice: lang — например ru-RU"
         return null
     }
 
-    private fun zone(v: Any?): String? {
-        val o = v as? JSONObject ?: return "должно быть объектом {\"rect\": [x1, y1, x2, y2]}"
-        for (k in o.keys()) if (k !in setOf("rect", "rects", "exclude", "comment")) return "неизвестное поле «$k» (допустимы: rect, rects, exclude)"
+    private fun zone(o: JSONObject): String? {
         if (!o.has("rect") && !o.has("rects") && !o.has("exclude")) return "нужен rect, rects или exclude"
         if (o.has("rect")) rect(o.opt("rect"))?.let { return "rect: $it" }
         for (key in listOf("rects", "exclude")) if (o.has(key)) {
-            val a = o.opt(key) as? JSONArray ?: return "$key: должен быть массивом прямоугольников"
+            val a = o.opt(key) as? JSONArray ?: return "$key: нужен список прямоугольников, например $key=[[0,0,0.5,0.5],[0.5,0,1,0.5]]"
             for (i in 0 until a.length()) rect(a.opt(i))?.let { return "$key[${i + 1}]: $it" }
         }
         return null
     }
 
     private fun rect(v: Any?): String? {
-        val a = v as? JSONArray ?: return "ожидается [x1, y1, x2, y2] (доли кадра от 0 до 1)"
-        if (a.length() != 4) return "ожидается 4 числа [x1, y1, x2, y2]"
+        val a = v as? JSONArray ?: return "ожидается [x1,y1,x2,y2] (доли кадра от 0 до 1)"
+        if (a.length() != 4) return "ожидается 4 числа [x1,y1,x2,y2]"
         val n = DoubleArray(4)
         for (i in 0..3) {
             if (a.opt(i) !is Number) return "ожидаются числа"
@@ -107,45 +81,39 @@ object TaskSchema {
         return null
     }
 
-    private fun task(id: String, t: JSONObject, c: Ctx): String? {
-        for (k in t.keys()) if (k !in TASK_KEYS) return "неизвестное поле «$k» (допустимы: ${TASK_KEYS.joinToString(", ")})"
-        if (t.has("enabled") && t.opt("enabled") !is Boolean) return "enabled должно быть true или false"
-        if (t.has("title") && t.opt("title") !is String) return "title должно быть строкой"
+    private fun task(t: JSONObject, c: Ctx): String? {
+        val id = t.optString("id")
+        if (t.has("enabled") && t.opt("enabled") !is Boolean) return c.err(t, "task $id: enabled — true или false")
         if (t.has("cron")) {
-            if (t.opt("cron") !is String) return "cron должно быть строкой"
-            try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return "cron: ${e.message}" }
+            if (t.opt("cron") !is String) return c.err(t, "task $id: cron пишется в кавычках, например cron=\"0 8 * * *\"")
+            try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: cron: ${e.message}") }
         }
         for (k in listOf("late_ok", "timeout")) if (t.has(k)) {
-            try { Dur.parse(t.opt(k), k) } catch (e: IllegalArgumentException) { return e.message }
+            try { Dur.parse(t.opt(k), k) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: ${e.message}") }
         }
-        if (!t.has("steps")) return "нужно поле steps (список шагов)"
-        val steps = t.opt("steps") as? JSONArray ?: return "steps должно быть массивом [...]"
-        return steps(steps, c, "", 1)
+        val steps = t.optJSONArray("steps") ?: JSONArray()
+        if (steps.length() == 0) return c.err(t, "task $id: нет шагов (напишите их ниже, с отступом)")
+        return steps(steps, c, 1)
     }
 
-    /** Имена всех переменных, которые задача создаёт через save_as. */
-    private fun collectVars(steps: Any?): Set<String> {
-        val out = HashSet<String>()
-        fun walk(a: Any?) {
-            when (a) {
-                is JSONArray -> for (i in 0 until a.length()) walk(a.opt(i))
-                is JSONObject -> {
-                    (a.opt("watch") as? JSONObject)?.optString("save_as")?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
-                    for (k in listOf("then", "else", "do")) walk(a.opt(k))
-                }
+    /** Переменные, которые задача создаёт через assign: [vars] — все, [photos] — только пути фотографий. */
+    private fun collectVars(steps: Any?, vars: MutableSet<String>, photos: MutableSet<String>) {
+        when (steps) {
+            is JSONArray -> for (i in 0 until steps.length()) collectVars(steps.opt(i), vars, photos)
+            is JSONObject -> {
+                steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
+                for (k in listOf("then", "else", "do", "background")) collectVars(steps.opt(k), vars, photos)
             }
         }
-        walk(steps)
-        return out
     }
 
-    private fun steps(a: JSONArray, c: Ctx, path: String, depth: Int): String? {
-        if (depth > MAX_DEPTH) return "слишком глубокая вложенность (больше $MAX_DEPTH)"
+    private fun steps(a: JSONArray, c: Ctx, depth: Int): String? {
+        if (depth > MAX_DEPTH) return c.err(a.optJSONObject(0), "слишком глубокая вложенность (больше $MAX_DEPTH уровней)")
         for (i in 0 until a.length()) {
-            val p = if (path.isEmpty()) "${i + 1}" else "$path.${i + 1}"
-            val s = a.opt(i) as? JSONObject ?: return "шаг $p: должен быть объектом {...}"
-            if (++c.steps > MAX_STEPS) return "слишком много шагов (больше $MAX_STEPS)"
-            step(s, c, p, depth)?.let { return "шаг $p: $it" }
+            val s = a.getJSONObject(i)
+            if (++c.steps > MAX_STEPS) return c.err(s, "слишком много шагов в задаче (больше $MAX_STEPS)")
+            step(s, c, depth)?.let { return it }
         }
         return null
     }
@@ -159,91 +127,91 @@ object TaskSchema {
     }
 
     private fun cond(text: Any?, c: Ctx, what: String): String? {
-        if (text !is String) return "$what: ожидается строка-условие, например \"moved\""
+        if (text !is String) return "$what: ожидается условие, например not moved"
         val ids = try { Expr.idents(text) } catch (e: IllegalArgumentException) { return "$what «$text»: ${e.message}" }
-        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (задаётся в watch через save_as)"
+        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (её задаёт assign у watch или photo)"
         return null
     }
 
-    private fun step(s: JSONObject, c: Ctx, p: String, depth: Int): String? {
-        val present = ACTIONS.filter { s.has(it) }
-        if (present.isEmpty()) {
-            val unknown = s.keys().asSequence().filter { it != "comment" }.toList()
-            return "не найдено действие (нужно одно из: ${ACTIONS.joinToString(", ")})" + if (unknown.isNotEmpty()) "; встретилось: ${unknown.joinToString(", ")}" else ""
-        }
-        if (present.size > 1) return "в одном шаге два действия (${present.joinToString(", ")}): разнесите по разным шагам"
-        val a = present[0]
-        if (a == "ask") return "ask (вопрос голосом) появится на этапе 5, вместе с распознаванием речи"
-        if (a == "chat") return "chat (разговор с ИИ) появится на этапе 6"
+    private fun step(s: JSONObject, c: Ctx, depth: Int): String? {
+        val a = Script.ACTIONS.first { s.has(it) }
+        fun e(msg: String) = c.err(s, msg)
         if (c.inBg) {
-            if (a in setOf("watch", "background", "stop_background", "photo", "stop")) return "$a: внутри background не допускается (камера и остановка задачи принадлежат основному ходу)"
-            if ((a == "say" || a == "play") && s.has("wait")) return "$a: внутри background параметр wait не нужен (блок и так идёт в фоне)"
+            if (a in setOf("watch", "background", "stop_background", "photo", "stop")) return e("$a: внутри background не допускается (камера и остановка задачи принадлежат основному ходу)")
+            if ((a == "say" || a == "play") && s.has("wait")) return e("$a: внутри background параметр wait не нужен (блок и так идёт в фоне)")
         }
-        val allowed = (MODIFIERS[a] ?: emptySet()) + a + "comment"
-        for (k in s.keys()) if (k !in allowed) return "лишнее поле «$k» у действия $a" + if ((MODIFIERS[a] ?: emptySet()).isNotEmpty()) " (допустимы: ${(MODIFIERS[a] ?: emptySet()).joinToString(", ")})" else ""
         val v = s.opt(a)
         when (a) {
             "say" -> {
-                if (v !is String || v.isBlank()) return "say: нужен непустой текст"
-                tpl(v, c)?.let { return "say: $it" }
-                volume(s)?.let { return it }
-                if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
+                if (v !is String || v.isBlank()) return e("say: нужен непустой текст")
+                tpl(v, c)?.let { return e("say: $it") }
+                volume(s)?.let { return e(it) }
+                if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: true или false (или флаг wait)")
             }
             "log", "telegram", "stop" -> {
-                if (v !is String || (v.isBlank() && a != "stop")) return "$a: нужен непустой текст"
-                tpl(v, c)?.let { return "$a: $it" }
+                if (v !is String || (v.isBlank() && a != "stop")) return e("$a: нужен непустой текст")
+                tpl(v, c)?.let { return e("$a: $it") }
+                if (a == "telegram" && s.has("files")) {
+                    val names = when (val f = s.opt("files")) {
+                        is String -> listOf(f)
+                        is JSONArray -> (0 until f.length()).map { f.opt(it) as? String ?: return e("files: в списке должны быть имена переменных, например files=[photo1]") }
+                        else -> return e("files: список переменных с фото, например files=[photo1]")
+                    }
+                    if (names.isEmpty()) return e("files: список пуст")
+                    if (names.size > MAX_FILES) return e("files: не больше $MAX_FILES файлов в одном сообщении")
+                    for (n in names) if (n !in c.photoVars) {
+                        return e("files: «$n» не переменная с фото (её задаёт photo assign=$n; есть: ${c.photoVars.joinToString(", ").ifEmpty { "нет" }})")
+                    }
+                }
             }
-            "stop_background" -> if (v != true) return "stop_background: пишите true (останавливает фоновые звук, речь и блок background)"
-            "photo" -> if (v != true) return "photo: пишите true"
+            "stop_background", "photo" -> {
+                if (a == "photo" && s.has("assign")) {
+                    val n = s.opt("assign")
+                    if (n !is String || !VAR_RE.matches(n)) return e("photo: assign — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("photo: имя «$n» занято встроенной подстановкой")
+                }
+            }
             "background" -> {
-                val body = v as? JSONArray ?: return "background: ожидается список шагов [...]"
-                if (body.length() == 0) return "background: список шагов пуст"
+                val body = v as JSONArray
                 val was = c.inBg
                 c.inBg = true
-                try { steps(body, c, "$p.bg", depth + 1)?.let { return it } } finally { c.inBg = was }
+                try { steps(body, c, depth + 1)?.let { return it } } finally { c.inBg = was }
             }
-            "delay" -> try { Dur.parse(v, "delay") } catch (e: IllegalArgumentException) { return e.message }
+            "delay" -> try { Dur.parse(v, "delay") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "delay") }
             "play" -> {
                 val names = when (v) {
                     is String -> listOf(v)
-                    is JSONArray -> (0 until v.length()).map { v.opt(it) as? String ?: return "play: в списке должны быть имена файлов" }
-                    else -> return "play: имя файла или список имён"
+                    is JSONArray -> (0 until v.length()).map { v.opt(it) as? String ?: return e("play: в списке должны быть имена файлов") }
+                    else -> return e("play: имя файла или список имён в скобках, например play [a.mp3,b.mp3]")
                 }
-                if (names.isEmpty()) return "play: список пуст"
+                if (names.isEmpty()) return e("play: список пуст")
                 for (n in names) {
-                    if (n !in SYSTEM_SOUNDS && !c.fileExists(n)) return "play: файла «$n» нет (загрузите его на вкладке «Звук»; системные звуки: ${SYSTEM_SOUNDS.joinToString(", ")})"
+                    if (n !in SYSTEM_SOUNDS && !c.fileExists(n)) return e("play: файла «$n» нет (загрузите его на вкладке «Звук»; системные звуки: ${SYSTEM_SOUNDS.joinToString(", ")})")
                 }
-                volume(s)?.let { return it }
+                volume(s)?.let { return e(it) }
                 for (k in listOf("fade_in", "fade_out", "for")) if (s.has(k)) {
-                    try { Dur.parse(s.opt(k), k) } catch (e: IllegalArgumentException) { return e.message }
+                    try { Dur.parse(s.opt(k), k) } catch (ex: IllegalArgumentException) { return e(ex.message ?: k) }
                 }
-                if (s.has("loop") && s.opt("loop") !is Boolean) return "loop: true или false"
+                if (s.has("loop") && s.opt("loop") !is Boolean) return e("loop: флаг loop или loop=false")
                 if (s.has("pause")) {
-                    if (!s.optBoolean("loop")) return "pause: работает только вместе с loop: true (пауза между повторами звука); для паузы после звука используйте шаг {\"wait\": \"3s\"}"
-                    try { Dur.parseList(s.opt("pause"), "pause") } catch (e: IllegalArgumentException) { return e.message }
+                    if (s.opt("loop") != true) return e("pause: работает только вместе с loop (пауза между повторами звука); для паузы после звука используйте delay 3s")
+                    try { Dur.parseList(s.opt("pause"), "pause") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "pause") }
                 }
-                if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
-                if (s.optBoolean("loop") && !s.has("for") && s.optBoolean("wait", true) && !c.inBg) return "loop: true требует поля for либо \"wait\": false (иначе звук не остановится; в фоне его гасит stop_background или конец задачи)"
+                if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: wait=true или wait=false")
+                if (s.opt("loop") == true && !s.has("for") && s.optBoolean("wait", true) && !c.inBg) return e("loop требует for=… либо wait=false (иначе звук не остановится; в фоне его гасит stop_background или конец задачи)")
             }
-            "watch" -> return watch(v, c)
+            "watch" -> return watch(s, v as JSONObject, c)
             "if" -> {
-                cond(v, c, "if")?.let { return it }
-                val th = s.opt("then") as? JSONArray ?: return "if: нужно поле then (список шагов)"
-                steps(th, c, "$p.then", depth + 1)?.let { return it }
-                if (s.has("else")) {
-                    val el = s.opt("else") as? JSONArray ?: return "else: должен быть массивом шагов"
-                    steps(el, c, "$p.else", depth + 1)?.let { return it }
-                }
+                cond(v, c, "if")?.let { return e(it) }
+                steps(s.getJSONArray("then"), c, depth + 1)?.let { return it }
+                if (s.has("else")) steps(s.getJSONArray("else"), c, depth + 1)?.let { return it }
             }
             "repeat" -> {
-                val r = v as? JSONObject ?: return "repeat: ожидается объект {\"times\": 6, \"every\": \"5m\", \"until\": \"moved\"}"
-                for (k in r.keys()) if (k !in REPEAT_KEYS) return "repeat: неизвестное поле «$k» (допустимы: ${REPEAT_KEYS.joinToString(", ")})"
-                if (!r.has("times")) return "repeat: нужно поле times"
-                try { Dur.parseCount(r.opt("times"), "times") } catch (e: IllegalArgumentException) { return "repeat: ${e.message}" }
-                if (r.has("every")) try { Dur.parseList(r.opt("every"), "every") } catch (e: IllegalArgumentException) { return "repeat: ${e.message}" }
-                if (r.has("until")) cond(r.opt("until"), c, "until")?.let { return "repeat: $it" }
-                val body = s.opt("do") as? JSONArray ?: return "repeat: нужно поле do (список шагов, снаружи объекта repeat)"
-                steps(body, c, "$p.do", depth + 1)?.let { return it }
+                val r = v as JSONObject
+                try { Dur.parseCount(r.opt("times"), "times") } catch (ex: IllegalArgumentException) { return e("repeat: ${ex.message}") }
+                if (r.has("every")) try { Dur.parseList(r.opt("every"), "every") } catch (ex: IllegalArgumentException) { return e("repeat: ${ex.message}") }
+                if (r.has("until")) cond(r.opt("until"), c, "until")?.let { return e("repeat: $it") }
+                steps(s.getJSONArray("do"), c, depth + 1)?.let { return it }
             }
         }
         return null
@@ -256,19 +224,20 @@ object TaskSchema {
         return null
     }
 
-    private fun watch(v: Any?, c: Ctx): String? {
-        val w = v as? JSONObject ?: return "watch: ожидается объект {\"motion\": true, \"for\": \"2m\", \"save_as\": \"moved\"}"
-        for (k in w.keys()) if (k !in WATCH_KEYS) return "watch: неизвестное поле «$k» (допустимы: ${WATCH_KEYS.joinToString(", ")})"
-        if (w.opt("motion") != true) return "watch: нужно \"motion\": true (другие виды наблюдения появятся позже)"
-        if (!w.has("for")) return "watch: нужно поле for (сколько наблюдать)"
-        try { Dur.parse(w.opt("for"), "for") } catch (e: IllegalArgumentException) { return "watch: ${e.message}" }
-        if (w.has("poll")) try { Dur.parse(w.opt("poll"), "poll") } catch (e: IllegalArgumentException) { return "watch: ${e.message}" }
-        if (w.has("save_as") && !(w.opt("save_as") is String && VAR_RE.matches(w.optString("save_as")))) return "watch: save_as: имя из латинских букв, цифр и _"
-        if (w.has("threshold") && !(w.opt("threshold") is Number && w.optInt("threshold", -1) in 1..100)) return "watch: threshold: число от 1 до 100"
-        if (w.has("area") && !(w.opt("area") is Number && w.optDouble("area") in 0.05..100.0)) return "watch: area: число процентов от 0.05 до 100"
+    private fun watch(s: JSONObject, w: JSONObject, c: Ctx): String? {
+        fun e(msg: String) = c.err(s, "watch: $msg")
+        try { Dur.parse(w.opt("for"), "длительность") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
+        if (w.has("poll")) try { Dur.parse(w.opt("poll"), "poll") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "poll") }
+        if (w.has("assign")) {
+            val n = w.opt("assign")
+            if (n !is String || !VAR_RE.matches(n)) return e("assign — имя из латинских букв, цифр и _")
+            if (n in BUILTINS) return e("имя «$n» занято встроенной подстановкой")
+        }
+        if (w.has("threshold") && !(w.opt("threshold") is Number && w.optInt("threshold", -1) in 1..100)) return e("threshold — число от 1 до 100")
+        if (w.has("area") && !(w.opt("area") is Number && w.optDouble("area") in 0.05..100.0)) return e("area — число процентов от 0.05 до 100")
         if (w.has("zone")) {
             val z = w.opt("zone")
-            if (z !is String || z !in c.zones) return "watch: zone «$z» не описана в разделе zones (описаны: ${c.zones.joinToString(", ").ifEmpty { "нет" }})"
+            if (z !is String || z !in c.zones) return e("зона «$z» не описана (строкой zone имя rect=[…]; описаны: ${c.zones.joinToString(", ").ifEmpty { "нет" }})")
         }
         return null
     }

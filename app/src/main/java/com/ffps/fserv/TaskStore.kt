@@ -2,28 +2,26 @@ package com.ffps.fserv
 
 import android.content.Context
 import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Конфиг задач (tasks.json): редактируется как JSON-текст из веб-интерфейса.
- * Перед каждой записью предыдущая версия уходит в историю (последние 20).
- * Здесь проверяется только общая форма; схема самих задач появится вместе с движком сценариев.
+ * Файл задач (tasks.txt): текст на языке сценариев, см. [Script] и script.md. Редактируется из веб-интерфейса целиком,
+ * по одной задаче и по общим строкам voice/zone. Правка одной задачи заменяет только её строки, поэтому комментарии
+ * и порядок остальных задач сохраняются. Перед каждой записью предыдущая версия уходит в историю (последние 20).
  */
 object TaskStore {
     private const val KEEP = 20
-    const val DEFAULT = "{\n  \"version\": 1,\n  \"tasks\": []\n}\n"
-    private val NAME_RE = Regex("tasks-[0-9]{8}-[0-9]{6}(-[0-9]+)?\\.json")
+    const val DEFAULT = "# Задачи fServe. Язык описан в script.md в репозитории проекта.\n"
+    private val NAME_RE = Regex("tasks-[0-9]{8}-[0-9]{6}(-[0-9]+)?\\.txt")
 
     private lateinit var file: File
     private lateinit var histDir: File
 
     fun init(ctx: Context) {
-        file = File(ctx.filesDir, "tasks.json")
+        file = File(ctx.filesDir, "tasks.txt")
         histDir = File(ctx.filesDir, "tasks-history").also { it.mkdirs() }
         if (!file.exists()) file.writeText(DEFAULT)
     }
@@ -31,93 +29,64 @@ object TaskStore {
     @Synchronized
     fun read(): String = file.readText()
 
-    /** null, если конфиг верный; иначе понятное описание проблемы. */
+    /** null, если текст верный; иначе «строка N: описание». */
     fun validate(text: String): String? {
-        if (text.isBlank()) return "конфиг пустой"
-        val root = try {
-            JSONObject(text)
-        } catch (e: JSONException) {
-            return explain(text, e)
-        }
-        if (!text.trimEnd().endsWith("}")) return "после закрывающей } есть лишний текст"
-        return TaskSchema.validate(root) { Sounds.exists(it) }
+        if (text.isBlank()) return null
+        return Script.validate(text) { Sounds.exists(it) }
     }
 
-    private fun explain(text: String, e: JSONException): String {
-        val m = e.message ?: "ошибка JSON"
-        val head = m.substringBefore(" of ").take(160)
-        val pos = Regex("at character (\\d+)").find(m)?.groupValues?.get(1)?.toIntOrNull()
-        if (pos != null) {
-            val p = pos.coerceIn(0, text.length)
-            val line = text.substring(0, p).count { it == '\n' } + 1
-            val col = p - (text.lastIndexOf('\n', p - 1) + 1) + 1
-            return "$head (строка $line, столбец $col)"
+    /** Для редактора: задачи с их текстом и общие строки; если файл не читается, поле error описывает проблему. */
+    @Synchronized
+    fun overview(): org.json.JSONObject {
+        val text = read()
+        val p = try { Script.parse(text) } catch (e: Script.ScriptError) {
+            return obj("error" to "строка ${e.line}: ${e.message}", "tasks" to JSONArray(), "global" to "")
         }
-        return head
+        val all = ScriptEdit.lines(text)
+        val arr = p.root.getJSONArray("tasks")
+        val tasks = JSONArray()
+        for ((i, sp) in p.tasks.withIndex()) {
+            tasks.put(obj("id" to sp.id, "title" to arr.getJSONObject(i).optString("title"), "line" to sp.startLine, "text" to ScriptEdit.join(all.subList(sp.startLine - 1, sp.endLine))))
+        }
+        return obj("error" to null, "tasks" to tasks, "global" to ScriptEdit.globalText(text))
     }
-
-    /**
-     * Сохраняет одну задачу: [originalId] пуст для новой, иначе заменяет задачу с этим id (можно переименовать).
-     * Проверяется весь конфиг; при ошибке ничего не меняется. Возвращает текст ошибки или null.
-     */
-    /** Android экранирует «/» как «\/»; в cron это некрасиво, поэтому возвращаем обычную косую черту. */
-    private fun pretty(root: JSONObject): String = root.toString(2).replace("\\/", "/") + "\n"
 
     @Synchronized
-    fun saveTask(taskText: String, originalId: String): String? {
-        val task = try { JSONObject(taskText) } catch (e: JSONException) { return "задача: " + explain(taskText, e) }
-        val id = task.optString("id")
-        if (id.isBlank()) return "в задаче нужно поле id"
-        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
-        val old = root.optJSONArray("tasks") ?: JSONArray()
-        val out = JSONArray()
-        var placed = false
-        for (i in 0 until old.length()) {
-            val t = old.optJSONObject(i)
-            if (t == null) { out.put(old.opt(i)); continue }
-            val tid = t.optString("id")
-            if (originalId.isNotEmpty() && tid == originalId) { out.put(task); placed = true }
-            else {
-                if (tid == id) return "задача с id «$id» уже есть"
-                out.put(t)
-            }
-        }
-        if (!placed) {
-            if (originalId.isNotEmpty()) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
-            out.put(task)
-        }
-        root.put("tasks", out)
-        return save(pretty(root))
+    fun taskText(id: String): String? = ScriptEdit.taskText(read(), id)
+
+    /**
+     * Сохраняет одну задачу: [originalId] пуст для новой, иначе заменяются строки задачи с этим id (её можно переименовать).
+     * Проверяется весь файл; при ошибке ничего не меняется. Возвращает текст ошибки или null.
+     */
+    @Synchronized
+    fun saveTask(fragment: String, originalId: String): String? {
+        val e = ScriptEdit.replaceTask(read(), originalId, fragment)
+        if (e.error != null) return e.error
+        return save(e.text!!)?.let { ScriptEdit.localize(it, e.start, e.count, "в другом месте файла") }
     }
 
     @Synchronized
     fun deleteTask(id: String): String? {
-        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
-        val old = root.optJSONArray("tasks") ?: JSONArray()
-        val out = JSONArray()
-        var found = false
-        for (i in 0 until old.length()) {
-            val t = old.optJSONObject(i)
-            if (t != null && t.optString("id") == id) { found = true; continue }
-            out.put(old.opt(i))
-        }
-        if (!found) return "задачи «$id» нет"
-        root.put("tasks", out)
-        return save(pretty(root))
+        val e = ScriptEdit.deleteTask(read(), id)
+        if (e.error != null) return e.error
+        return save(e.text!!.let { if (it.isBlank()) DEFAULT else it })
     }
 
-    /** Заменяет общие разделы voice и zones (отсутствующий в запросе раздел не трогается; null или {} убирает его). */
     @Synchronized
-    fun saveGlobal(patch: JSONObject): String? {
-        val root = try { JSONObject(read()) } catch (e: Exception) { return "текущий конфиг не читается: ${e.message}" }
-        for (k in listOf("voice", "zones")) if (patch.has(k)) {
-            val v = patch.opt(k)
-            if (v is JSONObject && v.length() > 0) root.put(k, v) else root.remove(k)
-        }
-        return save(pretty(root))
+    fun globalText(): String = ScriptEdit.globalText(read())
+
+    /** Заменяет все строки voice и zone файла текстом [newText]. */
+    @Synchronized
+    fun saveGlobal(newText: String): String? {
+        if (newText.isNotBlank()) Script.check(newText) { true }.first?.let { return it }
+        val e = ScriptEdit.replaceGlobal(read(), newText)
+        if (e.error != null) return e.error
+        return save(e.text!!.let { if (it.isBlank()) DEFAULT else it })
     }
 
-    /** Полная замена конфига и очистка истории версий (восстановление и сброс). */
+    // ---------------- файл целиком ----------------
+
+    /** Полная замена файла и очистка истории версий (восстановление и сброс). */
     @Synchronized
     fun replaceAll(text: String?) {
         histDir.listFiles()?.forEach { it.delete() }
@@ -131,7 +100,7 @@ object TaskStore {
         if (err != null) return err
         if (file.exists() && file.readText() == text) return null
         archive()
-        val tmp = File(file.parentFile, "tasks.json.tmp")
+        val tmp = File(file.parentFile, "tasks.txt.tmp")
         tmp.writeText(text)
         if (!tmp.renameTo(file)) {
             file.writeText(text)
@@ -143,9 +112,9 @@ object TaskStore {
     private fun archive() {
         if (!file.exists()) return
         val base = "tasks-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        var f = File(histDir, "$base.json")
+        var f = File(histDir, "$base.txt")
         var n = 2
-        while (f.exists()) f = File(histDir, "$base-${n++}.json")
+        while (f.exists()) f = File(histDir, "$base-${n++}.txt")
         f.writeText(file.readText())
         val all = histDir.listFiles { x -> NAME_RE.matches(x.name) }?.sortedBy { it.name } ?: return
         for (old in all.dropLast(KEEP)) old.delete()

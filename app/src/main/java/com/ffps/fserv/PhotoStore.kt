@@ -1,10 +1,17 @@
 package com.ffps.fserv
 
+import android.annotation.SuppressLint
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
@@ -12,94 +19,179 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Фотографии с камеры: DCIM/fServ/ГГГГ-ММ-ДД/ЧЧММСС.метка.jpg в папке приложения на накопителе
- * (Android/data/<пакет>/files). Туда можно писать без разрешений на любой версии Android.
- * Старейшие фотографии удаляются, когда их больше [MAX_PHOTOS].
+ * Фотографии с камеры лежат в общей папке DCIM/fServ/ГГГГ-ММ-ДД/ЧЧММСС.метка.jpg и видны в галерее.
+ * Android 10 и новее: запись и чтение собственных снимков через MediaStore, разрешения не нужны.
+ * Android 8–9: обычные файлы в общей DCIM, нужно разрешение на запись (кнопка в окне настроек).
+ * Путь снимка (DCIM/fServ/…) — это значение переменной после `photo assign=имя`. Старейшие снимки удаляются,
+ * когда их больше [MAX_PHOTOS].
  */
+@SuppressLint("NewApi") // обращения к MediaStore (API 29+) защищены проверкой modern
 object PhotoStore {
     private const val MAX_PHOTOS = 500
+    const val DIR = "DCIM/fServ"
     private val DAY_RE = Regex("""\d{4}-\d{2}-\d{2}""")
     private val NAME_RE = Regex("""[0-9A-Za-z._-]{1,80}\.jpg""")
+    const val PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
 
-    private lateinit var root: File
+    private class Entry(val day: String, val name: String, val size: Long, val time: Long, val uri: Uri?, val file: File?)
+
+    private lateinit var app: Context
 
     fun init(ctx: Context) {
-        val base = ctx.getExternalFilesDir(Environment.DIRECTORY_DCIM) ?: File(ctx.filesDir, "DCIM")
-        root = File(base, "fServ").also { it.mkdirs() }
+        app = ctx.applicationContext
     }
 
-    fun relative(f: File): String = "DCIM/fServ/" + f.parentFile?.name + "/" + f.name
+    private val modern: Boolean get() = Build.VERSION.SDK_INT >= 29
 
-    /** Сохраняет JPEG; метка (id задачи) попадает в имя файла. */
+    /** На Android 8–9 для записи нужно разрешение; на 10+ оно не требуется. */
+    fun needsPermission(ctx: Context): Boolean =
+        !modern && ctx.checkSelfPermission(PERMISSION) != PackageManager.PERMISSION_GRANTED
+
+    private fun legacyRoot(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "fServ")
+
+    private fun entries(): List<Entry> {
+        val out = ArrayList<Entry>()
+        if (modern) {
+            val cols = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.RELATIVE_PATH,
+                MediaStore.Images.Media.SIZE, MediaStore.Images.Media.DATE_ADDED)
+            try {
+                app.contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cols, "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?", arrayOf("$DIR/%"), null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val name = c.getString(1) ?: continue
+                        val day = (c.getString(2) ?: "").trim('/').substringAfterLast('/')
+                        if (!DAY_RE.matches(day) || !NAME_RE.matches(name)) continue
+                        out.add(Entry(day, name, c.getLong(3), c.getLong(4) * 1000, ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0)), null))
+                    }
+                }
+            } catch (e: Exception) {
+                FLog.w("photo", "список фото не прочитан: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        } else {
+            val dirs = legacyRoot().listFiles { d -> d.isDirectory && DAY_RE.matches(d.name) } ?: emptyArray()
+            for (d in dirs) for (f in d.listFiles { x -> x.isFile && NAME_RE.matches(x.name) } ?: emptyArray()) {
+                out.add(Entry(d.name, f.name, f.length(), f.lastModified(), null, f))
+            }
+        }
+        return out
+    }
+
+    private fun find(day: String, name: String): Entry? {
+        if (!DAY_RE.matches(day) || !NAME_RE.matches(name)) return null
+        return entries().firstOrNull { it.day == day && it.name == name }
+    }
+
+    fun relative(day: String, name: String) = "$DIR/$day/$name"
+
+    /** Сохраняет JPEG; метка (id задачи) попадает в имя файла. Возвращает путь вида DCIM/fServ/ГГГГ-ММ-ДД/ЧЧММСС.метка.jpg. */
     @Synchronized
-    fun save(jpg: ByteArray, label: String): File {
+    fun save(jpg: ByteArray, label: String): String {
         val now = Date()
-        val dir = File(root, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)).also { it.mkdirs() }
+        val day = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
         val clean = label.replace(Regex("[^0-9A-Za-z_-]"), "_").take(40).ifEmpty { "photo" }
         val base = SimpleDateFormat("HHmmss", Locale.US).format(now) + "." + clean
-        var f = File(dir, "$base.jpg")
+        val existing = entries().filter { it.day == day }.map { it.name }.toSet()
+        var name = "$base.jpg"
         var n = 2
-        while (f.exists()) f = File(dir, "$base-${n++}.jpg")
-        f.writeBytes(jpg)
+        while (name in existing) name = "$base-${n++}.jpg"
+        if (modern) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "$DIR/$day")
+                put(MediaStore.Images.Media.DATE_TAKEN, now.time)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val res = app.contentResolver
+            val uri = res.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw IllegalStateException("не удалось создать файл в галерее")
+            try {
+                (res.openOutputStream(uri) ?: throw IllegalStateException("не удалось открыть файл для записи")).use { it.write(jpg) }
+                res.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            } catch (e: Exception) {
+                try { res.delete(uri, null, null) } catch (x: Exception) {}
+                throw if (e is IllegalStateException) e else IllegalStateException("не удалось записать фото: ${e.message}")
+            }
+            // система может изменить имя, если такое уже было: берём фактическое
+            res.query(uri, arrayOf(MediaStore.Images.Media.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { name = it } }
+        } else {
+            if (needsPermission(app)) throw IllegalStateException("нет разрешения на запись фото (кнопка Allow photo storage в окне настроек)")
+            val dir = File(legacyRoot(), day)
+            if (!dir.isDirectory && !dir.mkdirs()) throw IllegalStateException("не удалось создать папку ${dir.path}")
+            val f = File(dir, name)
+            f.writeBytes(jpg)
+            MediaScannerConnection.scanFile(app, arrayOf(f.path), arrayOf("image/jpeg"), null)
+        }
         trim()
-        FLog.i("photo", "фото сохранено: ${relative(f)} (${jpg.size / 1024} КБ)")
-        return f
+        val rel = relative(day, name)
+        FLog.i("photo", "фото сохранено: $rel (${jpg.size / 1024} КБ)")
+        return rel
     }
 
-    private fun allFiles(): List<File> =
-        (root.listFiles { d -> d.isDirectory && DAY_RE.matches(d.name) } ?: emptyArray())
-            .flatMap { d -> (d.listFiles { x -> x.isFile && NAME_RE.matches(x.name) } ?: emptyArray()).toList() }
-
     private fun trim() {
-        val files = allFiles()
-        if (files.size <= MAX_PHOTOS) return
-        files.sortedBy { it.lastModified() }.take(files.size - MAX_PHOTOS).forEach { f ->
-            f.delete()
-            f.parentFile?.let { d -> if (d.list()?.isEmpty() == true) d.delete() }
+        val all = entries()
+        if (all.size <= MAX_PHOTOS) return
+        all.sortedBy { it.time }.take(all.size - MAX_PHOTOS).forEach { remove(it) }
+    }
+
+    private fun remove(e: Entry): Boolean {
+        return try {
+            if (e.uri != null) app.contentResolver.delete(e.uri, null, null) > 0
+            else {
+                val f = e.file!!
+                val ok = f.delete()
+                f.parentFile?.let { d -> if (d.list()?.isEmpty() == true) d.delete() }
+                MediaScannerConnection.scanFile(app, arrayOf(f.path), null, null)
+                ok
+            }
+        } catch (x: Exception) {
+            FLog.w("photo", "не удалось удалить ${e.day}/${e.name}: ${x.javaClass.simpleName}: ${x.message}")
+            false
         }
     }
 
     fun clearAll() {
-        root.deleteRecursively()
-        root.mkdirs()
+        entries().forEach { remove(it) }
     }
 
     /** Дни, в которые есть фотографии, новые сверху. */
     fun days(): JSONArray {
-        val dirs = (root.listFiles { d -> d.isDirectory && DAY_RE.matches(d.name) } ?: emptyArray()).sortedByDescending { it.name }
         val out = JSONArray()
-        for (d in dirs) {
-            val n = d.listFiles { x -> x.isFile && NAME_RE.matches(x.name) }?.size ?: 0
-            if (n > 0) out.put(obj("day" to d.name, "count" to n))
-        }
+        for ((d, l) in entries().groupBy { it.day }.toSortedMap(compareByDescending { it })) out.put(obj("day" to d, "count" to l.size))
         return out
     }
 
     fun list(day: String): JSONArray {
         require(DAY_RE.matches(day)) { "day: ГГГГ-ММ-ДД" }
-        val files = File(root, day).listFiles { x -> x.isFile && NAME_RE.matches(x.name) }?.sortedByDescending { it.name } ?: emptyList()
-        return JSONArray().also { a -> files.forEach { a.put(obj("name" to it.name, "size" to it.length(), "time" to Util.iso(it.lastModified()))) } }
+        val a = JSONArray()
+        entries().filter { it.day == day }.sortedByDescending { it.name }.forEach { a.put(obj("name" to it.name, "size" to it.size, "time" to Util.iso(it.time))) }
+        return a
     }
 
-    fun file(day: String, name: String): File? {
-        if (!DAY_RE.matches(day) || !NAME_RE.matches(name)) return null
-        return File(File(root, day), name).takeIf { it.isFile }
+    private fun bytes(e: Entry): ByteArray? = try {
+        if (e.uri != null) app.contentResolver.openInputStream(e.uri)?.use { it.readBytes() } else e.file?.readBytes()
+    } catch (x: Exception) {
+        FLog.w("photo", "не удалось прочитать ${e.day}/${e.name}: ${x.javaClass.simpleName}: ${x.message}")
+        null
     }
 
-    fun delete(day: String, name: String): Boolean {
-        val f = file(day, name) ?: return false
-        val ok = f.delete()
-        f.parentFile?.let { d -> if (d.list()?.isEmpty() == true) d.delete() }
-        return ok
+    fun read(day: String, name: String): ByteArray? = find(day, name)?.let { bytes(it) }
+
+    /** Содержимое снимка по пути вида DCIM/fServ/ГГГГ-ММ-ДД/имя.jpg (для отправки в Telegram). */
+    fun readPath(path: String): ByteArray? {
+        val m = Regex("""^$DIR/(\d{4}-\d{2}-\d{2})/([0-9A-Za-z._-]{1,80}\.jpg)$""").matchEntire(path) ?: return null
+        return read(m.groupValues[1], m.groupValues[2])
     }
+
+    fun delete(day: String, name: String): Boolean = find(day, name)?.let { remove(it) } ?: false
 
     /** Уменьшенная копия для просмотра в списке. */
-    fun thumb(f: File, side: Int = 320): ByteArray? {
+    fun thumb(data: ByteArray, side: Int = 320): ByteArray? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(f.absolutePath, o)
+        BitmapFactory.decodeByteArray(data, 0, data.size, o)
         var k = 1
         while (maxOf(o.outWidth, o.outHeight) / (k * 2) >= side) k *= 2
-        val bmp = BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = k }) ?: return null
+        val bmp = BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = k }) ?: return null
         val out = ByteArrayOutputStream()
         bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
         bmp.recycle()
@@ -107,11 +199,12 @@ object PhotoStore {
     }
 
     /**
-     * Делает снимок: включает камеру, если она не работает, ждёт кадр и сохраняет. Бросает IllegalStateException
-     * с понятным текстом. [cancel] прерывает ожидание.
+     * Делает снимок: включает камеру, если она не работает, ждёт кадр и сохраняет. Возвращает путь снимка.
+     * Бросает IllegalStateException с понятным текстом. [cancel] прерывает ожидание.
      */
-    fun shoot(ctx: Context, owner: String, label: String, cancel: () -> Boolean = { false }): File {
+    fun shoot(ctx: Context, owner: String, label: String, cancel: () -> Boolean = { false }): String {
         if (!CameraEngine.hasPermission(ctx)) throw IllegalStateException("нет разрешения на камеру (кнопка Allow camera в окне настроек)")
+        if (needsPermission(ctx)) throw IllegalStateException("нет разрешения на запись фото (кнопка Allow photo storage в окне настроек)")
         val wasRunning = CameraEngine.state == CameraEngine.State.RUNNING
         CameraEngine.start(owner)
         try {

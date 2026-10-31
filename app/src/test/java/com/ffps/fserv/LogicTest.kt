@@ -3,8 +3,6 @@ package com.ffps.fserv
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -74,87 +72,6 @@ class LogicTest {
         for (bad in listOf("", "moved and", "(moved", "a = b", "moved moved", "and")) {
             try { Expr.parse(bad); fail("должно быть ошибкой: $bad") } catch (e: IllegalArgumentException) {}
         }
-    }
-
-    private val example = """
-    {
-      "version": 1,
-      "voice": {"lang": "ru-RU", "rate": 0.95, "volume": 80},
-      "zones": {"bed": {"rect": [0.1, 0.2, 0.9, 0.9], "exclude": [[0.0, 0.0, 0.2, 0.2]]}},
-      "tasks": [{
-        "id": "wakeup", "title": "Подъём", "enabled": true, "cron": "0 9 * * *", "late_ok": "0", "timeout": "60m",
-        "steps": [
-          {"repeat": {"times": 6, "every": "5m..6m", "until": "moved"}, "do": [
-            {"watch": {"motion": true, "for": "60s", "poll": "5s", "save_as": "moved", "threshold": 8, "area": 0.5, "zone": "bed"}},
-            {"if": "not moved", "then": [
-              {"play": ["alarm.mp3", "system:alarm"], "volume": 80, "fade_in": "5s", "fade_out": 0, "for": "20s"},
-              {"say": "Доброе утро! Пора вставать."}
-            ]}
-          ]},
-          {"if": "moved",
-           "then": [{"say": "Доброе утро!"}, {"telegram": "Встала в {time}"}],
-           "else": [{"telegram": "К {time} движения нет"}]},
-          {"delay": "30s..2m"},
-          {"log": "готово {weekday}, {date}"}
-        ]
-      }]
-    }""".trimIndent()
-
-    private fun check(json: String, files: (String) -> Boolean = { true }): String? = TaskSchema.validate(JSONObject(json), files)
-
-    @Test fun exampleIsValid() {
-        assertNull(check(example))
-    }
-
-    private fun expectError(json: String, part: String, files: (String) -> Boolean = { true }) {
-        val e = check(json, files)
-        assertNotNull("ожидалась ошибка с «$part»", e)
-        assertTrue("ошибка «$e» не содержит «$part»", e!!.contains(part))
-    }
-
-    private fun task(steps: String, extra: String = "") = """{"tasks": [{"id": "t", "cron": "0 9 * * *", "steps": $steps $extra}]}"""
-
-    @Test fun schemaErrors() {
-        expectError("""{"tsks": []}""", "неизвестное поле")
-        expectError("""{"tasks": [{"id": "a"}]}""", "steps")
-        expectError("""{"tasks": [{"id": "a", "steps": [], "crn": "x"}]}""", "crn")
-        expectError("""{"tasks": [{"id": "a", "cron": "61 * * * *", "steps": []}]}""", "cron")
-        expectError("""{"tasks": [{"id": "a", "steps": []}, {"id": "a", "steps": []}]}""", "повторяется")
-        expectError(task("""[{"say": "x", "telegram": "y"}]"""), "два действия")
-        expectError(task("""[{"sai": "x"}]"""), "не найдено действие")
-        expectError(task("""[{"say": "{nope}"}]"""), "{nope}")
-        expectError(task("""[{"if": "ghost", "then": []}]"""), "ghost")
-        expectError(task("""[{"delay": "5x"}]"""), "длительность")
-        expectError(task("""[{"play": "a.mp3"}]"""), "a.mp3", files = { false })
-        expectError(task("""[{"play": "system:alarm", "loop": true}]"""), "for")
-        // в фоновом режиме loop без for допустим, звук гасит stop_background
-        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "wait": false}, {"stop_background": true}]""")))
-        expectError(task("""[{"stop_background": "yes"}]"""), "stop_background")
-        assertNull(check(task("""[{"say": "привет", "wait": false}, {"photo": true}]""")))
-        assertNull(check(task("""[{"background": [{"play": "system:alarm", "loop": true, "pause": "3s,5s"}, {"delay": "10s"}, {"say": "вставай"}]}, {"delay": "1s"}]""")))
-        expectError(task("""[{"background": [{"watch": {"motion": true, "for": "5s"}}]}]"""), "внутри background")
-        expectError(task("""[{"background": [{"say": "x", "wait": false}]}]"""), "внутри background")
-        expectError(task("""[{"background": []}]"""), "пуст")
-        expectError(task("""[{"wait": "5s"}]"""), "не найдено действие")
-        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "for": "1m", "pause": "3s,5s,10s..20s"}]""")))
-        assertNull(check(task("""[{"repeat": {"times": 4, "every": ["3m", "1m"]}, "do": [{"log": "x"}]}]""")))
-        expectError(task("""[{"play": "system:alarm", "pause": "3s"}]"""), "loop")
-        expectError(task("""[{"play": "system:alarm", "loop": true, "for": "1m", "pause": "3s,xx"}]"""), "длительность")
-        expectError(task("""[{"play": "system:alarm", "fade": 1}]"""), "лишнее поле")
-        expectError(task("""[{"repeat": {"every": "1m"}, "do": []}]"""), "times")
-        expectError(task("""[{"repeat": {"times": 2}}]"""), "do")
-        expectError(task("""[{"watch": {"motion": true, "save_as": "m"}}]"""), "for")
-        expectError(task("""[{"watch": {"motion": true, "for": "5s", "zone": "z"}}]"""), "zones")
-        expectError(task("""[{"watch": {"motion": true, "for": "5s", "threshold": 500}}]"""), "threshold")
-        expectError(task("""[{"ask": {"say": "?"}}]"""), "этапе 5")
-        expectError(task("""[{"say": "x", "volume": 300}]"""), "volume")
-        expectError("""{"voice": {"volume": 300}}""", "volume")
-        expectError("""{"zones": {"z": {"rect": [0.5, 0.5, 0.2, 0.2]}}}""", "x1 < x2")
-    }
-
-    @Test fun emptyConfigIsValid() {
-        assertNull(check("""{"version": 1, "tasks": []}"""))
-        assertNull(check("{}"))
     }
 
     @Test fun zoneMaskMath() {

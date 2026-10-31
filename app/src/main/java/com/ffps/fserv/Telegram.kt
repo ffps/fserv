@@ -20,8 +20,9 @@ object Telegram {
     private const val DELAY_NOTE_MS = 120_000L
     private val BACKOFF = longArrayOf(10, 30, 60, 120, 300).map { it * 1000 }
 
-    private class Item(val id: Long, val text: String, val createdAt: Long) {
+    private class Item(val id: Long, val text: String, val createdAt: Long, val files: List<String> = emptyList()) {
         var attempts = 0
+        var mediaSent = false
         var nextTry = 0L
         var lastError = ""
         var rejected = 0
@@ -47,7 +48,9 @@ object Telegram {
                 val a = JSONArray(file.readText())
                 for (i in 0 until a.length()) {
                     val o = a.getJSONObject(i)
-                    items.add(Item(o.getLong("id"), o.getString("text"), o.getLong("createdAt")).also {
+                    val fl = o.optJSONArray("files")
+                    val files = if (fl == null) emptyList() else (0 until fl.length()).map { k -> fl.getString(k) }
+                    items.add(Item(o.getLong("id"), o.getString("text"), o.getLong("createdAt"), files).also {
                         it.attempts = o.optInt("attempts")
                         it.lastError = o.optString("lastError")
                     })
@@ -60,7 +63,7 @@ object Telegram {
 
     private fun saveLocked() {
         val a = JSONArray()
-        for (i in items) a.put(obj("id" to i.id, "text" to i.text, "createdAt" to i.createdAt, "attempts" to i.attempts, "lastError" to i.lastError))
+        for (i in items) a.put(obj("id" to i.id, "text" to i.text, "createdAt" to i.createdAt, "attempts" to i.attempts, "lastError" to i.lastError, "files" to arr(i.files)))
         try {
             val tmp = File(file.parentFile, "outbox.json.tmp")
             tmp.writeText(a.toString())
@@ -84,12 +87,15 @@ object Telegram {
         thread = null
     }
 
-    /** Ставит сообщение в очередь. Возвращает его номер. */
-    fun enqueue(text: String): Long {
+    /**
+     * Ставит сообщение в очередь. Возвращает его номер. [files] — пути фотографий (DCIM/fServ/…): одно фото уходит
+     * как фото с подписью, от 2 до 10 как альбом; подпись — текст сообщения.
+     */
+    fun enqueue(text: String, files: List<String> = emptyList()): Long {
         val t = if (text.length > 4000) text.take(4000) + "…" else text
         synchronized(lock) {
             val id = System.currentTimeMillis() * 1000 + (items.size % 1000)
-            items.add(Item(id, t, System.currentTimeMillis()))
+            items.add(Item(id, t, System.currentTimeMillis(), files.take(10)))
             while (items.size > MAX_ITEMS) {
                 val d = items.removeAt(0)
                 FLog.w("telegram", "очередь переполнена, удалено сообщение ${d.id}")
@@ -107,7 +113,7 @@ object Telegram {
     fun itemsJson(): JSONArray = synchronized(lock) {
         arr(items.map {
             obj(
-                "id" to it.id, "text" to it.text, "created" to Util.iso(it.createdAt), "attempts" to it.attempts,
+                "id" to it.id, "text" to it.text, "files" to it.files.size, "created" to Util.iso(it.createdAt), "attempts" to it.attempts,
                 "nextTry" to if (it.nextTry > 0) Util.iso(it.nextTry) else null, "lastError" to it.lastError
             )
         })
@@ -166,7 +172,7 @@ object Telegram {
         val text = sanitize(m.text) +
             if (delayed > DELAY_NOTE_MS) "\n\n<i>Отправлено в ${tf.format(Date(m.createdAt))}</i>" else ""
         try {
-            send(text)
+            send(m, text)
             synchronized(lock) { items.remove(m); saveLocked() }
             lastError = ""
             lastSentAt = System.currentTimeMillis()
@@ -248,8 +254,59 @@ object Telegram {
         return j
     }
 
-    private fun send(text: String) {
+    private const val CAPTION_MAX = 1024
+
+    private fun sendText(text: String) {
         call("sendMessage", obj("chat_id" to Settings.telegramChatId, "text" to text, "parse_mode" to "HTML", "disable_web_page_preview" to true))
+    }
+
+    private fun send(m: Item, text: String) {
+        val photos = m.files.mapNotNull { f -> PhotoStore.readPath(f).also { if (it == null) FLog.w("telegram", "фото $f не найдено, пропущено") } }
+        if (photos.isEmpty() || m.mediaSent) { sendText(text); return }
+        // подпись к фото ограничена 1024 знаками: длинный текст идёт отдельным сообщением после фото
+        val caption = if (text.length <= CAPTION_MAX) text else null
+        if (photos.size == 1) {
+            val fields = mutableListOf("chat_id" to Settings.telegramChatId.toString())
+            if (caption != null) { fields.add("caption" to caption); fields.add("parse_mode" to "HTML") }
+            multipart("sendPhoto", fields, listOf(Triple("photo", "photo.jpg", photos[0])))
+        } else {
+            val media = JSONArray()
+            for (i in photos.indices) {
+                val o = obj("type" to "photo", "media" to "attach://f$i")
+                if (i == 0 && caption != null) { o.put("caption", caption); o.put("parse_mode", "HTML") }
+                media.put(o)
+            }
+            multipart(
+                "sendMediaGroup", listOf("chat_id" to Settings.telegramChatId.toString(), "media" to media.toString()),
+                photos.mapIndexed { i, b -> Triple("f$i", "f$i.jpg", b) }
+            )
+        }
+        m.mediaSent = true
+        if (caption == null) sendText(text)
+    }
+
+    /** Вызов Bot API с загрузкой файлов (multipart/form-data). */
+    private fun multipart(method: String, fields: List<Pair<String, String>>, files: List<Triple<String, String, ByteArray>>): JSONObject {
+        val boundary = "fserv" + java.lang.Long.toHexString(System.nanoTime())
+        val out = java.io.ByteArrayOutputStream()
+        fun w(s: String) = out.write(s.toByteArray(Charsets.UTF_8))
+        for ((k, v) in fields) {
+            w("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n"); w(v); w("\r\n")
+        }
+        for ((k, name, data) in files) {
+            w("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"; filename=\"$name\"\r\nContent-Type: image/jpeg\r\n\r\n")
+            out.write(data); w("\r\n")
+        }
+        w("--$boundary--\r\n")
+        val url = "https://api.telegram.org/bot${Settings.telegramToken}/$method"
+        val r = Net.request("telegram", "POST", url, out.toByteArray(), "multipart/form-data; boundary=$boundary", timeoutMs = Settings.netTimeoutSec * 1000 * 3)
+        val j = try { JSONObject(r.body) } catch (e: Exception) { null }
+        if (j == null || !j.optBoolean("ok")) {
+            val desc = j?.optString("description")?.ifEmpty { null } ?: "HTTP ${r.code}"
+            val ra = j?.optJSONObject("parameters")?.optInt("retry_after", 0) ?: 0
+            throw TgError("Telegram: $desc (HTTP ${r.code}, ${r.via})", r.code, ra)
+        }
+        return j
     }
 
     /**

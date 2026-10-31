@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Голос: системный синтезатор речи Android (TextToSpeech). Хороший автономный женский голос появится позже;
- * этот слой остаётся запасным. Язык, голос, скорость и тон берутся из раздела voice в tasks.json.
+ * этот слой остаётся запасным. Язык, голос, скорость и тон берутся из строки voice в файле задач (tasks.txt).
  */
 object Voice {
     private lateinit var app: Context

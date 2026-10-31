@@ -9,7 +9,7 @@ import java.util.Random
 import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * Движок задач: запускает сценарии из tasks.json по cron или вручную и выполняет их шаги по порядку.
+ * Движок задач: запускает сценарии из файла tasks.txt по cron или вручную и выполняет их шаги по порядку.
  * Задачи идут по одной (камера и звук общие), остальные ждут в очереди. Запуск, опоздавший больше чем на late_ok
  * (по умолчанию 0: «всегда пропускать»), не выполняется и записывается в журнал. Если задача оборвалась ошибкой или
  * не уложилась в timeout, сообщение уходит в Telegram.
@@ -93,7 +93,7 @@ object TaskEngine {
         val text = try { TaskStore.read() } catch (e: Exception) { return null }
         if (text == cachedText) return cachedRoot
         cachedText = text
-        cachedRoot = try { JSONObject(text) } catch (e: Exception) { null }
+        cachedRoot = try { Script.parse(text).root } catch (e: Exception) { null }
         return cachedRoot
     }
 
@@ -107,7 +107,7 @@ object TaskEngine {
 
     /** Ставит задачу в очередь вручную. Возвращает текст ошибки или null. */
     fun runNow(id: String, dry: Boolean, assume: Map<String, Any?>): String? {
-        val root = config() ?: return "tasks.json не читается"
+        val root = config() ?: return "файл задач не читается (ошибка в тексте)"
         if (findTask(root, id) == null) return "задачи «$id» нет"
         if (!dry && (current?.info?.id == id || queue.any { it.taskId == id })) return "задача «$id» уже выполняется или стоит в очереди"
         queue.add(Req(id, "manual", dry, assume, System.currentTimeMillis(), Long.MAX_VALUE / 4))
@@ -303,7 +303,7 @@ object TaskEngine {
                 }
             }
             s.has("play") -> play(r, s, p)
-            s.has("photo") -> photo(r, p)
+            s.has("photo") -> photo(r, s, p)
             s.has("background") -> {
                 val block = s.getJSONArray("background")
                 log(r, p, "background: ${block.length()} шаг(ов) в фоне" + if (dry) " (в пробном запуске выполняются здесь же, без звука и пауз)" else "")
@@ -315,8 +315,14 @@ object TaskEngine {
             }
             s.has("telegram") -> {
                 val text = fill(r, s.optString("telegram"))
-                log(r, p, "telegram: $text")
-                if (!dry) Telegram.enqueue(text)
+                val names = when (val f = s.opt("files")) {
+                    is String -> listOf(f)
+                    is JSONArray -> (0 until f.length()).map { f.optString(it) }
+                    else -> emptyList()
+                }
+                val paths = names.mapNotNull { n -> (r.vars[n] as? String)?.takeIf { it.isNotEmpty() } }
+                log(r, p, "telegram: $text" + if (names.isNotEmpty()) " + фото: ${paths.size} из ${names.size}" + (if (paths.size < names.size) " (остальные переменные пусты: фото не снято)" else "") else "")
+                if (!dry) Telegram.enqueue(text, paths)
             }
             s.has("delay") -> {
                 val ms = Dur.parse(s.opt("delay"), "delay").sample(r.rnd)
@@ -439,13 +445,18 @@ object TaskEngine {
     }
 
     /** Фото с камеры в PhotoStore; камера включается на время шага. */
-    private fun photo(r: Run, p: String) {
-        log(r, p, "photo" + if (r.info.dry) " (в пробном запуске пропущено)" else "")
-        if (r.info.dry) return
+    private fun photo(r: Run, s: JSONObject, p: String) {
+        val name = s.optString("assign")
+        log(r, p, "photo" + (if (name.isNotEmpty()) " → $name" else "") + if (r.info.dry) " (в пробном запуске пропущено)" else "")
+        if (r.info.dry) {
+            if (name.isNotEmpty()) r.vars[name] = "DCIM/fServ/пробный-запуск.jpg"
+            return
+        }
         try {
-            val f = PhotoStore.shoot(r.ctx, "task", r.info.id) { r.stopRequested() }
+            val path = PhotoStore.shoot(r.ctx, "task", r.info.id) { r.stopRequested() }
             check(r)
-            log(r, p, "фото сохранено: ${PhotoStore.relative(f)}")
+            if (name.isNotEmpty()) r.vars[name] = path
+            log(r, p, "фото сохранено: $path")
         } catch (e: IllegalStateException) {
             throw StepError(e.message ?: "не удалось сделать фото")
         }
@@ -453,7 +464,7 @@ object TaskEngine {
 
     private fun watch(r: Run, w: JSONObject, p: String) {
         val forMs = Dur.parse(w.opt("for"), "for").sample(r.rnd)
-        val saveAs = w.optString("save_as")
+        val saveAs = w.optString("assign")
         val poll = if (w.has("poll")) Dur.parse(w.opt("poll"), "poll").sample(r.rnd).toInt() else null
         val zoneName = w.optString("zone").takeIf { it.isNotEmpty() }
         log(r, p, "watch: движение до ${Dur.human(forMs)}" + (poll?.let { ", кадр раз в ${Dur.human(it.toLong())}" } ?: "") +
