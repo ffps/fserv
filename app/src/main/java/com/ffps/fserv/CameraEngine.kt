@@ -577,6 +577,29 @@ object CameraEngine {
         return o.toByteArray()
     }
 
+    /** Фотография: последний кадр в полном размере камеры, повёрнутый как в превью, JPEG высокого качества. */
+    fun photoJpeg(): ByteArray? {
+        val nv: ByteArray
+        val w: Int
+        val hh: Int
+        synchronized(snapLock) {
+            nv = snapNv21 ?: return null
+            w = snapW
+            hh = snapH
+        }
+        val bos = ByteArrayOutputStream()
+        YuvImage(nv, ImageFormat.NV21, w, hh, null).compressToJpeg(Rect(0, 0, w, hh), 92, bos)
+        val rot = Settings.camera().rotation.let { if (it < 0) sensorOrientation else it }
+        if (rot == 0) return bos.toByteArray()
+        val bmp = BitmapFactory.decodeByteArray(bos.toByteArray(), 0, bos.size()) ?: return null
+        val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
+        bmp.recycle()
+        val o = ByteArrayOutputStream()
+        rotated.compress(Bitmap.CompressFormat.JPEG, 92, o)
+        rotated.recycle()
+        return o.toByteArray()
+    }
+
     /** Размеры кадра YUV, которые отдаёт камера (для выбора в веб-интерфейсе). */
     fun availableSizes(): List<String> = try {
         val mgr = app.getSystemService(Context.CAMERA_SERVICE) as CameraManager

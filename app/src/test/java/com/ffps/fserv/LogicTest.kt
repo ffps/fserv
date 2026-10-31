@@ -40,6 +40,14 @@ class LogicTest {
         assertEquals(1, Dur.parseList(7, "t").size)
     }
 
+    @Test fun telegramHtml() {
+        assertEquals("OK <b>да</b> &lt;5 &amp; <i>x</i>", Telegram.sanitize("OK <b>да</b> <5 & <i>x</i>"))
+        assertEquals("&lt;b&gt;x", Telegram.sanitize("<b>x"))
+        assertEquals("&lt;script&gt;a&lt;/script&gt;", Telegram.sanitize("<script>a</script>"))
+        assertEquals("<a href=\"https://x.y\">s</a>", Telegram.sanitize("<a href=\"https://x.y\">s</a>"))
+        assertEquals("&lt; уже &amp; ещё", Telegram.sanitize("&lt; уже & ещё"))
+    }
+
     @Test fun counts() {
         assertEquals(6..6, Dur.parseCount(6, "t"))
         assertEquals(3..5, Dur.parseCount("3..5", "t"))
@@ -86,7 +94,7 @@ class LogicTest {
           {"if": "moved",
            "then": [{"say": "Доброе утро!"}, {"telegram": "Встала в {time}"}],
            "else": [{"telegram": "К {time} движения нет"}]},
-          {"wait": "30s..2m"},
+          {"delay": "30s..2m"},
           {"log": "готово {weekday}, {date}"}
         ]
       }]
@@ -116,12 +124,18 @@ class LogicTest {
         expectError(task("""[{"sai": "x"}]"""), "не найдено действие")
         expectError(task("""[{"say": "{nope}"}]"""), "{nope}")
         expectError(task("""[{"if": "ghost", "then": []}]"""), "ghost")
-        expectError(task("""[{"wait": "5x"}]"""), "длительность")
+        expectError(task("""[{"delay": "5x"}]"""), "длительность")
         expectError(task("""[{"play": "a.mp3"}]"""), "a.mp3", files = { false })
         expectError(task("""[{"play": "system:alarm", "loop": true}]"""), "for")
-        // в фоновом режиме loop без for допустим, звук гасит stop_sound
-        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "wait": false}, {"stop_sound": true}]""")))
-        expectError(task("""[{"stop_sound": "yes"}]"""), "stop_sound")
+        // в фоновом режиме loop без for допустим, звук гасит stop_background
+        assertNull(check(task("""[{"play": "system:alarm", "loop": true, "wait": false}, {"stop_background": true}]""")))
+        expectError(task("""[{"stop_background": "yes"}]"""), "stop_background")
+        assertNull(check(task("""[{"say": "привет", "wait": false}, {"photo": true}]""")))
+        assertNull(check(task("""[{"background": [{"play": "system:alarm", "loop": true, "pause": "3s,5s"}, {"delay": "10s"}, {"say": "вставай"}]}, {"delay": "1s"}]""")))
+        expectError(task("""[{"background": [{"watch": {"motion": true, "for": "5s"}}]}]"""), "внутри background")
+        expectError(task("""[{"background": [{"say": "x", "wait": false}]}]"""), "внутри background")
+        expectError(task("""[{"background": []}]"""), "пуст")
+        expectError(task("""[{"wait": "5s"}]"""), "не найдено действие")
         assertNull(check(task("""[{"play": "system:alarm", "loop": true, "for": "1m", "pause": "3s,5s,10s..20s"}]""")))
         assertNull(check(task("""[{"repeat": {"times": 4, "every": ["3m", "1m"]}, "do": [{"log": "x"}]}]""")))
         expectError(task("""[{"play": "system:alarm", "pause": "3s"}]"""), "loop")

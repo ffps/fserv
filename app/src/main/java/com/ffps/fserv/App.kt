@@ -19,6 +19,7 @@ class App : Application() {
         Net.init()
         CameraEngine.init(this)
         Sounds.init(this)
+        PhotoStore.init(this)
         Voice.init(this)
         TaskEngine.init(this)
         Telegram.init(this)

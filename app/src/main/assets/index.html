@@ -15,9 +15,9 @@
   header svg { width:30px; height:30px; flex:none; }
   header .ver { color:var(--dim); font-size:13px; }
   nav { display:flex; gap:2px; flex-wrap:wrap; padding:0 20px; background:var(--panel); border-bottom:1px solid var(--line); }
-  nav button { background:transparent; color:var(--dim); border:0; border-bottom:3px solid transparent; padding:11px 14px 9px; cursor:pointer; font:inherit; }
-  nav button:hover { color:var(--text); }
-  nav button.on { color:var(--acc); border-bottom-color:var(--acc); font-weight:600; }
+  nav a { background:transparent; color:var(--dim); border-bottom:3px solid transparent; padding:11px 14px 9px; cursor:pointer; font:inherit; text-decoration:none; }
+  nav a:hover { color:var(--text); }
+  nav a.on { color:var(--acc); border-bottom-color:var(--acc); font-weight:600; }
   main { max-width:1100px; margin:18px auto 32px; padding:0 16px; }
   section { display:none; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; box-shadow:0 1px 2px rgba(20,25,50,.04); }
   section.on { display:block; }
@@ -62,6 +62,26 @@
   .jt { cursor:pointer; } .jt b { color:var(--acc); font-weight:500; white-space:nowrap; }
   .jt .full { display:none; white-space:pre-wrap; } .jt.open .full { display:inline; } .jt.open .short { display:none; }
   details summary { cursor:pointer; color:var(--dim); }
+  .ib { background:none; border:0; cursor:pointer; padding:4px 6px; color:var(--dim); border-radius:6px; line-height:0; vertical-align:middle; }
+  .ib:hover { background:var(--acc-soft); color:var(--acc-d); } .ib.del:hover { color:var(--bad); background:#fdecec; }
+  .ib svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .ib svg [fill=currentColor] { fill:currentColor; stroke:none; }
+  .ib.add { border:1px solid #cdd2e0; background:#fff; padding:6px 8px; }
+  .phg { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
+  .phg figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg); }
+  .phg img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#222; }
+  .phg figcaption { display:flex; align-items:center; justify-content:space-between; padding:4px 6px 4px 10px; font-size:13px; color:var(--dim); }
+  tr.sel td { background:var(--acc-soft); }
+  .ed { display:flex; border:1px solid #cdd2e0; border-radius:6px; background:#fff; overflow:hidden; }
+  .ed:focus-within { outline:2px solid var(--acc-soft); border-color:var(--acc); }
+  .ed .gut { margin:0; padding:7px 6px 20px 8px; text-align:right; color:#9aa3b8; background:var(--bg); border:0; border-right:1px solid var(--line); border-radius:0; user-select:none; overflow:hidden; max-height:none; font:13px/1.4 ui-monospace, Consolas, monospace; min-width:34px; }
+  .ed textarea { border:0; border-radius:0; outline:0; flex:1; min-width:0; padding:7px 8px; resize:vertical; }
+  .ed textarea:focus { outline:0; border:0; }
+  .pgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:12px; }
+  .pgrid figure { margin:0; background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .pgrid img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#222; }
+  .pgrid figcaption { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; font-size:13px; }
+  .pgrid figcaption span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -71,15 +91,15 @@
   <span class="ver" id="beat"></span>
 </header>
 <nav id="tabs">
-  <button data-t="status" class="on">Состояние</button>
-  <button data-t="logs">Лог</button>
-  <button data-t="journal">Журнал</button>
-  <button data-t="config">Задачи</button>
-  <button data-t="sound">Звук</button>
-  <button data-t="comm">Связь</button>
-  <button data-t="camera">Камера</button>
-  <button data-t="pages">Страницы</button>
-  <button data-t="system">Система</button>
+  <a data-t="status" href="#status" class="on">Состояние</a>
+  <a data-t="logs" href="#logs">Лог</a>
+  <a data-t="journal" href="#journal">Журнал</a>
+  <a data-t="config" href="#config">Задачи</a>
+  <a data-t="sound" href="#sound">Звук</a>
+  <a data-t="comm" href="#comm">Связь</a>
+  <a data-t="camera" href="#camera">Камера</a>
+  <a data-t="photos" href="#photos">Фото</a>
+  <a data-t="system" href="#system">Система</a>
 </nav>
 <main>
 
@@ -135,25 +155,26 @@
   <div class="msg" id="gMsg"></div>
 
   <h2 style="margin-top:26px">Задачи</h2>
-  <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th></tr></thead><tbody id="tkBody"></tbody></table>
-
-  <div class="row" style="margin-top:16px">
-    <label>Редактировать <select id="tkSel" style="min-width:240px"></select></label>
-    <button class="btn sec" id="tkAdd">Добавить задачу</button>
-    <button class="btn sec" id="tkExample">Добавить пример (будильник)</button>
-    <button class="btn danger" id="tkDel">Удалить выбранную</button>
-  </div>
-  <textarea id="tkText" rows="22" spellcheck="false"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button class="btn" id="tkSave">Сохранить задачу</button>
-    <button class="btn" id="tkRun">Запустить</button>
-    <button class="btn sec" id="tkDry">Пробный запуск</button>
-    <label>результаты watch <input id="tkAssume" placeholder="moved:true" style="width:150px"></label>
+  <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th><th></th></tr></thead><tbody id="tkBody"></tbody></table>
+  <div class="row" style="margin-top:10px">
+    <button class="ib add" id="tkAdd" title="Добавить задачу"></button>
+    <button class="btn sec sm" id="tkExample">Добавить пример</button>
   </div>
   <div class="msg" id="tkMsg"></div>
-  <p class="hint" id="tkRunInfo"></p>
-  <pre id="tkLog" style="max-height:300px">—</pre>
-  <p class="hint">Запускать можно только сохранённую задачу. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Длительности: <code>"30s"</code>, <code>"5m"</code>, <code>"1h30m"</code>, число = секунды, диапазон <code>"30s..2m"</code> даёт случайное значение (заново при каждом использовании). Звук можно запустить в фоне: <code>{"play": "system:alarm", "loop": true, "wait": false}</code> играет, пока выполняются следующие шаги (например, watch), и гасится шагом <code>{"stop_sound": true}</code> или концом задачи. Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
+
+  <div id="tkEditor" style="display:none;margin-top:14px">
+    <div class="row"><b id="tkName"></b><button class="btn sec sm" id="tkClose">Закрыть</button></div>
+    <textarea id="tkText" rows="22" spellcheck="false" wrap="off"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="tkSave">Сохранить задачу</button>
+      <button class="btn sec" id="tkDry">Пробный запуск</button>
+      <label>результаты watch <input id="tkAssume" placeholder="moved:true" style="width:150px"></label>
+    </div>
+    <div class="msg" id="tkSMsg"></div>
+    <p class="hint" id="tkRunInfo"></p>
+    <pre id="tkLog" style="max-height:300px">—</pre>
+  </div>
+  <p class="hint">Запускать (значок ▶ в списке) можно только сохранённую задачу; во время работы значок меняется на ■ — остановить. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Полное описание языка: <a href="https://github.com/ffps/fserv/blob/main/script.md" target="_blank" rel="noopener">script.md</a>. Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
 
   <details style="margin-top:22px"><summary>Весь конфиг одним текстом и история версий</summary>
     <textarea id="cfgText" rows="22" spellcheck="false" style="margin-top:8px"></textarea>
@@ -180,7 +201,7 @@
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
   <p class="hint">Язык, голос, скорость и тон задаются в разделе <code>voice</code> конфига задач, например <code>"voice": {"lang": "ru-RU", "rate": 0.9, "pitch": 1.0, "volume": 80}</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
   <h2 style="margin-top:22px">Звуки</h2>
-  <table><thead><tr><th>Файл</th><th>Размер</th><th>Длительность</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
+  <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
     <button class="btn" id="sdUpload">Загрузить</button>
@@ -271,6 +292,18 @@
 </section>
 
 
+<section id="photos">
+  <h2>Фотографии</h2>
+  <div class="row">
+    <button class="ib add" id="phTake" title="Сделать фото сейчас"></button>
+    <label>День <select id="phDay"></select></label>
+    <span id="phCount" class="hint" style="margin:0"></span>
+  </div>
+  <div class="msg" id="phMsg"></div>
+  <div class="phg" id="phGrid"></div>
+  <p class="hint">Снимки лежат на устройстве в папке <code>Android/data/com.ffps.fserv/files/DCIM/fServ/ГГГГ-ММ-ДД/ЧЧММСС.метка.jpg</code>, где метка — id задачи (или <code>web</code> для снимка из этой страницы). В задаче снимок делает шаг <code>{"photo": true}</code>. Хранится не больше 500 последних снимков. Клик по снимку открывает его в полном размере.</p>
+</section>
+
 <section id="system">
   <h2>Параметры</h2>
   <div class="f">
@@ -311,6 +344,21 @@
   <div class="msg" id="upSMsg"></div>
   <p class="hint">По расписанию выполняется только проверка: о новой версии придёт сообщение в Telegram. Устанавливается обновление только по кнопке. На устройстве должна быть разрешена установка из этого приложения (окно настроек, кнопка «Allow app updates»); если система запросит подтверждение, нажмите «Установить» на экране устройства. Откатиться на старую версию Android не даёт: чтобы вернуть прежнее поведение, выпускается новая версия с исправлением.</p>
 
+  <h2 style="margin-top:26px">Страницы</h2>
+  <div class="row">
+    <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран устройства</option><option value="index">index — этот веб-интерфейс</option></select></label>
+    <span class="hint" id="pgState" style="margin:0"></span>
+  </div>
+  <textarea id="pgText" rows="22" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" id="pgSave">Сохранить</button>
+    <button class="btn danger" id="pgReset">Вернуть встроенную</button>
+    <button class="btn sec" id="pgReload">Перезагрузить киоск</button>
+    <button class="btn sec" id="pgShow">Показать киоск на экране</button>
+  </div>
+  <div class="msg" id="pgMsg"></div>
+  <p class="hint">Заменённые страницы хранятся во внутренней памяти приложения (путь показан выше; без root или adb до этого файла не добраться, меняйте страницу здесь, в редакторе) и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
+
   <h2 style="margin-top:26px">Перезапуск</h2>
   <div class="row">
     <button class="btn sec" id="pRestart">Перезапустить приложение</button>
@@ -329,22 +377,6 @@
   </div>
   <div class="msg" id="bkMsg"></div>
   <p class="hint"><b>Сохранить</b> скачивает один файл <code>fserv.ДАТА.NN.zip</code>: настройки (settings.json, в том числе токен бота и пароли), задачи (tasks.json), загруженные звуки (sounds/) и свои версии страниц (pages/). <b>Восстановить</b> сначала проверяет архив целиком; если он годится, удаляет все текущие настройки и файлы, раскладывает содержимое архива и перезапускает приложение. Если порт или пароль в копии другие, после перезапуска откройте страницу по новому адресу. <b>Очистить</b> удаляет звуки, свои страницы, историю задач, очередь Telegram, кэш обновлений и журнал, возвращает настройки к исходным и перезапускает приложение. Пароль, порт, автозапуск и состояние службы остаются, чтобы не потерять доступ к устройству.</p>
-</section>
-<section id="pages">
-  <h2>Страницы</h2>
-  <div class="row">
-    <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран устройства</option><option value="index">index — этот веб-интерфейс</option></select></label>
-    <span class="hint" id="pgState" style="margin:0"></span>
-  </div>
-  <textarea id="pgText" rows="22" spellcheck="false"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button class="btn" id="pgSave">Сохранить</button>
-    <button class="btn danger" id="pgReset">Вернуть встроенную</button>
-    <button class="btn sec" id="pgReload">Перезагрузить киоск</button>
-    <button class="btn sec" id="pgShow">Показать киоск на экране</button>
-  </div>
-  <div class="msg" id="pgMsg"></div>
-  <p class="hint">Заменённые страницы хранятся во внутренней памяти приложения (путь показан выше; без root или adb до этого файла не добраться, меняйте страницу здесь, в редакторе) и переживают обновление приложения. Если сломали веб-интерфейс, встроенная версия всегда доступна по адресу <a href="/default">/default</a>.</p>
 </section>
 
 
@@ -390,7 +422,7 @@ function refreshDirty() {
 }
 document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
-setInterval(refreshDirty, 500);
+setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
 track("sSave", ["sLevel", "sTmo", "sApp", "sReboot", "sPort", "sBoot", "sPass"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
@@ -399,7 +431,7 @@ track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
 track("cfgSave", ["cfgText"]);
 track("gSave", ["gVol", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
 track("pgSave", ["pgText"]);
-track("tkSave", [], () => typeof tkDirty === "function" && (tkDirty() || tkOrig === ""));
+track("tkSave", [], () => tkOpen && (tkDirty() || tkOrig === ""));
 
 // ---- копирование (на http:// буфер обмена браузера закрыт, поэтому есть запасной путь) ----
 async function copyText(text) {
@@ -428,17 +460,69 @@ document.querySelectorAll("pre, textarea").forEach(el => {
   w.appendChild(b);
 });
 
+// ---- значки ----
+const svg = body => '<svg viewBox="0 0 24 24" aria-hidden="true">' + body + "</svg>";
+const ICO = {
+  play: svg('<polygon points="6 4 20 12 6 20" fill="currentColor"/>'),
+  stop: svg('<rect x="5" y="5" width="14" height="14" rx="1" fill="currentColor"/>'),
+  edit: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>'),
+  del: svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
+};
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; });
+
+// ---- редактор кода: номера строк и автоотступ ----
+const EDITORS = [];
+function mkEditor(ta) {
+  const wrap = document.createElement("div"); wrap.className = "ed";
+  const gut = document.createElement("pre"); gut.className = "gut"; gut.setAttribute("aria-hidden", "true");
+  ta.parentNode.insertBefore(wrap, ta); wrap.appendChild(gut); wrap.appendChild(ta);
+  let n = 0;
+  const sync = () => {
+    const c = ta.value.split("\n").length;
+    if (c !== n) { n = c; let t = ""; for (let i = 1; i <= c; i++) t += i + "\n"; gut.textContent = t.slice(0, -1); }
+    gut.scrollTop = ta.scrollTop;
+  };
+  ta.addEventListener("input", sync);
+  ta.addEventListener("scroll", () => { gut.scrollTop = ta.scrollTop; });
+  ta.addEventListener("keydown", e => {
+    if (e.key !== "Enter" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const s0 = ta.selectionStart, e0 = ta.selectionEnd, v = ta.value;
+    const ls = v.lastIndexOf("\n", s0 - 1) + 1;
+    const indent = v.slice(ls, s0).match(/^[ \t]*/)[0];
+    const prev = v[s0 - 1], next = v[e0];
+    let ins = "\n" + indent, back = 0;
+    if (prev === "{" || prev === "[") {
+      ins += "  ";
+      if ((prev === "{" && next === "}") || (prev === "[" && next === "]")) { back = ("\n" + indent).length; ins += "\n" + indent; }
+    }
+    e.preventDefault();
+    if (!document.execCommand("insertText", false, ins)) ta.setRangeText(ins, s0, e0, "end");
+    if (back) ta.selectionStart = ta.selectionEnd = ta.selectionEnd - back;
+    sync();
+  });
+  EDITORS.push(sync); sync();
+  return sync;
+}
+const syncEditors = () => EDITORS.forEach(f => f());
+for (const id of ["tkText", "cfgText"]) mkEditor(document.getElementById(id));
+
 // ---- вкладки ----
 let current = "status";
 function showTab(t) {
-  if (!document.getElementById(t) || !document.querySelector('#tabs button[data-t="' + t + '"]')) t = "status";
+  if (["settings", "update", "power", "pages"].includes(t)) t = "system"; // прежние адреса вкладок
+  if (!document.getElementById(t) || !document.querySelector('#tabs a[data-t="' + t + '"]')) t = "status";
   current = t;
-  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x.dataset.t === t));
+  document.querySelectorAll("#tabs a").forEach(x => x.classList.toggle("on", x.dataset.t === t));
   document.querySelectorAll("main section").forEach(x => x.classList.toggle("on", x.id === t));
   if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   onTab();
 }
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.t));
+document.querySelectorAll("#tabs a").forEach(b => b.onclick = e => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return; // «открыть в новой вкладке» работает как у обычной ссылки
+  e.preventDefault(); showTab(b.dataset.t);
+});
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---- связь ----
@@ -573,7 +657,7 @@ $("#ctToggle").onclick = () => run("#ctMsg", async () => {
 setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
 
 // ---- обновления ----
-let upTimer = null;
+let upTimer = null, upVer = null, upBusy = false;
 const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
 function kvRow(k, v) { return "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>"; }
 async function loadUpdate() {
@@ -592,9 +676,16 @@ async function loadUpdate() {
       (u.lastError ? kvRow("Ошибка", u.lastError) : "");
     const ib = $("#upInstall"); ib.style.display = u.available ? "" : "none"; ib.disabled = u.state !== "idle" && u.state !== "confirm";
     const n = $("#upNotes"); n.style.display = u.available && l && l.notes ? "block" : "none"; n.textContent = l ? l.notes : "";
+    // после установки приложение перезапускается: страница обновляется сама, как только отвечает уже новая версия
+    if (upVer !== null && upVer !== u.current.versionCode) { location.reload(); return; }
+    upVer = u.current.versionCode;
+    upBusy = u.state !== "idle";
     clearTimeout(upTimer);
-    if (current === "system" && u.state !== "idle" && u.state !== "confirm") upTimer = setTimeout(loadUpdate, 1500);
-  } catch (e) { say("#upMsg", e.message, false); }
+    if (current === "system" && upBusy) upTimer = setTimeout(loadUpdate, 2000);
+  } catch (e) {
+    if (upBusy) { clearTimeout(upTimer); upTimer = setTimeout(loadUpdate, 3000); } // идёт установка, сервер может быть недоступен
+    else say("#upMsg", e.message, false);
+  }
 }
 $("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName : "обновлений нет"; });
 $("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
@@ -606,10 +697,10 @@ function onTab() {
   if (current === "journal") loadJournal();
   if (current === "config") { loadTasksEditor(true).then(loadTasks); loadConfig(); loadHist(); }
   if (current === "sound") loadSound();
-  if (current === "system") { loadSettings(); loadUpdate(); loadPower(); }
+  if (current === "system") { loadSettings(); loadUpdate(); loadPage(); loadPower(); }
   if (current === "comm") loadComm();
   if (current === "camera") loadCamera(true);
-  if (current === "pages") loadPage();
+  if (current === "photos") loadPhotos(null);
 }
 
 // ---- состояние ----
@@ -680,21 +771,29 @@ $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confi
 
 // ---- задачи: общие настройки, список, редактор одной задачи ----
 const EXAMPLE_TASK = {
-  id: "wakeup", title: "Подъём", enabled: true, cron: "0 9 * * *", late_ok: "0", timeout: "60m",
+  id: "wakeup", title: "Подъём", enabled: true, cron: "0 9 * * *", late_ok: "0", timeout: "40m",
   steps: [
-    {repeat: {times: 6, every: "5m", until: "moved"}, do: [
-      {watch: {motion: true, for: "60s", poll: "5s", save_as: "moved"}},
-      {if: "not moved", then: [{play: "system:alarm", volume: 80, fade_in: "5s", fade_out: "2s", for: "20s"}, {say: "Доброе утро! Пора вставать."}]}
+    {repeat: {times: 6, until: "moved"}, do: [
+      {watch: {motion: true, for: "30s", poll: "600ms", save_as: "moved"}},
+      {if: "not moved", then: [
+        {background: [
+          {play: "system:alarm", volume: 80, fade_in: "5s"},
+          {delay: "10s"},
+          {say: "Просыпайся! Пора вставать."}
+        ]}
+      ]}
     ]},
+    {stop_background: true},
     {if: "moved",
-     then: [{say: "Доброе утро! Не забудьте измерить давление и принять таблетки."}, {telegram: "Встала в {time}"}],
-     else: [{telegram: "К {time} движения нет, не вставала"}]}
+     then: [{say: "Доброе утро! Не забудьте измерить давление и принять таблетки."}, {telegram: "Встала в <b>{time}</b>"}],
+     else: [{telegram: "К {time} движения нет, <u>не вставала</u>"}]}
   ]
 };
 let cfgObj = {tasks: []};     // последняя прочитанная конфигурация
 let tkOrig = "";               // id редактируемой задачи на сервере ("" = новая, ещё не сохранена)
+let tkOpen = false;            // открыт ли редактор
 let tkShown = "";              // текст, с которого начато редактирование (для проверки изменений)
-const num = v => (v === "" || v == null) ? undefined : Number(v);
+let tkState = {};              // id -> {running, queued}
 
 async function loadGlobal() {
   const text = (await api("/api/config")).text;
@@ -723,84 +822,90 @@ $("#gSave").onclick = () => run("#gMsg", async () => {
   await loadGlobal(); return "сохранено";
 }, "gSave");
 
-function fillSelect(selectId) {
-  const sel = $("#tkSel"), ts = cfgObj.tasks || [];
-  sel.innerHTML = ts.map(t => '<option value="' + esc(t.id) + '">' + esc((t.title ? t.title + " · " : "") + t.id) + (t.enabled === false ? " (выкл.)" : "") + "</option>").join("") +
-    (tkOrig === "" ? '<option value="">(новая задача, не сохранена)</option>' : "");
-  sel.value = tkOrig;
-  if (sel.value !== tkOrig) sel.selectedIndex = Math.max(0, sel.options.length - 1);
-}
 function showTask(task, orig) {
-  tkOrig = orig; tkShown = JSON.stringify(task, null, 2);
-  $("#tkText").value = tkShown;
-  fillSelect();
-  const has = !!orig; $("#tkRun").disabled = !has; $("#tkDry").disabled = !has;
+  tkOrig = orig; tkOpen = true; tkShown = JSON.stringify(task, null, 2);
+  $("#tkText").value = tkShown; syncEditors();
+  $("#tkEditor").style.display = "";
+  $("#tkName").textContent = orig ? "Задача «" + (task.title || orig) + "» (" + orig + ")" : "Новая задача (ещё не сохранена)";
+  $("#tkDry").disabled = !orig;
+  say("#tkSMsg", ""); renderTasks();
 }
-function tkDirty() { return $("#tkText").value !== tkShown; }
+function closeEditor() { tkOpen = false; tkOrig = ""; $("#tkEditor").style.display = "none"; renderTasks(); }
+function tkDirty() { return tkOpen && $("#tkText").value !== tkShown; }
+function confirmDiscard() { return !tkDirty() || confirm("В редакторе есть несохранённые изменения. Продолжить без сохранения?"); }
 async function loadTasksEditor(keep) {
   await loadGlobal();
-  const ts = cfgObj.tasks || [];
-  const want = keep && ts.find(t => t.id === tkOrig) ? tkOrig : (ts[0] ? ts[0].id : "");
-  const t = ts.find(x => x.id === want);
-  if (t) showTask(t, t.id); else showTask({id: "", title: "", enabled: false, cron: "0 9 * * *", steps: []}, "");
+  if (tkOpen && tkOrig && !(cfgObj.tasks || []).some(t => t.id === tkOrig) && !tkDirty()) closeEditor();
 }
-$("#tkSel").onchange = () => {
-  const id = $("#tkSel").value;
-  if (tkDirty() && !confirm("В редакторе есть несохранённые изменения. Открыть другую задачу?")) { fillSelect(); return; }
-  const t = (cfgObj.tasks || []).find(x => x.id === id);
-  if (t) showTask(t, t.id);
-};
 function newId() { let n = 1; const ids = (cfgObj.tasks || []).map(t => t.id); while (ids.includes("task" + n)) n++; return "task" + n; }
 $("#tkAdd").onclick = () => {
-  if (tkDirty() && !confirm("Есть несохранённые изменения. Начать новую задачу?")) return;
+  if (!confirmDiscard()) return;
   showTask({id: newId(), title: "Новая задача", enabled: false, cron: "0 9 * * *", timeout: "30m", steps: [{log: "привет из {task}"}]}, "");
-  say("#tkMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
+  say("#tkSMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
 };
 $("#tkExample").onclick = () => {
-  if (tkDirty() && !confirm("Есть несохранённые изменения. Начать новую задачу?")) return;
+  if (!confirmDiscard()) return;
   const t = JSON.parse(JSON.stringify(EXAMPLE_TASK)); if ((cfgObj.tasks || []).some(x => x.id === t.id)) t.id = newId();
   showTask(t, "");
-  say("#tkMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
+  say("#tkSMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
 };
-$("#tkSave").onclick = () => run("#tkMsg", async () => {
+$("#tkClose").onclick = () => { if (confirmDiscard()) closeEditor(); };
+$("#tkSave").onclick = () => run("#tkSMsg", async () => {
   let t; try { t = JSON.parse($("#tkText").value); } catch (e) { throw new Error("это не JSON: " + e.message); }
   await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig), $("#tkText").value);
-  tkOrig = t.id; await loadTasksEditor(true); loadTasks(); return "задача «" + t.id + "» сохранена";
+  tkOrig = t.id; await loadGlobal();
+  const saved = (cfgObj.tasks || []).find(x => x.id === t.id); if (saved) showTask(saved, saved.id);
+  loadTasks(); return "задача «" + t.id + "» сохранена";
 }, "tkSave");
-$("#tkDel").onclick = () => {
-  if (!tkOrig) { loadTasksEditor(false); return; }
-  if (confirm("Удалить задачу «" + tkOrig + "»?")) run("#tkMsg", async () => { await post("/api/tasks/delete?id=" + encodeURIComponent(tkOrig)); tkOrig = ""; await loadTasksEditor(false); loadTasks(); return "задача удалена"; });
-};
 
-let tkTimer = null, tkRunning = false;
-function setRunBtn(on) { tkRunning = on; const b = $("#tkRun"); b.textContent = on ? "Остановить" : "Запустить"; b.className = on ? "btn danger" : "btn"; }
+function renderTasks() {
+  const ts = cfgObj.tasks || [];
+  $("#tkBody").innerHTML = ts.length ? ts.map(x => {
+    const st = tkState[x.id] || {};
+    const status = st.running ? "выполняется" : st.queued ? "в очереди" : x.enabled === false ? "выключена" : "ждёт";
+    return '<tr' + (tkOpen && tkOrig === x.id ? ' class="sel"' : "") + "><td>" + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + "</div></td><td>" + esc(x.cron || "только вручную") + "</td><td>" + esc(st.next ? dt(st.next) : "") + "</td><td>" + status + "</td>" +
+      '<td style="white-space:nowrap">' +
+      '<button class="ib" data-tk="run" data-id="' + esc(x.id) + '" title="' + (st.running ? "Остановить" : "Запустить") + '">' + (st.running ? ICO.stop : ICO.play) + "</button>" +
+      '<button class="ib" data-tk="edit" data-id="' + esc(x.id) + '" title="Редактировать">' + ICO.edit + "</button>" +
+      '<button class="ib del" data-tk="del" data-id="' + esc(x.id) + '" title="Удалить">' + ICO.del + "</button></td></tr>";
+  }).join("") : '<tr><td colspan="5" style="color:var(--dim)">задач нет: добавьте внизу</td></tr>';
+}
 async function loadTasks() {
   try {
     const t = (await api("/api/tasks")).json;
-    $("#tkBody").innerHTML = t.tasks.length ? t.tasks.map(x => {
-      const st = x.running ? "выполняется" : x.queued ? "в очереди" : x.enabled ? "ждёт" : "выключена";
-      return '<tr style="cursor:pointer" data-pick="' + esc(x.id) + '"><td>' + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + "</div></td><td>" + esc(x.cron || "только вручную") + "</td><td>" + esc(x.next ? dt(x.next) : "") + "</td><td>" + st + "</td></tr>";
-    }).join("") : '<tr><td colspan="4" style="color:var(--dim)">задач нет: добавьте внизу</td></tr>';
-    const mine = tkOrig ? t.tasks.find(x => x.id === tkOrig) : null;
-    setRunBtn(!!(mine && mine.running));
-    const runs = t.runs.filter(r => !tkOrig || r.task === tkOrig), r = runs[0];
-    const full = t.runs[0] && t.runs[0].task === tkOrig ? t.runs[0] : null;
-    $("#tkRunInfo").textContent = r ? "Последний запуск: " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : (t.configOk ? "У этой задачи запусков ещё не было." : "tasks.json не читается");
-    $("#tkLog").textContent = full && full.lines ? full.lines.join("\n") : (r ? "(подробный ход виден только у самого последнего запуска среди всех задач)" : "—");
+    tkState = {}; t.tasks.forEach(x => tkState[x.id] = {running: x.running, queued: x.queued, next: x.next});
+    renderTasks();
+    if (tkOpen && tkOrig) {
+      const runs = t.runs.filter(r => r.task === tkOrig), r = runs[0];
+      const full = t.runs[0] && t.runs[0].task === tkOrig ? t.runs[0] : null;
+      $("#tkRunInfo").textContent = r ? "Последний запуск: " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : (t.configOk ? "У этой задачи запусков ещё не было." : "tasks.json не читается");
+      $("#tkLog").textContent = full && full.lines ? full.lines.join("\n") : (r ? "(подробный ход виден только у самого последнего запуска среди всех задач)" : "—");
+    }
   } catch (e) { say("#tkMsg", e.message, false); }
 }
 document.addEventListener("click", e => {
-  const r = e.target.closest("[data-pick]"); if (!r) return;
-  const t = (cfgObj.tasks || []).find(x => x.id === r.dataset.pick); if (!t) return;
-  if (tkDirty() && !confirm("Есть несохранённые изменения. Открыть другую задачу?")) return;
-  showTask(t, t.id); loadTasks();
+  const b = e.target.closest("[data-tk]"); if (!b) return;
+  const id = b.dataset.id, act = b.dataset.tk;
+  if (act === "edit") {
+    const t = (cfgObj.tasks || []).find(x => x.id === id); if (!t) return;
+    if (tkOpen && tkOrig === id) return;
+    if (!confirmDiscard()) return;
+    showTask(t, t.id); loadTasks();
+  } else if (act === "run") {
+    run("#tkMsg", async () => {
+      if ((tkState[id] || {}).running) { const r = await post("/api/tasks/stop"); loadTasks(); return r.json.message; }
+      const r = await post("/api/tasks/run?id=" + encodeURIComponent(id)); setTimeout(loadTasks, 400); return r.json.message;
+    });
+  } else if (act === "del") {
+    if (!confirm("Удалить задачу «" + id + "»?")) return;
+    run("#tkMsg", async () => {
+      await post("/api/tasks/delete?id=" + encodeURIComponent(id));
+      if (tkOpen && tkOrig === id) closeEditor();
+      await loadGlobal(); loadTasks(); return "задача удалена";
+    });
+  }
 });
-$("#tkRun").onclick = () => run("#tkMsg", async () => {
-  if (tkRunning) { const r = await post("/api/tasks/stop"); loadTasks(); return r.json.message; }
-  if (tkDirty()) throw new Error("есть несохранённые изменения: сначала сохраните задачу, запускается сохранённая версия");
-  const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig)); setTimeout(loadTasks, 400); return r.json.message;
-});
-$("#tkDry").onclick = () => run("#tkMsg", async () => {
+$("#tkDry").onclick = () => run("#tkSMsg", async () => {
   if (tkDirty()) throw new Error("есть несохранённые изменения: сначала сохраните задачу");
   const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig) + "&dry=1&assume=" + encodeURIComponent($("#tkAssume").value.trim())); setTimeout(loadTasks, 400); return r.json.message;
 });
@@ -818,7 +923,7 @@ async function loadSound() {
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {
-  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
+  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play" title="' + (playing === id ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
 }
 let sdTimer = null;
 async function loadSoundFiles() {
@@ -827,8 +932,8 @@ async function loadSoundFiles() {
     playing = d.playing || null; renderSys();
     clearTimeout(sdTimer);
     if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
-    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + (f.size / 1048576).toFixed(2) + " МБ</td><td>" + (f.durationMs ? fmtDur(f.durationMs / 1000) + " (" + Math.round(f.durationMs / 1000) + " с)" : "?") + "</td><td>" +
-      '<button class="btn sm sec" data-sd="' + esc(f.name) + '" data-act="play">' + (playing === f.name ? "■" : "▶") + '</button> <button class="btn sm danger" data-sd="' + esc(f.name) + '" data-act="del">Удалить</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
+    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td style=\"white-space:nowrap\">" +
+      '<button class="btn sm sec" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? "■" : "▶") + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
   } catch (e) { say("#sdMsg", e.message, false); }
 }
 let bAudio = null, bName = null;
@@ -941,6 +1046,36 @@ $("#bkReset").onclick = () => {
   if (!confirm("Очистить всё?\n\nБудут удалены звуки, свои страницы, история задач, очередь Telegram, кэш обновлений и журнал, настройки вернутся к исходным (токен бота, прокси, камера, расписания). Пароль, порт, автозапуск и состояние службы останутся. Приложение перезапустится.\n\nПеред этим можно скачать копию кнопкой «Сохранить».")) return;
   run("#bkMsg", async () => { const r = await post("/api/reset?confirm=1"); return await afterRestart(r.json.message); });
 };
+
+// ---- фотографии ----
+let phDay = null;
+async function loadPhotos(day) {
+  try {
+    const d = (await api("/api/photos")).json.days;
+    const want = day || (d.some(x => x.day === phDay) ? phDay : (d[0] ? d[0].day : null));
+    phDay = want;
+    $("#phDay").innerHTML = d.length ? d.map(x => '<option value="' + x.day + '">' + x.day + " (" + x.count + ")</option>").join("") : "<option>нет снимков</option>";
+    if (want) $("#phDay").value = want;
+    if (!want) { $("#phGrid").innerHTML = ""; $("#phCount").textContent = ""; return; }
+    const list = (await api("/api/photos?day=" + encodeURIComponent(want))).json.photos;
+    $("#phCount").textContent = "снимков за день: " + list.length;
+    $("#phGrid").innerHTML = list.map(f => {
+      const q = "day=" + encodeURIComponent(want) + "&name=" + encodeURIComponent(f.name);
+      const t = f.name.replace(/\.jpg$/, "").replace(/^(\d\d)(\d\d)(\d\d)/, "$1:$2:$3");
+      return '<figure><a href="/api/photos/file?' + q + '" target="_blank"><img loading="lazy" alt="" src="/api/photos/file?' + q + '&thumb=1"></a><figcaption><span>' + esc(t) + " · " + Math.round(f.size / 1024) + ' КБ</span><button class="ib del" data-ph="' + esc(f.name) + '" title="Удалить">' + ICO.del + "</button></figcaption></figure>";
+    }).join("");
+  } catch (e) { say("#phMsg", e.message, false); }
+}
+$("#phDay").onchange = () => loadPhotos($("#phDay").value);
+$("#phTake").onclick = () => run("#phMsg", async () => {
+  say("#phMsg", "снимаю…", true);
+  const r = (await post("/api/photos/take")).json; await loadPhotos(r.day); return r.message;
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-ph]"); if (!b) return;
+  if (!confirm("Удалить снимок " + b.dataset.ph + "?")) return;
+  run("#phMsg", async () => { await post("/api/photos/delete?day=" + encodeURIComponent(phDay) + "&name=" + encodeURIComponent(b.dataset.ph)); await loadPhotos(null); return "удалено"; });
+});
 
 // ---- автообновление ----
 setInterval(() => {

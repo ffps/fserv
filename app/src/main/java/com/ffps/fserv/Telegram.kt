@@ -163,7 +163,7 @@ object Telegram {
             return
         }
         val delayed = System.currentTimeMillis() - m.createdAt
-        val text = htmlEscape(m.text) +
+        val text = sanitize(m.text) +
             if (delayed > DELAY_NOTE_MS) "\n\n<i>Отправлено в ${tf.format(Date(m.createdAt))}</i>" else ""
         try {
             send(text)
@@ -186,6 +186,34 @@ object Telegram {
     }
 
     private fun htmlEscape(t: String) = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    private val TAGS = setOf("b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "tg-spoiler", "blockquote")
+    private val TAG_RE = Regex("""<(/?)([A-Za-z][A-Za-z0-9-]*)((?:\s+[^<>]*)?)>""")
+    private val A_OPEN_RE = Regex("""\s+href\s*=\s*("[^"<>]*"|'[^'<>]*')\s*""")
+
+    /** Экранирует текст, но оставляет поддерживаемые Telegram теги (b, i, u, s, code, pre, a href, blockquote, tg-spoiler); при неправильной вложенности экранирует всё. */
+    fun sanitize(text: String): String {
+        fun esc(part: String): String = part.replace(Regex("&(?!(amp|lt|gt|quot|#\\d+);)"), "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        val sb = StringBuilder()
+        val stack = ArrayList<String>()
+        var pos = 0
+        for (m in TAG_RE.findAll(text)) {
+            val closing = m.groupValues[1] == "/"
+            val name = m.groupValues[2].lowercase()
+            val attrs = m.groupValues[3]
+            val ok = name in TAGS && (if (closing) attrs.isBlank() else if (name == "a") A_OPEN_RE.matches(attrs) else attrs.isBlank())
+            sb.append(esc(text.substring(pos, m.range.first)))
+            pos = m.range.last + 1
+            if (!ok) { sb.append(esc(m.value)); continue }
+            if (closing) {
+                if (stack.isEmpty() || stack.last() != name) return htmlEscape(text)
+                stack.removeAt(stack.size - 1)
+            } else stack.add(name)
+            sb.append(m.value)
+        }
+        sb.append(esc(text.substring(pos)))
+        return if (stack.isEmpty()) sb.toString() else htmlEscape(text)
+    }
 
     private fun fail(m: Item, msg: String, code: Int, retryAfterSec: Int) {
         m.attempts++

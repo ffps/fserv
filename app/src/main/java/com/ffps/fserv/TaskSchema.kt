@@ -15,17 +15,19 @@ object TaskSchema {
     private val ROOT_KEYS = setOf("version", "voice", "zones", "tasks", "comment")
     private val TASK_KEYS = setOf("id", "title", "enabled", "cron", "late_ok", "timeout", "steps", "comment")
     private val VOICE_KEYS = setOf("volume", "rate", "pitch", "lang", "voice", "comment")
-    private val ACTIONS = listOf("say", "play", "telegram", "wait", "watch", "if", "repeat", "stop", "stop_sound", "log", "ask", "chat")
+    private val ACTIONS = listOf("say", "play", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log", "ask", "chat")
     private val MODIFIERS = mapOf(
-        "say" to setOf("volume"),
+        "say" to setOf("volume", "wait"),
         "play" to setOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "telegram" to emptySet(),
-        "wait" to emptySet(),
+        "photo" to emptySet(),
+        "delay" to emptySet(),
         "watch" to emptySet(),
+        "background" to emptySet(),
+        "stop_background" to emptySet(),
         "if" to setOf("then", "else"),
         "repeat" to setOf("do"),
         "stop" to emptySet(),
-        "stop_sound" to emptySet(),
         "log" to emptySet()
     )
     private val WATCH_KEYS = setOf("motion", "for", "poll", "save_as", "threshold", "area", "zone", "comment")
@@ -38,6 +40,7 @@ object TaskSchema {
 
     private class Ctx(val zones: Set<String>, val fileExists: (String) -> Boolean, val taskVars: Set<String>) {
         var steps = 0
+        var inBg = false
     }
 
     fun validate(root: JSONObject, fileExists: (String) -> Boolean = { true }): String? {
@@ -163,8 +166,7 @@ object TaskSchema {
     }
 
     private fun step(s: JSONObject, c: Ctx, p: String, depth: Int): String? {
-        // «wait» у play — модификатор (не ждать конца звука), а не отдельное действие
-        val present = ACTIONS.filter { s.has(it) }.let { if ("play" in it) it - "wait" else it }
+        val present = ACTIONS.filter { s.has(it) }
         if (present.isEmpty()) {
             val unknown = s.keys().asSequence().filter { it != "comment" }.toList()
             return "не найдено действие (нужно одно из: ${ACTIONS.joinToString(", ")})" + if (unknown.isNotEmpty()) "; встретилось: ${unknown.joinToString(", ")}" else ""
@@ -173,6 +175,10 @@ object TaskSchema {
         val a = present[0]
         if (a == "ask") return "ask (вопрос голосом) появится на этапе 5, вместе с распознаванием речи"
         if (a == "chat") return "chat (разговор с ИИ) появится на этапе 6"
+        if (c.inBg) {
+            if (a in setOf("watch", "background", "stop_background", "photo", "stop")) return "$a: внутри background не допускается (камера и остановка задачи принадлежат основному ходу)"
+            if ((a == "say" || a == "play") && s.has("wait")) return "$a: внутри background параметр wait не нужен (блок и так идёт в фоне)"
+        }
         val allowed = (MODIFIERS[a] ?: emptySet()) + a + "comment"
         for (k in s.keys()) if (k !in allowed) return "лишнее поле «$k» у действия $a" + if ((MODIFIERS[a] ?: emptySet()).isNotEmpty()) " (допустимы: ${(MODIFIERS[a] ?: emptySet()).joinToString(", ")})" else ""
         val v = s.opt(a)
@@ -181,13 +187,22 @@ object TaskSchema {
                 if (v !is String || v.isBlank()) return "say: нужен непустой текст"
                 tpl(v, c)?.let { return "say: $it" }
                 volume(s)?.let { return it }
+                if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
             }
             "log", "telegram", "stop" -> {
                 if (v !is String || (v.isBlank() && a != "stop")) return "$a: нужен непустой текст"
                 tpl(v, c)?.let { return "$a: $it" }
             }
-            "stop_sound" -> if (v != true) return "stop_sound: пишите true (останавливает звук, запущенный с \"wait\": false)"
-            "wait" -> try { Dur.parse(v, "wait") } catch (e: IllegalArgumentException) { return e.message }
+            "stop_background" -> if (v != true) return "stop_background: пишите true (останавливает фоновые звук, речь и блок background)"
+            "photo" -> if (v != true) return "photo: пишите true"
+            "background" -> {
+                val body = v as? JSONArray ?: return "background: ожидается список шагов [...]"
+                if (body.length() == 0) return "background: список шагов пуст"
+                val was = c.inBg
+                c.inBg = true
+                try { steps(body, c, "$p.bg", depth + 1)?.let { return it } } finally { c.inBg = was }
+            }
+            "delay" -> try { Dur.parse(v, "delay") } catch (e: IllegalArgumentException) { return e.message }
             "play" -> {
                 val names = when (v) {
                     is String -> listOf(v)
@@ -208,7 +223,7 @@ object TaskSchema {
                     try { Dur.parseList(s.opt("pause"), "pause") } catch (e: IllegalArgumentException) { return e.message }
                 }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return "wait: true или false"
-                if (s.optBoolean("loop") && !s.has("for") && s.optBoolean("wait", true)) return "loop: true требует поля for либо \"wait\": false (иначе звук не остановится; в фоновом режиме его гасит шаг stop_sound или конец задачи)"
+                if (s.optBoolean("loop") && !s.has("for") && s.optBoolean("wait", true) && !c.inBg) return "loop: true требует поля for либо \"wait\": false (иначе звук не остановится; в фоне его гасит stop_background или конец задачи)"
             }
             "watch" -> return watch(v, c)
             "if" -> {

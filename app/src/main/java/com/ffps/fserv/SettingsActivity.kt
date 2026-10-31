@@ -54,6 +54,8 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = "fServe"
+        // На Android 8 фокус сразу попадал в поле порта, и выезжала экранная клавиатура
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -208,6 +210,8 @@ class SettingsActivity : Activity() {
         root.addView(ver, full(top = 24))
 
         setContentView(ScrollView(this).apply { addView(root) })
+        root.isFocusableInTouchMode = true
+        root.requestFocus() // фокус на контейнер, а не на поле порта
 
         // Без разрешения на уведомления (Android 13+) уведомление «Running: ...» не будет видно.
         if (Build.VERSION.SDK_INT >= 33 &&

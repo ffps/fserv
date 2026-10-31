@@ -23,6 +23,13 @@ object TaskEngine {
     private class Cancelled : RuntimeException("остановлено вручную")
     private class TimedOut : RuntimeException("превышен timeout")
     private class StepError(msg: String) : RuntimeException(msg)
+    private class SlotStopped : RuntimeException("фоновое действие остановлено")
+
+    /** Фоновое действие (звук, речь или блок background): у каждого вида один слот, новое заменяет прежнее. */
+    private class Slot(val name: String) {
+        @Volatile var stop = false
+        @Volatile var thread: Thread? = null
+    }
 
     class RunInfo(val id: String, val title: String, val source: String, val dry: Boolean) {
         val startedAt = System.currentTimeMillis()
@@ -39,16 +46,16 @@ object TaskEngine {
     )
 
     private class Run(val ctx: Context, val root: JSONObject, val task: JSONObject, val info: RunInfo, val assume: Map<String, Any?>, deadlineMs: Long) {
-        val vars = HashMap<String, Any?>()
+        val vars = java.util.concurrent.ConcurrentHashMap<String, Any?>()
         val rnd = Random()
         val deadline = System.currentTimeMillis() + deadlineMs
         @Volatile var cancelled = false
         val bg = ArrayList<Thread>()
-        /** Звук, запущенный с "wait": false. Он один: новый заменяет прежний, шаг stop_sound гасит его. */
-        @Volatile var bgThread: Thread? = null
-        @Volatile var bgStop = false
+        val slots = java.util.concurrent.ConcurrentHashMap<String, Slot>()
+        /** Слот, в потоке которого сейчас выполняется код (null в основном ходе задачи). */
+        val slotOf = ThreadLocal<Slot?>()
         val voice: JSONObject? = root.optJSONObject("voice")
-        fun stopRequested(): Boolean = cancelled || System.currentTimeMillis() > deadline
+        fun stopRequested(): Boolean = cancelled || System.currentTimeMillis() > deadline || slotOf.get()?.stop == true
         fun title(): String = task.optString("title").ifEmpty { task.optString("id") }
     }
 
@@ -236,6 +243,7 @@ object TaskEngine {
     private fun check(r: Run) {
         if (r.cancelled) throw Cancelled()
         if (System.currentTimeMillis() > r.deadline) throw TimedOut()
+        if (r.slotOf.get()?.stop == true) throw SlotStopped()
     }
 
     private fun sleep(r: Run, ms: Long) {
@@ -274,7 +282,7 @@ object TaskEngine {
             check(r)
             val p = if (path.isEmpty()) "${i + 1}" else "$path.${i + 1}"
             val s = a.optJSONObject(i) ?: continue
-            r.info.step = p
+            if (r.slotOf.get() == null) r.info.step = p
             exec(r, s, p)
         }
     }
@@ -286,26 +294,33 @@ object TaskEngine {
         when {
             s.has("say") -> {
                 val text = fill(r, s.optString("say"))
-                log(r, p, "say: $text")
+                val wait = s.optBoolean("wait", true)
+                log(r, p, "say: $text" + if (!wait) " (в фоне)" else "")
                 if (!dry) {
                     val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
-                    Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
-                    check(r)
+                    val speak = { Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) } }
+                    if (wait) { speak(); check(r) } else startSlot(r, "say", p) { speak() }
                 }
             }
             s.has("play") -> play(r, s, p)
-            s.has("stop_sound") -> {
-                val was = if (r.info.dry) false else stopBackground(r)
-                log(r, p, "stop_sound: " + if (r.info.dry) "в пробном запуске пропущено" else if (was) "фоновый звук остановлен" else "фонового звука не было")
+            s.has("photo") -> photo(r, p)
+            s.has("background") -> {
+                val block = s.getJSONArray("background")
+                log(r, p, "background: ${block.length()} шаг(ов) в фоне" + if (dry) " (в пробном запуске выполняются здесь же, без звука и пауз)" else "")
+                if (dry) execSteps(r, block, "$p.bg") else startSlot(r, "block", p) { execSteps(r, block, "$p.bg") }
+            }
+            s.has("stop_background") -> {
+                val was = if (dry) false else stopAllSlots(r)
+                log(r, p, "stop_background: " + if (dry) "в пробном запуске пропущено" else if (was) "фоновые действия остановлены" else "фоновых действий не было")
             }
             s.has("telegram") -> {
                 val text = fill(r, s.optString("telegram"))
                 log(r, p, "telegram: $text")
                 if (!dry) Telegram.enqueue(text)
             }
-            s.has("wait") -> {
-                val ms = Dur.parse(s.opt("wait"), "wait").sample(r.rnd)
-                log(r, p, "wait: ${Dur.human(ms)}" + if (dry) " (в пробном запуске пропущено)" else "")
+            s.has("delay") -> {
+                val ms = Dur.parse(s.opt("delay"), "delay").sample(r.rnd)
+                log(r, p, "delay: ${Dur.human(ms)}" + if (dry) " (в пробном запуске пропущено)" else "")
                 if (!dry) sleep(r, ms)
             }
             s.has("watch") -> watch(r, s.getJSONObject("watch"), p)
@@ -370,34 +385,70 @@ object TaskEngine {
         log(r, p, "play: $name, громкость ${vol ?: "как есть"}, нарастание ${Dur.human(fadeIn)}, затухание ${Dur.human(fadeOut)}" +
             (forMs?.let { ", ${Dur.human(it)}" } ?: "") + (if (loop) ", по кругу" else "") + (pauses?.let { l -> ", паузы " + l.joinToString(", ") { Dur.human(it.minMs) + if (it.isRange) "…${Dur.human(it.maxMs)}" else "" } } ?: "") + (if (!wait) ", не ждать конца" else ""))
         if (r.info.dry) return
-        if (!wait) stopBackground(r)
-        val job = Runnable {
-            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop, pauses, r.rnd) { r.stopRequested() || (!wait && r.bgStop) }?.let {
-                log(r, p, "ошибка звука: $it")
-                if (wait) throw StepError(it)
+        val job = {
+            Audio.play(r.ctx, name, vol, fadeIn, fadeOut, forMs, loop, pauses, r.rnd) { r.stopRequested() }?.let {
+                if (wait) throw StepError(it) else log(r, p, "ошибка звука: $it")
             }
         }
         if (wait) {
-            job.run()
+            job()
             check(r)
         } else {
-            r.bgStop = false
-            val th = Thread({ try { job.run() } catch (e: Exception) {} }, "task-audio")
-            r.bg.add(th)
-            r.bgThread = th
-            th.start()
+            startSlot(r, "play", p) { job() }
         }
     }
 
-    /** Гасит фоновый звук задачи (с затуханием fade_out) и ждёт его окончания. */
-    private fun stopBackground(r: Run): Boolean {
-        val th = r.bgThread ?: return false
-        if (!th.isAlive) { r.bgThread = null; return false }
-        r.bgStop = true
+    /** Запускает [body] в фоне в слоте [name]; прежнее действие этого слота перед этим останавливается. */
+    private fun startSlot(r: Run, name: String, p: String, body: () -> Unit) {
+        stopSlot(r, name)
+        val slot = Slot(name)
+        val th = Thread({
+            r.slotOf.set(slot)
+            try {
+                body()
+            } catch (e: SlotStopped) {
+            } catch (e: Cancelled) {
+            } catch (e: TimedOut) {
+            } catch (e: StepError) {
+                log(r, p, "ошибка в фоне ($name): ${e.message}")
+            } catch (e: Throwable) {
+                log(r, p, "сбой в фоне ($name): ${e.javaClass.simpleName}: ${e.message}")
+                FLog.e("task", "фоновое действие $name", e)
+            }
+        }, "task-bg-$name")
+        slot.thread = th
+        r.slots[name] = slot
+        r.bg.add(th)
+        th.start()
+    }
+
+    private fun stopSlot(r: Run, name: String): Boolean {
+        val slot = r.slots.remove(name) ?: return false
+        val th = slot.thread ?: return false
+        val alive = th.isAlive
+        slot.stop = true
         try { th.join(4000) } catch (e: InterruptedException) {}
-        r.bgThread = null
-        r.bgStop = false
-        return true
+        return alive
+    }
+
+    /** Останавливает все фоновые действия задачи. Возвращает true, если что-то ещё работало. */
+    private fun stopAllSlots(r: Run): Boolean {
+        var any = false
+        for (n in r.slots.keys.toList()) if (stopSlot(r, n)) any = true
+        return any
+    }
+
+    /** Фото с камеры в PhotoStore; камера включается на время шага. */
+    private fun photo(r: Run, p: String) {
+        log(r, p, "photo" + if (r.info.dry) " (в пробном запуске пропущено)" else "")
+        if (r.info.dry) return
+        try {
+            val f = PhotoStore.shoot(r.ctx, "task", r.info.id) { r.stopRequested() }
+            check(r)
+            log(r, p, "фото сохранено: ${PhotoStore.relative(f)}")
+        } catch (e: IllegalStateException) {
+            throw StepError(e.message ?: "не удалось сделать фото")
+        }
     }
 
     private fun watch(r: Run, w: JSONObject, p: String) {

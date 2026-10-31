@@ -129,6 +129,7 @@ object Backup {
     /** Возврат к исходному состоянию: пользовательские файлы, очереди, кэши и настройки (кроме доступа) сбрасываются. */
     fun reset(ctx: Context) {
         wipe(ctx)
+        PhotoStore.clearAll()
         TaskStore.replaceAll(null)
         Settings.resetUser()
         Journal.clear()

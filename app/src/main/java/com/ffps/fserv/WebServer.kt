@@ -231,6 +231,32 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                     fail(Response.Status.NOT_FOUND, "экран киоска не создан: откройте его на устройстве кнопкой Open kiosk")
             }
 
+            get && uri == "/api/photos" -> {
+                val day = q(s, "day")
+                if (day == null) json(Response.Status.OK, obj("days" to PhotoStore.days()))
+                else json(Response.Status.OK, obj("day" to day, "photos" to PhotoStore.list(day)))
+            }
+            get && uri == "/api/photos/file" -> {
+                val f = PhotoStore.file(q(s, "day") ?: "", q(s, "name") ?: "")
+                if (f == null) fail(Response.Status.NOT_FOUND, "фото нет")
+                else if (q(s, "thumb") == "1") {
+                    val t = PhotoStore.thumb(f)
+                    if (t == null) fail(Response.Status.INTERNAL_ERROR, "не удалось уменьшить фото")
+                    else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", java.io.ByteArrayInputStream(t), t.size.toLong())
+                        .also { it.addHeader("Cache-Control", "private, max-age=3600") }
+                } else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "image/jpeg", f.inputStream(), f.length())
+                    .also { it.addHeader("Cache-Control", "private, max-age=3600") }
+            }
+            post && uri == "/api/photos/delete" -> {
+                if (PhotoStore.delete(q(s, "day") ?: "", q(s, "name") ?: "")) ok("фото удалено") else fail(Response.Status.NOT_FOUND, "фото нет")
+            }
+            post && uri == "/api/photos/take" -> try {
+                val f = PhotoStore.shoot(ctx, "web-photo", "web")
+                Journal.add("photo", "Снимок из веб-интерфейса: ${PhotoStore.relative(f)}")
+                json(Response.Status.OK, obj("ok" to true, "message" to "снято: ${PhotoStore.relative(f)}", "day" to f.parentFile?.name, "name" to f.name))
+            } catch (e: IllegalStateException) {
+                fail(Response.Status.CONFLICT, e.message ?: "не удалось снять")
+            }
             get && uri == "/api/backup" -> {
                 val name = Backup.nextName(ctx)
                 val tmp = File(ctx.cacheDir, "backup.zip")
@@ -473,6 +499,10 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/camera/test" to "ход и итог стресс-теста камеры",
         "POST /api/camera/test" to "запустить стресс-тест; ?mode=continuous&minutes=10 или ?mode=cycles&count=50&gap=3",
         "POST /api/camera/test/stop" to "остановить стресс-тест",
+        "GET /api/photos" to "дни с фотографиями; ?day=2026-10-31 даёт список фото дня",
+        "GET /api/photos/file" to "фото: ?day=&name= (&thumb=1 — уменьшенная копия)",
+        "POST /api/photos/delete" to "удалить фото: ?day=&name=",
+        "POST /api/photos/take" to "сделать снимок сейчас (камера включается на время снимка, если она выключена)",
         "GET /api/backup" to "выгрузить все настройки, задачи, звуки и свои страницы одним zip (fserv.ДАТА.NN.zip)",
         "POST /api/restore" to "восстановить из zip (тело = файл): сначала проверка, затем замена всех настроек и перезапуск",
         "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1); пароль и порт остаются",
