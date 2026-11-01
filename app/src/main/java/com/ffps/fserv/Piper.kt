@@ -295,19 +295,14 @@ object Piper {
             )
             track = tr
             tr.play()
-            var frames = 0L
-            var firstMs = -1L
+            cbTrack = tr; cbCancel = cancel; cbFrames = 0L; cbFirstMs = -1L; cbT0 = t0
             val g = GenerationConfig(speed = speed, sid = 0, silenceScale = 0.2f, phonemeCodepoints = sentences)
             val tGen = System.currentTimeMillis()
             FLog.i("piper", "синтез: предложений ${sentences.size}, фонем в первом ${sentences.firstOrNull()?.size}, скорость $speed; " + mem())
-            t.generateWithConfigAndCallback("", g) { samples ->
-                if (stopFlag || cancel()) return@generateWithConfigAndCallback 0
-                if (firstMs < 0) { firstMs = System.currentTimeMillis() - t0; FLog.i("piper", "первый кусок звука: ${samples.size} отсчётов, $firstMs мс; " + mem()) }
-                tr.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-                frames += samples.size
-                1
-            }
+            t.generateWithConfigAndCallback("", g, this::callback)
             val genMs = System.currentTimeMillis() - tGen
+            val frames = cbFrames
+            val firstMs = cbFirstMs
             val speechMs = frames * 1000 / rate
             val aborted = stopFlag || cancel()
             // дожидаемся, пока доиграет записанное в буфер
@@ -327,6 +322,23 @@ object Piper {
             try { track?.release() } catch (e: Exception) {}
             touch()
         }
+    }
+
+    // Состояние текущего синтеза для callback. Нативный код sherpa-onnx ищет у обратного вызова метод invoke([F)Ljava/lang/Integer;,
+    // которого нет у лямбды Kotlin (она компилируется без типизированного invoke): с лямбдой процесс падал. Нужна ссылка на метод, как в примере sherpa-onnx.
+    private var cbTrack: AudioTrack? = null
+    private var cbCancel: () -> Boolean = { false }
+    private var cbFrames = 0L
+    private var cbFirstMs = -1L
+    private var cbT0 = 0L
+
+    /** Вызывается из нативного кода с очередным куском звука; 0 прерывает синтез. */
+    private fun callback(samples: FloatArray): Int {
+        if (stopFlag || cbCancel()) return 0
+        if (cbFirstMs < 0) { cbFirstMs = System.currentTimeMillis() - cbT0; FLog.i("piper", "первый кусок звука: ${samples.size} отсчётов, $cbFirstMs мс; " + mem()) }
+        cbTrack?.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+        cbFrames += samples.size
+        return 1
     }
 
     fun stop() { stopFlag = true }
