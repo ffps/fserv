@@ -150,6 +150,15 @@ object PhotoStore {
         }
     }
 
+    /** Удаляет все фото дня [day] (папка исчезает вместе с последним снимком); возвращает число удалённых. */
+    fun deleteDay(day: String): Int {
+        require(DAY_RE.matches(day)) { "day: ГГГГ-ММ-ДД" }
+        val l = entries().filter { it.day == day }
+        val n = l.count { remove(it) }
+        if (!modern) File(legacyRoot(), day).let { if (it.isDirectory && it.list()?.isEmpty() != false) it.delete() }
+        return n
+    }
+
     fun clearAll() {
         entries().forEach { remove(it) }
     }
@@ -202,10 +211,14 @@ object PhotoStore {
      * Делает снимок: включает камеру, если она не работает, ждёт кадр и сохраняет. Возвращает путь снимка.
      * Бросает IllegalStateException с понятным текстом. [cancel] прерывает ожидание.
      */
-    fun shoot(ctx: Context, owner: String, label: String, cancel: () -> Boolean = { false }): String {
+    fun shoot(ctx: Context, owner: String, label: String, cancel: () -> Boolean = { false }, size: String? = null): String {
         if (!CameraEngine.hasPermission(ctx)) throw IllegalStateException("нет разрешения на камеру (кнопка Allow camera в окне настроек)")
         if (needsPermission(ctx)) throw IllegalStateException("нет разрешения на запись фото (кнопка Allow photo storage в окне настроек)")
         val wasRunning = CameraEngine.state == CameraEngine.State.RUNNING
+        // Свой размер кадра: если камеру никто не держит, она открывается сразу с ним; если уже открыта для другого дела,
+        // её не трогаем, а снимок только уменьшаем до нужного размера (увеличить кадр нельзя)
+        val alone = size != null && CameraEngine.owners().isEmpty() && !wasRunning
+        if (alone) CameraEngine.sizeOverride = size
         CameraEngine.start(owner)
         try {
             val end = System.currentTimeMillis() + 15_000
@@ -218,10 +231,22 @@ object PhotoStore {
                 Thread.sleep(1000) // дать автоэкспозиции устояться
                 CameraEngine.awaitProcessedFrame(3000)
             }
-            val jpg = CameraEngine.photoJpeg() ?: throw IllegalStateException("камера не дала кадр")
+            var scale = 1.0
+            if (size != null && !alone) {
+                val p = size.split("x")
+                val fw = CameraEngine.width
+                val fh = CameraEngine.height
+                if (p.size == 2 && fw > 0 && fh > 0) scale = minOf(1.0, p[0].toInt().toDouble() / fw, p[1].toInt().toDouble() / fh)
+            }
+            val jpg = CameraEngine.photoJpeg(scale) ?: throw IllegalStateException("камера не дала кадр")
             return save(jpg, label)
         } finally {
             CameraEngine.stop(owner)
+            if (alone) {
+                CameraEngine.sizeOverride = null
+                // пока снимали, камеру мог занять кто-то ещё: пусть откроется с обычным размером
+                if (CameraEngine.owners().isNotEmpty()) CameraEngine.reopen()
+            }
         }
     }
 }

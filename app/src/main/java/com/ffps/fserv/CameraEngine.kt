@@ -102,6 +102,15 @@ object CameraEngine {
 
     fun setOverride(o: Override?) { ov = o }
 
+    /** Размер кадра (например 1280x720) вместо настройки «Разрешение», пока камеру держит один снимок (шаг photo size=…). */
+    @Volatile var sizeOverride: String? = null
+
+    /** Закрывает и снова открывает камеру с текущими настройками (если у неё есть владельцы). */
+    fun reopen() {
+        ensureThread()
+        h.post { closeCamera(); state = State.STOPPED; openIfNeeded() }
+    }
+
     /** Сбросить предыдущий кадр: следующее сравнение начнётся с чистого листа (после включения камеры, смены параметров). */
     fun resetBaseline() { resetFlag = true }
 
@@ -239,7 +248,7 @@ object CameraEngine {
             val mgr = app.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val id = pickCamera(mgr) ?: run { fail("на устройстве нет камеры", false); return }
             val ch = mgr.getCameraCharacteristics(id)
-            val size = pickSize(ch, Settings.camera().resolution)
+            val size = pickSize(ch, sizeOverride ?: Settings.camera().resolution)
             cameraId = id
             width = size.width
             height = size.height
@@ -578,7 +587,8 @@ object CameraEngine {
     }
 
     /** Фотография: последний кадр в полном размере камеры, повёрнутый как в превью, JPEG высокого качества. */
-    fun photoJpeg(): ByteArray? {
+    /** JPEG последнего кадра полного размера; [scale] меньше 1 уменьшает снимок (для случая, когда камера уже открыта с большим кадром). */
+    fun photoJpeg(scale: Double = 1.0): ByteArray? {
         val nv: ByteArray
         val w: Int
         val hh: Int
@@ -590,9 +600,12 @@ object CameraEngine {
         val bos = ByteArrayOutputStream()
         YuvImage(nv, ImageFormat.NV21, w, hh, null).compressToJpeg(Rect(0, 0, w, hh), 92, bos)
         val rot = Settings.camera().rotation.let { if (it < 0) sensorOrientation else it }
-        if (rot == 0) return bos.toByteArray()
+        if (rot == 0 && scale >= 1.0) return bos.toByteArray()
         val bmp = BitmapFactory.decodeByteArray(bos.toByteArray(), 0, bos.size()) ?: return null
-        val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
+        val m = Matrix()
+        if (rot != 0) m.postRotate(rot.toFloat())
+        if (scale < 1.0) m.postScale(scale.toFloat(), scale.toFloat())
+        val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         bmp.recycle()
         val o = ByteArrayOutputStream()
         rotated.compress(Bitmap.CompressFormat.JPEG, 92, o)

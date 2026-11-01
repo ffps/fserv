@@ -142,7 +142,7 @@ object TaskEngine {
             if (fire < 0 || Settings.lastFired("task:$id") >= fire) continue
             Settings.setLastFired("task:$id", fire)
             if (current?.info?.id == id || queue.any { it.taskId == id }) {
-                Journal.add("task", "Запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
+                FLog.i("task", "Запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
                 continue
             }
             queue.add(Req(id, "cron", false, emptyMap(), fire * 60000, lateMs + GRACE_MS))
@@ -172,7 +172,7 @@ object TaskEngine {
         val root = config()
         val task = root?.let { findTask(it, req.taskId) }
         if (root == null || task == null) {
-            Journal.add("task", "Задача «${req.taskId}» не запущена: её нет в конфиге")
+            FLog.i("task", "Задача «${req.taskId}» не запущена: её нет в конфиге")
             return
         }
         val title = task.optString("title").ifEmpty { req.taskId }
@@ -182,7 +182,7 @@ object TaskEngine {
             info.endedAt = System.currentTimeMillis(); info.status = "skipped"
             info.message = "опоздание ${Dur.human(late)} больше допустимого (late_ok)"
             record(info)
-            Journal.add("task", "Запуск «$title» пропущен: ${info.message}")
+            FLog.i("task", "Запуск «$title» пропущен: ${info.message}")
             return
         }
         val timeout = try { if (task.has("timeout")) Dur.parse(task.opt("timeout"), "timeout").sample(Random()) else 60 * 60_000L } catch (e: IllegalArgumentException) { 60 * 60_000L }
@@ -192,7 +192,7 @@ object TaskEngine {
         record(info)
         val srcText = if (req.source == "cron") "по расписанию" else "вручную"
         log(run, "", "запуск $srcText${if (req.dry) " (пробный: без звука, камеры и Telegram)" else ""}, timeout ${Dur.human(timeout)}")
-        Journal.add("task", "Задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
+        FLog.i("task", "Задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
         try {
             execSteps(run, task.optJSONArray("steps") ?: JSONArray(), "")
             info.status = "ok"
@@ -213,7 +213,7 @@ object TaskEngine {
             current = null
         }
         log(run, "", "итог: ${info.status}${if (info.message.isNotEmpty()) ", " + info.message else ""}")
-        Journal.add("task", "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}")
+        FLog.i("task", "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}")
         if (!req.dry && req.source == "cron" && (info.status == "error" || info.status == "timeout")) {
             Telegram.enqueue("fServe: задача «$title» не выполнена: ${info.message}")
         }
@@ -333,7 +333,7 @@ object TaskEngine {
             s.has("log") -> {
                 val text = fill(r, s.optString("log"))
                 log(r, p, "log: $text")
-                Journal.add("task", "«${r.title()}»: $text")
+                FLog.i("task", "«${r.title()}»: $text")
             }
             s.has("stop") -> {
                 val reason = fill(r, s.optString("stop")).ifEmpty { "без причины" }
@@ -447,13 +447,14 @@ object TaskEngine {
     /** Фото с камеры в PhotoStore; камера включается на время шага. */
     private fun photo(r: Run, s: JSONObject, p: String) {
         val name = s.optString("assign")
-        log(r, p, "photo" + (if (name.isNotEmpty()) " → $name" else "") + if (r.info.dry) " (в пробном запуске пропущено)" else "")
+        log(r, p, "photo" + (if (s.has("size")) " ${s.optString("size")}" else "") + (if (name.isNotEmpty()) " → $name" else "") + if (r.info.dry) " (в пробном запуске пропущено)" else "")
         if (r.info.dry) {
             if (name.isNotEmpty()) r.vars[name] = "DCIM/fServ/пробный-запуск.jpg"
             return
         }
         try {
-            val path = PhotoStore.shoot(r.ctx, "task", r.info.id) { r.stopRequested() }
+            val size = s.optString("size").takeIf { it.isNotEmpty() }
+            val path = PhotoStore.shoot(r.ctx, "task", r.info.id, { r.stopRequested() }, size)
             check(r)
             if (name.isNotEmpty()) r.vars[name] = path
             log(r, p, "фото сохранено: $path")

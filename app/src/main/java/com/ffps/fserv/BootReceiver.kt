@@ -12,7 +12,6 @@ class BootReceiver : BroadcastReceiver() {
                 if (Settings.autostart && Settings.isConfigured) {
                     Settings.setServiceEnabled(true)
                     FLog.i("boot", "автозапуск после включения")
-                    Journal.add("service", "Служба запущена автоматически после включения устройства")
                     ServerService.start(ctx)
                     MainActivity.show(ctx)
                 }

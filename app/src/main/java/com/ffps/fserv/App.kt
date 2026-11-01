@@ -10,8 +10,8 @@ class App : Application() {
         FLog.init(filesDir)
         installCrashHandler()
         Settings.init(this)
-        Journal.init(this)
         TaskStore.init(this)
+        java.io.File(filesDir, "events.jsonl").delete() // бывший журнал событий, объединён с общим журналом
         FLog.minLevel = Settings.logLevel
         FLog.addSecret(Settings.password)
         FLog.addSecret(Settings.telegramToken)
@@ -24,7 +24,6 @@ class App : Application() {
         TaskEngine.init(this)
         Telegram.init(this)
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")
-        Journal.add("app", "Приложение запущено (версия ${BuildConfig.VERSION_NAME})")
     }
 
     /**

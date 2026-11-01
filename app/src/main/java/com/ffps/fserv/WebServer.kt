@@ -23,6 +23,7 @@ import java.util.TimeZone
  * Все записи идут методом POST с телом в UTF-8; ответы JSON с отступами.
  */
 class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
+    @Volatile private var sayStop = false
 
     private var lastAuthWarn = 0L
 
@@ -80,7 +81,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/outbox" -> json(Response.Status.OK, Telegram.itemsJson())
             post && uri == "/api/outbox/clear" -> {
                 val n = Telegram.clear()
-                Journal.add("telegram", "Очередь отправки очищена вручную ($n сообщ.)")
+                FLog.i("telegram", "Очередь отправки очищена вручную ($n сообщ.)")
                 ok("удалено сообщений: $n")
             }
             post && uri == "/api/proxy/test" -> proxyTest(q(s, "name"))
@@ -130,12 +131,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val name = Sounds.checkName(q(s, "name"))
                 Sounds.save(name, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
                 FLog.i("sounds", "загружен файл $name")
-                Journal.add("sounds", "Загружен звук «$name»")
                 ok("загружено: $name")
             }
             post && uri == "/api/sounds/delete" -> {
                 val name = Sounds.checkName(q(s, "name"))
-                if (Sounds.delete(name)) { Journal.add("sounds", "Удалён звук «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+                if (Sounds.delete(name)) { FLog.i("sounds", "Удалён звук «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
             }
             post && uri == "/api/sounds/play" -> {
                 val name = q(s, "name") ?: ""
@@ -149,16 +149,19 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val text = body(s).trim()
                 require(text.isNotEmpty()) { "пустой текст" }
                 val vol = q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100) ?: voiceCfg()?.takeIf { it.has("volume") }?.optInt("volume")
-                val err = Voice.speak(text, vol, voiceCfg()) { false }
-                if (err == null) ok("произнесено") else fail(Response.Status.INTERNAL_ERROR, err)
+                sayStop = false
+                val err = Voice.speak(text, vol, voiceCfg()) { sayStop }
+                if (err == null) ok(if (sayStop) "остановлено" else "произнесено") else fail(Response.Status.INTERNAL_ERROR, err)
             }
+
+            post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
 
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
             post && uri == "/api/camera/start" -> {
                 if (!CameraEngine.hasPermission(ctx)) fail(Response.Status.CONFLICT, "нет разрешения на камеру: на устройстве нажмите Allow camera в окне настроек")
-                else { CameraEngine.start("manual"); Journal.add("camera", "Камера включена вручную"); ok("камера запускается") }
+                else { CameraEngine.start("manual"); FLog.i("camera", "Камера включена вручную"); ok("камера запускается") }
             }
-            post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); Journal.add("camera", "Камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
+            post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); FLog.i("camera", "Камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
             get && uri == "/api/camera/history" -> json(Response.Status.OK, CameraEngine.historyJson(q(s, "limit")?.toIntOrNull()?.coerceIn(1, 600) ?: 120))
             get && uri == "/api/camera/snapshot" -> {
                 val jpg = CameraEngine.snapshotJpeg(q(s, "overlay") == "1", q(s, "size")?.toIntOrNull() ?: 320)
@@ -185,16 +188,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/logs/download" -> logsDownload()
             post && uri == "/api/logs/clear" -> {
                 FLog.clear()
-                FLog.i("web", "лог очищен")
-                Journal.add("web", "Технический лог очищен")
+                FLog.i("web", "журнал очищен")
                 ok("лог очищен")
-            }
-
-            get && uri == "/api/journal" -> json(Response.Status.OK, Journal.last(q(s, "limit")?.toIntOrNull()?.coerceIn(1, 1000) ?: 100))
-            post && uri == "/api/journal/clear" -> {
-                Journal.clear()
-                FLog.i("web", "журнал событий очищен")
-                ok("журнал очищен")
             }
 
             get && uri == "/api/config" -> text(Response.Status.OK, "text/plain", TaskStore.read())
@@ -209,11 +204,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
-                if (err == null) { Journal.add("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
+                if (err == null) { FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
             post && uri == "/api/config/global" -> {
                 val err = TaskStore.saveGlobal(body(s))
-                if (err == null) { Journal.add("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
+                if (err == null) { FLog.i("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
             }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
             post && uri == "/api/config/restore" -> restoreConfig(q(s, "name") ?: "")
@@ -254,9 +249,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/photos/delete" -> {
                 if (PhotoStore.delete(q(s, "day") ?: "", q(s, "name") ?: "")) ok("фото удалено") else fail(Response.Status.NOT_FOUND, "фото нет")
             }
+            post && uri == "/api/photos/delete_day" -> {
+                val n = PhotoStore.deleteDay(q(s, "day") ?: "")
+                if (n > 0) { FLog.i("photo", "удалены все фото за ${q(s, "day")}: $n"); ok("удалено фото: $n") } else fail(Response.Status.NOT_FOUND, "в этой папке нет фото")
+            }
             post && uri == "/api/photos/take" -> try {
                 val path = PhotoStore.shoot(ctx, "web-photo", "web")
-                Journal.add("photo", "Снимок из веб-интерфейса: $path")
+                FLog.i("photo", "Снимок из веб-интерфейса: $path")
                 json(Response.Status.OK, obj("ok" to true, "message" to "снято: $path", "day" to path.substringBeforeLast('/').substringAfterLast('/'), "name" to path.substringAfterLast('/')))
             } catch (e: IllegalStateException) {
                 fail(Response.Status.CONFLICT, e.message ?: "не удалось снять")
@@ -265,7 +264,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val name = Backup.nextName(ctx)
                 val tmp = File(ctx.cacheDir, "backup.zip")
                 tmp.outputStream().use { Backup.write(ctx, it) }
-                Journal.add("backup", "Выгружена копия настроек $name")
                 FLog.i("backup", "выгружена копия $name (${tmp.length()} байт)")
                 NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "application/zip", tmp.inputStream(), tmp.length()).also {
                     it.addHeader("Content-Disposition", "attachment; filename=\"$name\"")
@@ -280,7 +278,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                     else {
                         Backup.restore(ctx, f)
                         FLog.i("backup", "настройки восстановлены из копии")
-                        Journal.add("backup", "Настройки восстановлены из копии, приложение перезапускается")
                         Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                         ok("настройки восстановлены, приложение перезапускается")
                     }
@@ -290,13 +287,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 if (q(s, "confirm") != "1") return fail(Response.Status.BAD_REQUEST, "нужен параметр confirm=1")
                 Backup.reset(ctx)
                 FLog.i("backup", "настройки сброшены к исходным")
-                Journal.add("backup", "Настройки и пользовательские файлы сброшены к исходным, приложение перезапускается")
                 Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                 ok("всё сброшено, приложение перезапускается (пароль и порт сохранены)")
             }
             post && uri == "/api/restart-app" -> {
                 FLog.i("web", "запрошен перезапуск приложения")
-                Journal.add("power", "Перезапуск приложения (из веб-интерфейса)")
                 Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                 ok("приложение перезапускается")
             }
@@ -461,8 +456,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/logs" to "технический лог; ?lines=300&level=INFO",
         "GET /api/logs/download" to "весь лог файлом",
         "POST /api/logs/clear" to "очистить лог",
-        "GET /api/journal" to "журнал событий, новые первыми; ?limit=100",
-        "POST /api/journal/clear" to "очистить журнал",
         "GET /api/config" to "файл задач (текст на языке сценариев)",
         "GET /api/config/tasks" to "для редактора: задачи с текстом каждой и общие строки voice/zone",
         "GET /api/tasks/text" to "текст одной задачи; ?id=",
@@ -498,6 +491,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/sounds/stop" to "остановить прослушивание",
         "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
         "POST /api/say" to "произнести текст (тело); ?volume=80",
+        "POST /api/say/stop" to "прервать речь",
         "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",
         "POST /api/camera/start" to "включить камеру вручную",
         "POST /api/camera/stop" to "выключить камеру, включённую вручную",
@@ -509,6 +503,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/photos" to "дни с фотографиями; ?day=2026-10-31 даёт список фото дня",
         "GET /api/photos/file" to "фото: ?day=&name= (&thumb=1 — уменьшенная копия)",
         "POST /api/photos/delete" to "удалить фото: ?day=&name=",
+        "POST /api/photos/delete_day" to "удалить все фото дня вместе с папкой: ?day=",
         "POST /api/photos/take" to "сделать снимок сейчас (камера включается на время снимка, если она выключена)",
         "GET /api/backup" to "выгрузить все настройки, задачи, звуки и свои страницы одним zip (fserv.ДАТА.NN.zip)",
         "POST /api/restore" to "восстановить из zip (тело = файл): сначала проверка, затем замена всех настроек и перезапуск",
@@ -536,7 +531,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
         if (patch.has("camera")) applyCameraKeep()
-        Journal.add("settings", "Изменены настройки" + if (patch.has("password")) " (в том числе пароль)" else "")
         if (r.restartRequired) {
             // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
             Thread {
@@ -569,7 +563,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         if (err != null) return fail(Response.Status.BAD_REQUEST, err)
         val id = try { Script.parse(bodyText).tasks.firstOrNull()?.id ?: "" } catch (e: Exception) { "" }
         FLog.i("web", "задача «$id» сохранена")
-        Journal.add("config", if (originalId.isEmpty()) "Добавлена задача «$id»" else "Изменена задача «$id»")
         return ok("задача сохранена")
     }
 
@@ -579,7 +572,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to err))
         }
         FLog.i("web", "конфиг задач сохранён (${bodyText.length} символов)")
-        Journal.add("config", "Конфиг задач изменён")
         return json(Response.Status.OK, obj("ok" to true, "message" to "сохранено"))
     }
 
@@ -587,14 +579,12 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         val err = TaskStore.restore(name)
         if (err != null) return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to err))
         FLog.i("web", "конфиг задач восстановлен из $name")
-        Journal.add("config", "Конфиг задач восстановлен из версии $name")
         return json(Response.Status.OK, obj("ok" to true, "message" to "восстановлено"))
     }
 
     private fun reboot(s: IHTTPSession): Response {
         if (q(s, "confirm") != "1") return fail(Response.Status.BAD_REQUEST, "нужен параметр confirm=1")
         FLog.i("web", "запрошена перезагрузка устройства")
-        Journal.add("power", "Перезагрузка устройства (из веб-интерфейса)")
         val err = Power.reboot(ctx)
         return if (err == null) ok("перезагрузка запущена")
         else fail(Response.Status.NOT_IMPLEMENTED, err)
@@ -631,7 +621,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         require(html.length <= 1_000_000) { "страница слишком большая" }
         overrideFile(name).writeText(html)
         FLog.i("web", "страница $name заменена (${html.length} символов)")
-        Journal.add("web", "Заменена страница $name.html")
         return ok("страница сохранена")
     }
 
@@ -639,7 +628,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         val name = checkName(nameRaw)
         overrideFile(name).delete()
         FLog.i("web", "страница $name возвращена к встроенной")
-        Journal.add("web", "Страница $name.html возвращена к встроенной")
         return ok("возвращена встроенная страница")
     }
 

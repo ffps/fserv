@@ -99,7 +99,6 @@ object Telegram {
             while (items.size > MAX_ITEMS) {
                 val d = items.removeAt(0)
                 FLog.w("telegram", "очередь переполнена, удалено сообщение ${d.id}")
-                Journal.add("telegram", "Очередь переполнена, удалено старое сообщение")
             }
             saveLocked()
             lock.notifyAll()
@@ -156,7 +155,6 @@ object Telegram {
             while (items.isNotEmpty() && now - items[0].createdAt > MAX_AGE_MS) {
                 val d = items.removeAt(0)
                 FLog.w("telegram", "сообщение ${d.id} старше 7 дней, удалено")
-                Journal.add("telegram", "Сообщение не доставлено за 7 дней и удалено")
                 saveLocked()
             }
             if (items.isEmpty()) { lock.wait(30_000); return }
@@ -177,7 +175,7 @@ object Telegram {
             lastError = ""
             lastSentAt = System.currentTimeMillis()
             FLog.i("telegram", "отправлено (попыток ${m.attempts + 1})")
-            if (m.attempts > 0) Journal.add("telegram", "Сообщение доставлено после ${m.attempts} неудачных попыток")
+            if (m.attempts > 0) FLog.i("telegram", "Сообщение доставлено после ${m.attempts} неудачных попыток")
         } catch (e: TgError) {
             fail(m, e.message ?: "ошибка", e.code, e.retryAfterSec)
         } catch (e: java.io.IOException) {
@@ -197,7 +195,7 @@ object Telegram {
     private val TAG_RE = Regex("""<(/?)([A-Za-z][A-Za-z0-9-]*)((?:\s+[^<>]*)?)>""")
     private val A_OPEN_RE = Regex("""\s+href\s*=\s*("[^"<>]*"|'[^'<>]*')\s*""")
 
-    /** Экранирует текст, но оставляет поддерживаемые Telegram теги (b, i, u, s, code, pre, a href, blockquote, tg-spoiler); при неправильной вложенности экранирует всё. */
+    /** Экранирует текст, но оставляет поддерживаемые Telegram теги (b, i, u, s, code, pre, a href, blockquote и blockquote expandable, tg-spoiler); при неправильной вложенности экранирует всё. */
     fun sanitize(text: String): String {
         fun esc(part: String): String = part.replace(Regex("&(?!(amp|lt|gt|quot|#\\d+);)"), "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         val sb = StringBuilder()
@@ -207,7 +205,8 @@ object Telegram {
             val closing = m.groupValues[1] == "/"
             val name = m.groupValues[2].lowercase()
             val attrs = m.groupValues[3]
-            val ok = name in TAGS && (if (closing) attrs.isBlank() else if (name == "a") A_OPEN_RE.matches(attrs) else attrs.isBlank())
+            val ok = name in TAGS && (if (closing) attrs.isBlank() else if (name == "a") A_OPEN_RE.matches(attrs)
+                else if (name == "blockquote") attrs.isBlank() || attrs.trim().lowercase() == "expandable" else attrs.isBlank())
             sb.append(esc(text.substring(pos, m.range.first)))
             pos = m.range.last + 1
             if (!ok) { sb.append(esc(m.value)); continue }
@@ -232,7 +231,7 @@ object Telegram {
         synchronized(lock) {
             if (m.rejected >= 10) {
                 items.remove(m)
-                Journal.add("telegram", "Telegram отверг сообщение 10 раз подряд, оно удалено: $msg")
+                FLog.i("telegram", "Telegram отверг сообщение 10 раз подряд, оно удалено: $msg")
             }
             saveLocked()
         }

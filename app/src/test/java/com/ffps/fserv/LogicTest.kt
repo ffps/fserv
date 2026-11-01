@@ -44,6 +44,9 @@ class LogicTest {
         assertEquals("&lt;script&gt;a&lt;/script&gt;", Telegram.sanitize("<script>a</script>"))
         assertEquals("<a href=\"https://x.y\">s</a>", Telegram.sanitize("<a href=\"https://x.y\">s</a>"))
         assertEquals("&lt; уже &amp; ещё", Telegram.sanitize("&lt; уже & ещё"))
+        assertEquals("<blockquote expandable>длинная цитата</blockquote>", Telegram.sanitize("<blockquote expandable>длинная цитата</blockquote>"))
+        assertEquals("<blockquote>q</blockquote>", Telegram.sanitize("<blockquote>q</blockquote>"))
+        assertEquals("&lt;blockquote foo&gt;q&lt;/blockquote&gt;", Telegram.sanitize("<blockquote foo>q</blockquote>"))
     }
 
     @Test fun counts() {

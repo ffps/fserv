@@ -131,7 +131,6 @@ object Backup {
         wipe(ctx)
         TaskStore.replaceAll(null)
         Settings.resetUser()
-        Journal.clear()
         File(ctx.filesDir, "backup-seq.txt").delete()
     }
 

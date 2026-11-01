@@ -14,8 +14,7 @@ import java.util.IdentityHashMap
  *   voice volume=70 lang=ru-RU
  *   zone bed rect=[0.1,0.2,0.9,0.9]
  *
- *   task wake "Подъём"
- *     cron="0 8 * * *"
+ *   task wake "Подъём" cron="0 8 * * *"     (название можно и как title=; настройки можно и на строках ниже)
  *     timeout=60m
  *     repeat 10 until=moved
  *       watch 30s assign=moved
@@ -46,7 +45,7 @@ object Script {
         "say" to listOf("volume", "wait"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "telegram" to listOf("files"),
-        "photo" to listOf("assign"),
+        "photo" to listOf("assign", "size"),
         "delay" to emptyList(),
         "watch" to listOf("poll", "assign", "threshold", "area", "zone"),
         "background" to emptyList(),
@@ -58,7 +57,7 @@ object Script {
     )
     val VOICE_PARAMS = listOf("volume", "rate", "pitch", "lang", "voice")
     val ZONE_PARAMS = listOf("rect", "rects", "exclude")
-    val TASK_SETTINGS = listOf("cron", "enabled", "late_ok", "timeout")
+    val TASK_SETTINGS = listOf("title", "cron", "enabled", "late_ok", "timeout")
 
     private val KEY_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*=""")
     private val WORD_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
@@ -151,7 +150,7 @@ object Script {
                         globals.add(l.no)
                         pos++
                     }
-                    else -> fail(l.no, "на верхнем уровне допустимы task, voice, zone; встретилось «$word»" + if (word.contains('=')) " (настройки задачи пишутся под строкой task с отступом)" else "")
+                    else -> fail(l.no, "на верхнем уровне допустимы task, voice, zone; встретилось «$word»" + if (word.contains('=')) " (настройки задачи пишутся в строке task или под ней, до шагов)" else "")
                 }
             }
             if (voice != null) root.put("voice", voice)
@@ -181,27 +180,29 @@ object Script {
         fun parseTask(h: Line): JSONObject {
             val a = args(h, 4, true, true)
             val id = a.positional
-            if (id !is String || !Regex("[A-Za-z0-9_-]{1,40}").matches(id)) fail(h.no, "task: нужен id из латинских букв, цифр, _ и - (до 40 знаков), например task wake \"Подъём\"")
-            if (a.named.isNotEmpty()) fail(h.no, "у строки task нет параметров: после id идёт только название в кавычках (настройки пишутся ниже, с отступом)")
+            if (id !is String || !Regex("[A-Za-z0-9_-]{1,40}").matches(id)) fail(h.no, "task: нужен id из латинских букв, цифр, _ и - (до 40 знаков), например task wake \"Подъём\" cron=\"0 8 * * *\"")
             val t = JSONObject()
             map[t] = h.no
             t.put("id", id)
-            if (a.extra != null) {
-                t.put("title", (a.extra as Q).s)
-            }
+            if (a.extra != null) t.put("title", (a.extra as Q).s)
+            settings(a, h.no, t)
             pos++
-            // настройки задачи: ключ=значение до первого шага
+            // настройки задачи на строках ниже (ключ=значение), до первого шага
             while (pos < lines.size && lines[pos].level >= 1) {
                 val l = lines[pos]
                 if (l.level > 1) fail(l.no, "лишний отступ")
                 if (KEY_RE.matchAt(l.text, 0) == null) break
-                val sa = args(l, 0, false)
-                named(sa, TASK_SETTINGS, "task", l.no, t, "настройки")
+                settings(args(l, 0, false), l.no, t)
                 pos++
             }
-            val steps = body(1)
-            t.put("steps", steps)
+            t.put("steps", body(1))
             return t
+        }
+
+        /** Переносит настройки задачи; повтор уже заданной (в заголовке и ниже, или title дважды) — ошибка. */
+        fun settings(a: Args, no: Int, t: JSONObject) {
+            for (k in a.named.keys) if (k in TASK_SETTINGS && t.has(k)) fail(no, "настройка «$k» уже задана выше")
+            named(a, TASK_SETTINGS, "task", no, t, "настройки")
         }
 
         /** Шаги на уровне [level]; на вложенные блоки уходят владельцы-заголовки. */
@@ -230,7 +231,7 @@ object Script {
 
         fun step(l: Line, level: Int): JSONObject {
             val word = l.text.substringBefore(' ')
-            if (word.contains('=')) fail(l.no, "настройка «$word» пишется сразу под строкой task, до шагов")
+            if (word.contains('=')) fail(l.no, "настройка «$word» пишется в строке task или сразу под ней, до шагов")
             if (word == "else") fail(l.no, "else без if: он пишется на том же уровне, что и if, сразу после его шагов")
             RESERVED[word]?.let { fail(l.no, it) }
             if (word !in ACTIONS) fail(l.no, "неизвестное действие «$word»; допустимы: ${ACTIONS.joinToString(", ")}")
@@ -320,7 +321,7 @@ object Script {
             return s
         }
 
-        /** Разбирает аргументы строки с позиции [from]. positional: первый аргумент без имени (для zone и task — имя, второй — extra). */
+        /** Разбирает аргументы строки с позиции [from]. positional: первый аргумент без имени (для zone и task — имя; у task второй, в кавычках, — название). */
         fun args(l: Line, from: Int, wantPositional: Boolean, titleSlot: Boolean = false): Args {
             val s = l.text
             var i = from

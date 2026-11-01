@@ -95,7 +95,7 @@ object Updater {
             val l = check()
             if (l.optLong("versionCode") > BuildConfig.VERSION_CODE && Settings.getStr("notifiedVersion") != l.optString("versionName")) {
                 Settings.putStr("notifiedVersion", l.optString("versionName"))
-                Journal.add("update", "Доступно обновление ${l.optString("versionName")}")
+                FLog.i("update", "Доступно обновление ${l.optString("versionName")}")
                 Telegram.enqueue("fServe: доступно обновление ${l.optString("versionName")} (установлена ${BuildConfig.VERSION_NAME}). Установить можно из веб-интерфейса, вкладка «Обновления».")
             }
         } catch (e: Exception) {
@@ -115,7 +115,6 @@ object Updater {
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
                 FLog.e("update", "установка не удалась", e)
-                Journal.add("update", "Обновление не удалось: $lastError")
                 state = "idle"
             }
         }.start()
@@ -158,6 +157,5 @@ object Updater {
             s.commit(pend.intentSender)
         }
         FLog.i("update", "установка передана системе (сессия $id)")
-        Journal.add("update", "Установка версии ${latest?.optString("versionName")} передана системе")
     }
 }

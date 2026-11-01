@@ -43,7 +43,7 @@ class ScriptTest {
         assertTrue("ошибка «$e» не содержит «$part»", e.contains(part))
     }
 
-    private fun task(vararg steps: String) = "task t\n  cron=\"0 9 * * *\"\n" + steps.joinToString("\n") { "  $it" }
+    private fun task(vararg steps: String) = "task t cron=\"0 9 * * *\"\n" + steps.joinToString("\n") { "  $it" }
 
     @Test fun exampleParsesAndIsValid() {
         assertNull(Script.validate(example))
@@ -103,7 +103,10 @@ class ScriptTest {
         expect(task("say \"a\" volume=1 volume=2"), "дважды")
         expect(task("ask \"?\""), "этапе 5")
         expect(task("background\n    watch 5s"), "внутри background")
-        expect("task t\n  say \"a\"\n  cron=\"0 9 * * *\"", "до шагов")
+        expect("task t\n  say \"a\"\n  cron=\"0 9 * * *\"", "в строке task или сразу под ней")
+        expect("task t crn=1\n  say \"a\"", "у task нет настройки «crn»")
+        expect("task t cron=\"0 9 * * *\"\n  cron=\"0 8 * * *\"\n  say \"a\"", "уже задана")
+        expect("task t \"A\" title=\"B\"\n  say \"a\"", "уже задана")
         expect("task t", "нет шагов")
         expect(task("play a.mp3 b.mp3"), "параметры пишутся как ключ=значение")
     }
@@ -140,8 +143,7 @@ class ScriptTest {
         voice volume=50
 
         # будильник
-        task a "Первая"
-          cron="0 8 * * *"
+        task a title="Первая" cron="0 8 * * *"
           # внутренний комментарий
           say "а"
 
@@ -151,10 +153,10 @@ class ScriptTest {
     """.trimIndent() + "\n"
 
     @Test fun replaceOneTaskKeepsRestOfFile() {
-        val e = ScriptEdit.replaceTask(file, "a", "task a \"Новая\"\n  say \"новый текст\"\n")
+        val e = ScriptEdit.replaceTask(file, "a", "task a title=\"Новая\"\n  say \"новый текст\"\n")
         assertNull(e.error)
         val t = e.text!!
-        assertTrue(t, t.contains("# настройки\nvoice volume=50\n\n# будильник\ntask a \"Новая\"\n  say \"новый текст\"\n\n# тонометр\ntask b\n  say \"б\"\n"))
+        assertTrue(t, t.contains("# настройки\nvoice volume=50\n\n# будильник\ntask a title=\"Новая\"\n  say \"новый текст\"\n\n# тонометр\ntask b\n  say \"б\"\n"))
         assertEquals(5, e.start)
         assertNull(Script.validate(t))
     }
@@ -209,5 +211,32 @@ class ScriptTest {
             checked++
         }
         assertTrue("в script.md найдено слишком мало примеров ($checked)", checked >= 5)
+    }
+
+    @Test fun taskSettingsInHeaderOrBelow() {
+        val one = Script.parse("task wake title=\"Подъём\" cron=\"0 8 * * *\" timeout=40m enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
+        val two = Script.parse("task wake \"Подъём\" cron=\"0 8 * * *\"\n  timeout=40m\n  enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
+        for (k in listOf("title", "cron", "timeout", "enabled")) assertEquals(one.get(k), two.get(k))
+        assertEquals("Подъём", one.getString("title"))
+        assertEquals(false, one.getBoolean("enabled"))
+        assertEquals(1, two.getJSONArray("steps").length())
+        assertNull(Script.validate("task t title=\"x\" cron=\"0 9 * * *\"\n  say \"a\"\n"))
+        expect("task t title=5\n  say \"a\"", "title")
+    }
+
+    @Test fun pausesInSay() {
+        assertNull(Script.validate(task("say \"Просыпайся! {pause:1s} Пора вставать. {pause:2s..5s} Сейчас {time}!\"")))
+        assertNull(Script.validate(task("say \"{pause:500ms}привет\" wait=false")))
+        expect(task("say \"а {pause:5x} б\""), "пауза")
+        expect(task("say \"а {pause:3m} б\""), "не длиннее 2m")
+        expect(task("telegram \"а {pause:1s} б\""), "только в say")
+        expect(task("log \"а {pause:1s} б\""), "только в say")
+    }
+
+    @Test fun photoSize() {
+        assertNull(Script.validate(task("photo size=1280x720 assign=p", "telegram \"x\" files=[p]")))
+        expect(task("photo size=big"), "size")
+        expect(task("photo size=1280"), "size")
+        expect(task("photo resolution=1280x720"), "у photo нет параметра «resolution»")
     }
 }

@@ -95,7 +95,7 @@ object CameraTest {
             (if (res.has("ok")) ": успешно ${res.optInt("ok")}, сбоев ${res.optInt("failed")}, до первого кадра в среднем ${res.optLong("avgOpenToFrameMs")} мс" else
                 ": кадров ${res.optLong("framesProcessed")}, перезапусков ${res.optInt("restartsDuringTest")}") +
             ", макс. температура ${res.optDouble("maxTemperatureC")}°C, рост открытых файлов ${res.optInt("fdGrowth")}. Подробности: вкладка «Камера»"
-        Journal.add("camera", sum)
+        FLog.i("camera", sum)
         log("итог: $res")
     }
 

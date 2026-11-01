@@ -59,8 +59,6 @@
   .pxu { display:grid; grid-template-columns:max-content max-content 1fr; gap:8px 14px; align-items:center; }
   .pxu .msg { margin:0; }
   td { word-break:break-word; overflow-wrap:anywhere; }
-  .jt { cursor:pointer; } .jt b { color:var(--acc); font-weight:500; white-space:nowrap; }
-  .jt .full { display:none; white-space:pre-wrap; } .jt.open .full { display:inline; } .jt.open .short { display:none; }
   details summary { cursor:pointer; color:var(--dim); }
   .ib { background:none; border:0; cursor:pointer; padding:4px 6px; color:var(--dim); border-radius:6px; line-height:0; vertical-align:middle; }
   .ib:hover { background:var(--acc-soft); color:var(--acc-d); } .ib.del:hover { color:var(--bad); background:#fdecec; }
@@ -93,28 +91,27 @@
 </header>
 <nav id="tabs">
   <a data-t="status" href="#status" class="on">Состояние</a>
-  <a data-t="logs" href="#logs">Лог</a>
-  <a data-t="journal" href="#journal">Журнал</a>
   <a data-t="config" href="#config">Задачи</a>
   <a data-t="sound" href="#sound">Звук</a>
   <a data-t="comm" href="#comm">Связь</a>
   <a data-t="camera" href="#camera">Камера</a>
   <a data-t="photos" href="#photos">Фото</a>
+  <a data-t="logs" href="#logs">Журнал</a>
   <a data-t="system" href="#system">Система</a>
 </nav>
 <main>
 
 <section id="status" class="on">
   <h2>Состояние</h2>
-  <div class="grid" id="cards"></div>
-  <details>
+  <table class="kv"><tbody id="cards"></tbody></table>
+  <details style="margin-top:14px">
     <summary>Ответ /api/info целиком</summary>
         <pre id="infoRaw"></pre>
   </details>
 </section>
 
 <section id="logs">
-  <h2>Технический лог</h2>
+  <h2>Журнал</h2>
   <div class="row">
     <label>Уровень <select id="logLevel"><option>DEBUG</option><option selected>INFO</option><option>WARN</option><option>ERROR</option></select></label>
     <label>Строк <input id="logLines" type="number" value="300" min="10" max="5000" style="width:90px"></label>
@@ -125,18 +122,7 @@
   </div>
   <pre id="logOut">—</pre>
   <div class="msg" id="logMsg"></div>
-  <p class="hint">Ротация: до 5 файлов по 2 МБ, пароли и токены в лог не попадают. Уровень записи меняется во вкладке «Настройки».</p>
-</section>
-
-<section id="journal">
-  <h2>Журнал событий</h2>
-  <div class="row">
-    <button class="btn sec" id="jRefresh">Обновить</button>
-    <button class="btn danger" id="jClear">Очистить</button>
-  </div>
-  <table><thead><tr><th>Время</th><th>Тип</th><th>Событие</th></tr></thead><tbody id="jBody"></tbody></table>
-  <div class="msg" id="jMsg"></div>
-  <p class="hint">Хранится не более 90 дней и 5 МБ.</p>
+  <p class="hint">Ротация: до 5 файлов по 2 МБ, пароли и токены в лог не попадают. Уровень записи меняется во вкладке «Система».</p>
 </section>
 
 <section id="config">
@@ -192,26 +178,27 @@
 
 <section id="sound">
   <h2>Голос</h2>
+  <div class="row"><label>Громкость, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <div class="row">
-    <input id="svText" placeholder="Текст для проверки голоса" style="flex:1;min-width:260px" value="Доброе утро! Пора вставать.">
-    <label>Громкость <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label>
-    <button class="btn" id="svSay">Сказать</button>
+    <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
+    <button class="ib add" id="svSay" title="Сказать"></button>
   </div>
   <div class="msg" id="svMsg"></div>
   <p class="hint" id="svInfo"></p>
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
   <p class="hint">Язык, голос, скорость и тон задаются строкой <code>voice</code> файла задач (вкладка «Задачи», общие настройки), например <code>voice lang=ru-RU rate=0.9 pitch=1 volume=80</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
   <h2 style="margin-top:22px">Звуки</h2>
+  <div class="row"><label>Громкость, % <input id="sdVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
     <button class="btn" id="sdUpload">Загрузить</button>
-    <label>Громкость <input id="sdVol" type="number" min="0" max="100" value="80" style="width:70px"></label>
   </div>
   <div class="msg" id="sdMsg"></div>
   <h2 style="margin-top:22px">Системные сигналы</h2>
+  <div class="row"><label>Громкость, % <input id="ssVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <table><thead><tr><th>Сигнал</th><th>Имя в задаче</th><th></th></tr></thead><tbody id="ssBody"></tbody></table>
-  <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>{"play": "alarm.mp3", "volume": 80, "fade_in": "5s", "fade_out": "3s"}</code>; список имён <code>["a.mp3", "b.mp3"]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
+  <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>play alarm.mp3 volume=80 fade_in=5s fade_out=3s</code>; список имён <code>play [a.mp3,b.mp3]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
 </section>
 
 
@@ -232,7 +219,7 @@
   <p class="hint">Тест ставится в обычную очередь и ждёт доставки до таймаута сети; если не ушёл, остаётся в очереди и повторяется. Результат пишется в лог.</p>
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
-  <div class="row" style="margin-top:10px"><button class="btn danger sm" id="obClear">Очистить очередь</button></div>
+  <div class="row" style="margin-top:10px"><button class="ib del" id="obClear" title="Очистить очередь"></button></div>
   <h2 style="margin-top:22px">SOCKS5-прокси</h2>
   <div class="f">
     <label for="pxHost">Адрес</label><input id="pxHost" placeholder="хост или IP">
@@ -254,9 +241,9 @@
 
 <section id="camera">
   <h2>Камера</h2>
-  <div class="grid" id="camCards"></div>
-  <div class="row">
-    <button class="btn" id="camToggle">Включить</button>
+  <table class="kv"><tbody id="camCards"></tbody></table>
+  <div class="row" style="margin-top:12px">
+    <button class="ib add" id="camToggle" title="Включить камеру"></button>
     <label><input type="checkbox" id="camOverlay" checked> закрашивать изменения красным</label>
   </div>
   <div class="msg" id="camMsg"></div>
@@ -298,7 +285,7 @@
   <div class="row">
     <button class="ib add" id="phTake" title="Сделать фото сейчас"></button>
     <label>День <select id="phDay"></select></label>
-    <span id="phCount" class="hint" style="margin:0"></span>
+    <button class="ib del" id="phDelDay" title="Удалить все фото этого дня вместе с папкой"></button>
   </div>
   <div class="msg" id="phMsg"></div>
   <div class="phg" id="phGrid"></div>
@@ -308,7 +295,7 @@
 <section id="system">
   <h2>Параметры</h2>
   <div class="f">
-    <label for="sLevel">Уровень лога</label>
+    <label for="sLevel">Уровень журнала</label>
     <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
     <label for="sTmo">Таймаут сети, секунд</label>
     <input id="sTmo" type="number" min="2" max="120">
@@ -350,7 +337,7 @@
     <label>Страница <select id="pgName"><option value="kiosk">kiosk — экран устройства</option><option value="index">index — этот веб-интерфейс</option></select></label>
     <span class="hint" id="pgState" style="margin:0"></span>
   </div>
-  <textarea id="pgText" rows="22" spellcheck="false"></textarea>
+  <textarea id="pgText" rows="10" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px">
     <button class="btn" id="pgSave">Сохранить</button>
     <button class="btn danger" id="pgReset">Вернуть встроенную</button>
@@ -476,7 +463,7 @@ const ICO = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay") b.innerHTML = ICO.play; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -528,6 +515,7 @@ for (const id of ["tkText", "cfgText"]) mkEditor(document.getElementById(id));
 let current = "status";
 function showTab(t) {
   if (["settings", "update", "power", "pages"].includes(t)) t = "system"; // прежние адреса вкладок
+  if (t === "journal") t = "logs"; // бывший «Журнал событий» объединён с логом
   if (!document.getElementById(t) || !document.querySelector('#tabs a[data-t="' + t + '"]')) t = "status";
   current = t;
   document.querySelectorAll("#tabs a").forEach(x => x.classList.toggle("on", x.dataset.t === t));
@@ -605,17 +593,17 @@ async function loadCamera(full) {
   try {
     const c = (await api("/api/camera")).json;
     $("#camCards").innerHTML =
-      card("Состояние", c.state + (c.owners.length ? " (" + c.owners.join(", ") + ")" : "")) +
-      card("Разрешение камеры", c.permission ? "выдано" : "нет: нажмите Allow camera на устройстве") +
-      card("Кадр", (c.size || "—") + (c.sensorOrientation ? ", сенсор " + c.sensorOrientation + "°" : "")) +
-      card("Кадров/с, обработка", c.fps + " к/с, " + c.avgProcessMs + " мс") +
-      card("Оценка движения", c.score + "%" + (c.motion ? " ДВИЖЕНИЕ" : "")) +
-      card("Яркость кадра", c.luma + " из 255") +
-      card("Кадров всего / обработано", c.framesTotal + " / " + c.framesProcessed) +
-      card("Открытий / перезапусков", c.opens + " / " + c.restarts) +
-      card("Первый кадр после открытия", c.firstFrameLatencyMs + " мс") +
-      card("Последнее движение", c.lastMotion ? dt(c.lastMotion) : "не было") +
-      card("Ошибка", c.lastError || "нет");
+      kvRow("Состояние", c.state + (c.owners.length ? " (" + c.owners.join(", ") + ")" : "")) +
+      kvRow("Разрешение камеры", c.permission ? "выдано" : "нет: нажмите Allow camera на устройстве") +
+      kvRow("Кадр", (c.size || "—") + (c.sensorOrientation ? ", сенсор " + c.sensorOrientation + "°" : "")) +
+      kvRow("Кадров/с, обработка", c.fps + " к/с, " + c.avgProcessMs + " мс") +
+      kvRow("Оценка движения", c.score + "%" + (c.motion ? " ДВИЖЕНИЕ" : "")) +
+      kvRow("Яркость кадра", c.luma + " из 255") +
+      kvRow("Кадров всего / обработано", c.framesTotal + " / " + c.framesProcessed) +
+      kvRow("Открытий / перезапусков", c.opens + " / " + c.restarts) +
+      kvRow("Первый кадр после открытия", c.firstFrameLatencyMs + " мс") +
+      kvRow("Последнее движение", c.lastMotion ? dt(c.lastMotion) : "не было") +
+      kvRow("Ошибка", c.lastError || "нет");
     if (c.state === "RUNNING") $("#camImg").src = "/api/camera/snapshot?overlay=" + ($("#camOverlay").checked ? 1 : 0) + "&t=" + Date.now();
     const h = (await api("/api/camera/history?limit=120")).json;
     drawChart(h, c.config.areaPercent);
@@ -648,7 +636,7 @@ async function camResult(wantRunning) {
 let camManual = false, camBusy = false;
 function setCamBtn(on) {
   camManual = on; const b = $("#camToggle");
-  b.textContent = on ? "Выключить" : "Включить"; b.className = on ? "btn danger" : "btn";
+  b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Выключить камеру" : "Включить камеру";
 }
 $("#camToggle").onclick = () => run("#camMsg", async () => {
   if (camManual) { await post("/api/camera/stop"); setCamBtn(false); return await camResult(false); }
@@ -710,7 +698,6 @@ $("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/setti
 function onTab() {
   if (current === "status") loadStatus();
   if (current === "logs") loadLogs();
-  if (current === "journal") loadJournal();
   if (current === "config") { loadTasksEditor(true).then(loadTasks); loadConfig(); loadHist(); }
   if (current === "sound") loadSound();
   if (current === "system") { loadSettings(); loadUpdate(); loadPage(); loadPower(); }
@@ -721,27 +708,30 @@ function onTab() {
 
 // ---- состояние ----
 function fmtDur(s) { s = Math.floor(s); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " д " : "") + (h ? h + " ч " : "") + m + " мин"; }
-function card(k, v) { return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
 async function loadStatus() {
   try {
     const i = (await api("/api/info")).json;
     $("#ver").textContent = "версия " + i.app.version;
     const b = i.battery;
+    const sc = i.screen;
     $("#cards").innerHTML =
-      card("Время на устройстве", dt(i.time.now)) +
-      card("Экран", (i.screen.on ? "включён" : "выключен") + (i.screen.locked ? ", заблокирован" : "") + "; киоск " + (i.screen.kioskVisible ? "на экране" : "не на экране") + "; домашнее приложение: " + (i.screen.isHome ? "fServe" : (i.screen.homeApp || "?")) + (i.screen.overlayAllowed ? "" : "; нет права «поверх окон»")) +
-      card("Приложение работает", fmtDur(i.time.appUptimeSeconds)) +
-      card("Устройство включено", fmtDur(i.time.deviceUptimeSeconds)) +
-      card("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
-      card("Устройство", i.device.manufacturer + " " + i.device.model + ", Android " + i.device.android) +
-      card("Адрес", i.device.ips.length ? i.device.ips.join(", ") : "нет сети") +
-      card("Свободно", i.storage.freeMegabytes + " МБ") +
-      card("Лог", i.logs.level + ", " + Math.round(i.logs.sizeBytes / 1024) + " КБ") +
-      card("Перезагрузка устройства", i.power.rebootMethod || "недоступна") +
-      card("Cron перезапуска / перезагрузки", (i.power.appRestartCron || "—") + " / " + (i.power.rebootCron || "—"));
+      kvRow("Время на устройстве", dt(i.time.now)) +
+      kvRow("Экран", (sc.on ? "включён" : "выключен") + (sc.locked ? ", заблокирован" : "")) +
+      kvRow("Киоск", sc.kioskVisible ? "на экране" : "не на экране") +
+      kvRow("Домашнее приложение", sc.isHome ? "fServe" : (sc.homeApp || "?")) +
+      (sc.overlayAllowed ? "" : kvRow("Поверх других окон", "не разрешено")) +
+      kvRow("Приложение работает", fmtDur(i.time.appUptimeSeconds)) +
+      kvRow("Устройство включено", fmtDur(i.time.deviceUptimeSeconds)) +
+      kvRow("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
+      kvRow("Устройство", i.device.manufacturer + " " + i.device.model + ", Android " + i.device.android) +
+      kvRow("Адрес", i.device.ips.length ? i.device.ips.join(", ") : "нет сети") +
+      kvRow("Свободно", i.storage.freeMegabytes + " МБ") +
+      kvRow("Журнал", i.logs.level + ", " + Math.round(i.logs.sizeBytes / 1024) + " КБ") +
+      kvRow("Перезагрузка устройства", i.power.rebootMethod || "недоступна") +
+      kvRow("Cron перезапуска / перезагрузки", (i.power.appRestartCron || "—") + " / " + (i.power.rebootCron || "—"));
     $("#infoRaw").textContent = JSON.stringify(i, null, 2);
     $("#beat").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
-  } catch (e) { $("#cards").innerHTML = card("Ошибка", e.message); }
+  } catch (e) { $("#cards").innerHTML = kvRow("Ошибка", e.message); }
 }
 
 // ---- лог ----
@@ -754,23 +744,8 @@ async function loadLogs() {
 }
 $("#logRefresh").onclick = loadLogs;
 $("#logLevel").onchange = loadLogs;
-$("#logClear").onclick = () => { if (confirm("Очистить технический лог?")) run("#logMsg", async () => { await post("/api/logs/clear"); loadLogs(); return "лог очищен"; }); };
+$("#logClear").onclick = () => { if (confirm("Очистить журнал?")) run("#logMsg", async () => { await post("/api/logs/clear"); loadLogs(); return "журнал очищен"; }); };
 
-// ---- журнал ----
-// длинные записи журнала показываются свёрнутыми, по нажатию раскрываются
-function jText(t) {
-  t = String(t || "");
-  if (t.length <= 140 && t.indexOf("\n") < 0) return esc(t);
-  return '<div class="jt" onclick="this.classList.toggle(\'open\')" title="Нажмите, чтобы развернуть или свернуть"><span class="short">' + esc(t.slice(0, 140).replace(/\n/g, " ")) + '… <b>[развернуть]</b></span><span class="full">' + esc(t) + ' <b>[свернуть]</b></span></div>';
-}
-async function loadJournal() {
-  try {
-    const a = (await api("/api/journal?limit=200")).json;
-    $("#jBody").innerHTML = a.length ? a.map(e => "<tr><td>" + esc(dt(e.time)) + "</td><td>" + esc(e.type) + "</td><td>" + jText(e.text) + "</td></tr>").join("") : '<tr><td colspan="3">пока пусто</td></tr>';
-  } catch (e) { say("#jMsg", e.message, false); }
-}
-$("#jRefresh").onclick = loadJournal;
-$("#jClear").onclick = () => { if (confirm("Очистить журнал событий?")) run("#jMsg", async () => { await post("/api/journal/clear"); loadJournal(); return "журнал очищен"; }); };
 
 // ---- конфиг задач ----
 async function loadConfig() { try { $("#cfgText").value = (await api("/api/config")).text; say("#cfgMsg", ""); rebase("cfgSave"); } catch (e) { say("#cfgMsg", e.message, false); } }
@@ -786,9 +761,7 @@ $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confi
 
 
 // ---- задачи: общие настройки, список, редактор одной задачи ----
-const EXAMPLE_TASK = `task wakeup "Подъём"
-  cron="0 9 * * *"
-  timeout=40m
+const EXAMPLE_TASK = `task wakeup "Подъём" cron="0 9 * * *" timeout=40m
 
   repeat 6 until=moved
     watch 30s poll=600ms assign=moved
@@ -865,7 +838,14 @@ $("#gSave").onclick = () => run("#gMsg", async () => {
   await loadGlobal(); return "сохранено";
 }, "gSave");
 
-function taskTitleOf(text) { const m = /^task\s+\S+\s+"((?:[^"\\]|\\.)*)"/m.exec(text); return m ? m[1] : ""; }
+function taskTitleOf(text) {
+  const line = (/^task\s.*$/m.exec(text) || [""])[0];
+  const re = /\btitle=(?:"((?:[^"\\]|\\.)*)"|([^\s#]+))/;
+  let m = re.exec(line) || /^\s+title=(?:"((?:[^"\\]|\\.)*)"|([^\s#]+))/m.exec(text);
+  if (m) return m[1] || m[2] || "";
+  m = /^task\s+\S+\s+"((?:[^"\\]|\\.)*)"/.exec(line);
+  return m ? m[1] : "";
+}
 function showTask(text, orig) {
   tkOrig = orig; tkOpen = true; tkShown = text;
   $("#tkText").value = tkShown; $("#tkText").markLine(0); syncEditors();
@@ -885,7 +865,7 @@ async function loadTasksEditor(keep) {
 function newId() { let n = 1; const ids = (cfgObj.tasks || []).map(t => t.id); while (ids.includes("task" + n)) n++; return "task" + n; }
 $("#tkAdd").onclick = () => {
   if (!confirmDiscard()) return;
-  showTask('task ' + newId() + ' "Новая задача"\n  enabled=false\n  cron="0 9 * * *"\n  timeout=30m\n\n  log "привет из {task}"\n', "");
+  showTask('task ' + newId() + ' "Новая задача" enabled=false cron="0 9 * * *" timeout=30m\n  log "привет из {task}"\n', "");
   say("#tkSMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
 };
 $("#tkExample").onclick = () => {
@@ -956,6 +936,8 @@ $("#tkDry").onclick = () => run("#tkSMsg", async () => {
   const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig) + "&dry=1&assume=" + encodeURIComponent($("#tkAssume").value.trim())); setTimeout(loadTasks, 400); return r.json.message;
 });
 setInterval(() => { if (current === "config") loadTasks(); }, 1500);
+// несохранённая задача: браузер спросит подтверждение при обновлении или закрытии страницы
+window.addEventListener("beforeunload", e => { if (tkOpen && (tkDirty() || tkOrig === "")) { e.preventDefault(); e.returnValue = ""; } });
 
 // ---- звук: голос и файлы ----
 async function loadSound() {
@@ -969,7 +951,7 @@ async function loadSound() {
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {
-  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="btn sm sec" data-sd="' + id + '" data-act="play" title="' + (playing === id ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === id ? "■" : "▶") + "</button></td></tr>").join("");
+  $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="ib" data-sd="' + id + '" data-act="play" title="' + (playing === id ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === id ? ICO.stop : ICO.play) + "</button></td></tr>").join("");
 }
 let sdTimer = null;
 async function loadSoundFiles() {
@@ -979,7 +961,7 @@ async function loadSoundFiles() {
     clearTimeout(sdTimer);
     if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
     $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td style=\"white-space:nowrap\">" +
-      '<button class="btn sm sec" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? "■" : "▶") + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
+      '<button class="ib" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? ICO.stop : ICO.play) + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
   } catch (e) { say("#sdMsg", e.message, false); }
 }
 let bAudio = null, bName = null;
@@ -990,7 +972,7 @@ document.addEventListener("click", e => {
   if (bAudio) { bAudio.pause(); bAudio = null; }
   if (bName === n) { bName = null; say("#sdMsg", "остановлено", true); return; }
   bName = n; bAudio = new Audio("/api/sounds/file?name=" + encodeURIComponent(n));
-  bAudio.volume = Math.max(0, Math.min(1, Number($("#sdVol").value) / 100 || 1));
+  bAudio.volume = Math.max(0, Math.min(1, Number((n.startsWith("system:") ? $("#ssVol") : $("#sdVol")).value) / 100 || 1));
   bAudio.onended = () => { bName = null; };
   bAudio.onerror = () => { bName = null; say("#sdMsg", "браузер не смог воспроизвести " + n, false); };
   bAudio.play().then(() => say("#sdMsg", "играет в браузере: " + n, true)).catch(err => { bName = null; say("#sdMsg", "не удалось воспроизвести: " + err.message, false); });
@@ -1001,7 +983,7 @@ document.addEventListener("click", e => {
   run("#sdMsg", async () => {
     if (b.dataset.act === "del") { if (!confirm("Удалить " + n + "?")) return "отменено"; await post("/api/sounds/delete?name=" + encodeURIComponent(n)); await loadSoundFiles(); return "удалено"; }
     if (playing === n) { await post("/api/sounds/stop"); playing = null; loadSoundFiles(); return "остановлено"; }
-    await post("/api/sounds/play?name=" + encodeURIComponent(n) + "&volume=" + $("#sdVol").value); playing = n; loadSoundFiles(); return "играет " + n;
+    await post("/api/sounds/play?name=" + encodeURIComponent(n) + "&volume=" + (n.startsWith("system:") ? $("#ssVol") : $("#sdVol")).value); playing = n; loadSoundFiles(); return "играет " + n;
   });
 });
 $("#sdUpload").onclick = () => run("#sdMsg", async () => {
@@ -1014,7 +996,13 @@ $("#sdUpload").onclick = () => run("#sdMsg", async () => {
   }
   $("#sdFile").value = ""; await loadSoundFiles(); return "загружено файлов: " + files.length;
 });
-$("#svSay").onclick = () => run("#svMsg", async () => { say("#svMsg", "говорю…", true); const r = await post("/api/say?volume=" + $("#svVol").value, $("#svText").value); return r.json.message; });
+let svBusy = false;
+function setSvBtn(on) { svBusy = on; const b = $("#svSay"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Сказать"; }
+$("#svSay").onclick = () => {
+  if (svBusy) { post("/api/say/stop").catch(() => {}); return; }
+  setSvBtn(true);
+  run("#svMsg", async () => { say("#svMsg", "говорю…", true); try { const r = await post("/api/say?volume=" + $("#svVol").value, $("#svText").value); return r.json.message; } finally { setSvBtn(false); } });
+};
 
 // ---- настройки ----
 async function loadSettings() {
@@ -1102,9 +1090,8 @@ async function loadPhotos(day) {
     phDay = want;
     $("#phDay").innerHTML = d.length ? d.map(x => '<option value="' + x.day + '">' + x.day + " (" + x.count + ")</option>").join("") : "<option>нет снимков</option>";
     if (want) $("#phDay").value = want;
-    if (!want) { $("#phGrid").innerHTML = ""; $("#phCount").textContent = ""; return; }
+    if (!want) { $("#phGrid").innerHTML = ""; return; }
     const list = (await api("/api/photos?day=" + encodeURIComponent(want))).json.photos;
-    $("#phCount").textContent = "снимков за день: " + list.length;
     $("#phGrid").innerHTML = list.map(f => {
       const q = "day=" + encodeURIComponent(want) + "&name=" + encodeURIComponent(f.name);
       const t = f.name.replace(/\.jpg$/, "").replace(/^(\d\d)(\d\d)(\d\d)/, "$1:$2:$3");
@@ -1113,6 +1100,11 @@ async function loadPhotos(day) {
   } catch (e) { say("#phMsg", e.message, false); }
 }
 $("#phDay").onchange = () => loadPhotos($("#phDay").value);
+$("#phDelDay").onclick = () => {
+  if (!phDay) return;
+  if (!confirm("Удалить все фото за " + phDay + " вместе с папкой? Это нельзя отменить.")) return;
+  run("#phMsg", async () => { const r = await post("/api/photos/delete_day?day=" + encodeURIComponent(phDay)); phDay = null; await loadPhotos(null); return r.json.message; });
+};
 $("#phTake").onclick = () => run("#phMsg", async () => {
   say("#phMsg", "снимаю…", true);
   const r = (await post("/api/photos/take")).json; await loadPhotos(r.day); return r.message;

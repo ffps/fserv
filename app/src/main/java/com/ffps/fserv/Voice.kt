@@ -82,36 +82,63 @@ object Voice {
         return null
     }
 
-    /** Произносит текст и ждёт конца. Возвращает текст ошибки или null. */
+    /**
+     * Произносит текст и ждёт конца. В тексте можно писать паузы {pause:5s} (длительность или диапазон «2s..5s»):
+     * текст режется на куски, между ними выдерживается пауза (её отмеряем сами, поэтому она одинакова у любого движка
+     * речи и обрывается по [cancel]). Возвращает текст ошибки или null.
+     */
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
         ensure()?.let { return it }
         val t = tts ?: return "синтезатор не готов"
         apply(t, cfg)?.let { return it }
         if (volumePct != null) Audio.setVolume(app, volumePct)
         val max = try { TextToSpeech.getMaxSpeechInputLength() } catch (e: Throwable) { 3900 }
-        val chunks = ArrayList<String>()
-        var rest = text.trim()
-        while (rest.length > max) {
-            var cut = rest.lastIndexOf(". ", max - 1)
-            if (cut < max / 2) cut = max - 1
-            chunks.add(rest.substring(0, cut + 1))
-            rest = rest.substring(cut + 1).trim()
+        val rnd = java.util.Random()
+        // куски: текст (pause = -1) и паузы (text = null)
+        val parts = ArrayList<Pair<String?, Long>>()
+        var pos = 0
+        for (m in TaskSchema.PAUSE_RE.findAll(text)) {
+            parts.add(text.substring(pos, m.range.first) to -1L)
+            val ms = try { Dur.parse(m.groupValues[1].trim(), "пауза").sample(rnd) } catch (e: IllegalArgumentException) { 0L }
+            parts.add(null to ms.coerceIn(0L, 120_000L))
+            pos = m.range.last + 1
         }
-        if (rest.isNotEmpty()) chunks.add(rest)
-        for (part in chunks) {
-            val id: String
-            synchronized(lock) { id = "u${++counter}" }
-            val latch = CountDownLatch(1)
-            waiting[id] = latch
-            val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC) }
-            if (t.speak(part, TextToSpeech.QUEUE_FLUSH, params, id) != TextToSpeech.SUCCESS) {
-                waiting.remove(id)
-                return "синтезатор отказался говорить"
+        parts.add(text.substring(pos) to -1L)
+        for ((chunkText, pauseMs) in parts) {
+            if (chunkText == null) {
+                var left = pauseMs
+                while (left > 0) {
+                    if (cancel()) return null
+                    val step = minOf(left, 100L)
+                    Thread.sleep(step)
+                    left -= step
+                }
+                continue
             }
-            val end = System.currentTimeMillis() + 5 * 60_000L
-            while (!latch.await(100, TimeUnit.MILLISECONDS)) {
-                if (cancel()) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return null }
-                if (System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return "речь не закончилась за 5 минут" }
+            val chunks = ArrayList<String>()
+            var rest = chunkText.trim()
+            while (rest.length > max) {
+                var cut = rest.lastIndexOf(". ", max - 1)
+                if (cut < max / 2) cut = max - 1
+                chunks.add(rest.substring(0, cut + 1))
+                rest = rest.substring(cut + 1).trim()
+            }
+            if (rest.isNotEmpty()) chunks.add(rest)
+            for (part in chunks) {
+                val id: String
+                synchronized(lock) { id = "u${++counter}" }
+                val latch = CountDownLatch(1)
+                waiting[id] = latch
+                val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC) }
+                if (t.speak(part, TextToSpeech.QUEUE_FLUSH, params, id) != TextToSpeech.SUCCESS) {
+                    waiting.remove(id)
+                    return "синтезатор отказался говорить"
+                }
+                val end = System.currentTimeMillis() + 5 * 60_000L
+                while (!latch.await(100, TimeUnit.MILLISECONDS)) {
+                    if (cancel()) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return null }
+                    if (System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return "речь не закончилась за 5 минут" }
+                }
             }
         }
         return null

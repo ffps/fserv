@@ -267,12 +267,12 @@ class SettingsActivity : Activity() {
         if (Settings.serviceEnabled) {
             Settings.setServiceEnabled(false)
             ServerService.stop(this)
-            Journal.add("service", "Служба остановлена из окна настроек")
+            FLog.i("service", "Служба остановлена из окна настроек")
         } else {
             if (!apply(false)) return
             Settings.setServiceEnabled(true)
             ServerService.start(this)
-            Journal.add("service", "Служба запущена из окна настроек")
+            FLog.i("service", "Служба запущена из окна настроек")
         }
         refresh()
     }

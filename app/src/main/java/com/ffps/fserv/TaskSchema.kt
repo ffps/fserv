@@ -83,6 +83,7 @@ object TaskSchema {
 
     private fun task(t: JSONObject, c: Ctx): String? {
         val id = t.optString("id")
+        if (t.has("title") && t.opt("title") !is String) return c.err(t, "task $id: title — текст, например title=\"Подъём\"")
         if (t.has("enabled") && t.opt("enabled") !is Boolean) return c.err(t, "task $id: enabled — true или false")
         if (t.has("cron")) {
             if (t.opt("cron") !is String) return c.err(t, "task $id: cron пишется в кавычках, например cron=\"0 8 * * *\"")
@@ -118,6 +119,17 @@ object TaskSchema {
         return null
     }
 
+    /** Паузы в речи: {pause:5s}, {pause:500ms}, {pause:2s..5s}; каждая не длиннее 2 минут. */
+    val PAUSE_RE = Regex("""\{pause:([^}]*)\}""")
+
+    private fun pauses(text: String): String? {
+        for (m in PAUSE_RE.findAll(text)) {
+            val sp = try { Dur.parse(m.groupValues[1].trim(), "пауза") } catch (ex: IllegalArgumentException) { return "{pause:${m.groupValues[1]}}: ${ex.message}" }
+            if (sp.maxMs > 120_000) return "{pause:${m.groupValues[1]}}: пауза не длиннее 2m"
+        }
+        return null
+    }
+
     private fun tpl(text: String, c: Ctx): String? {
         for (m in TPL_RE.findAll(text)) {
             val n = m.groupValues[1]
@@ -145,12 +157,14 @@ object TaskSchema {
             "say" -> {
                 if (v !is String || v.isBlank()) return e("say: нужен непустой текст")
                 tpl(v, c)?.let { return e("say: $it") }
+                pauses(v)?.let { return e("say: $it") }
                 volume(s)?.let { return e(it) }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: true или false (или флаг wait)")
             }
             "log", "telegram", "stop" -> {
                 if (v !is String || (v.isBlank() && a != "stop")) return e("$a: нужен непустой текст")
                 tpl(v, c)?.let { return e("$a: $it") }
+                if (PAUSE_RE.containsMatchIn(v)) return e("$a: {pause:…} допускается только в say")
                 if (a == "telegram" && s.has("files")) {
                     val names = when (val f = s.opt("files")) {
                         is String -> listOf(f)
@@ -169,6 +183,11 @@ object TaskSchema {
                     val n = s.opt("assign")
                     if (n !is String || !VAR_RE.matches(n)) return e("photo: assign — имя из латинских букв, цифр и _")
                     if (n in BUILTINS) return e("photo: имя «$n» занято встроенной подстановкой")
+                }
+                if (a == "photo" && s.has("size")) {
+                    val z = s.opt("size")
+                    val m = z as? String
+                    if (m == null || !Regex("""\d{3,4}x\d{3,4}""").matches(m)) return e("photo: size — размер кадра вида 1280x720")
                 }
             }
             "background" -> {
