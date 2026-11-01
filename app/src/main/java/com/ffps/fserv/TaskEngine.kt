@@ -250,6 +250,12 @@ object TaskEngine {
         check(r)
     }
 
+    /** Текст шага: строка как есть, из списка фраз берётся случайная. */
+    private fun pickText(r: Run, v: Any?): String = when (v) {
+        is JSONArray -> if (v.length() == 0) "" else v.optString(r.rnd.nextInt(v.length()))
+        else -> v?.toString() ?: ""
+    }
+
     private fun fill(r: Run, text: String): String = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""").replace(text) { m ->
         val n = m.groupValues[1]
         val cal = Calendar.getInstance()
@@ -286,7 +292,7 @@ object TaskEngine {
         val dry = r.info.dry
         when {
             s.has("say") -> {
-                val text = fill(r, s.optString("say"))
+                val text = fill(r, pickText(r, s.opt("say")))
                 val wait = s.optBoolean("wait", true)
                 log(r, p, "say: $text" + if (!wait) " (в фоне)" else "")
                 if (!dry) {
@@ -440,7 +446,7 @@ object TaskEngine {
 
     /** Вопрос голосом и ответ с микрофона: число или «да/нет» кладётся в переменную assign; не понято после переспросов — переменной нет. */
     private fun ask(r: Run, s: JSONObject, p: String) {
-        val text = fill(r, s.optString("ask"))
+        val text = fill(r, pickText(r, s.opt("ask")))
         val name = s.optString("assign")
         val kind = s.optString("kind", "yesno")
         val listenMs = if (s.has("listen")) Dur.parse(s.opt("listen"), "listen").sample(r.rnd) else 15_000L

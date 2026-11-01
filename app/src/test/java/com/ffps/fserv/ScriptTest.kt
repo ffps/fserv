@@ -221,6 +221,19 @@ class ScriptTest {
         expect(task("log \"а {pause:1s} б\""), "только в say")
     }
 
+    @Test fun phraseLists() {
+        assertNull(Script.validate(task("say [\"Привет\", \"Здравствуйте, {time}\"]", "ask [\"Как дела?\", \"Вы здоровы?\"] assign=ok")))
+        val st = Script.parse(task("say [\"а\", \"б\"] volume=50")).root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
+        assertEquals(2, st.getJSONArray("say").length())
+        assertEquals("б", st.getJSONArray("say").getString(1))
+        expect(task("say []"), "в списке")
+        expect(task("say [привет]"), "в кавычках")
+        expect(task("say [\"{nope}\"]"), "{nope}")
+        expect(task("say [\"а {pause:5x} б\"]"), "пауза")
+        expect(task("telegram [\"а\", \"б\"]"), "в кавычках")
+        expect(task("log [\"а\"]"), "в кавычках")
+    }
+
     @Test fun photoSize() {
         assertNull(Script.validate(task("photo size=1280x720 assign=p", "telegram \"x\" files=[p]")))
         expect(task("photo size=big"), "size")

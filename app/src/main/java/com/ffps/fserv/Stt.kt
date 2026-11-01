@@ -31,7 +31,7 @@ object Stt {
 
     fun init(ctx: Context) {
         root = File(ctx.filesDir, "vosk")
-        File(root, "tmp").deleteRecursively()
+        File(root, "unpack").deleteRecursively()
         state = if (modelReady()) "ready" else "none"
     }
 
@@ -47,6 +47,9 @@ object Stt {
         "error" to lastError.ifEmpty { null }, "url" to MODEL_URL
     )
 
+    private fun dlDir() = File(root, "dl")
+    private const val ATTEMPTS = 8
+
     /** Запускает скачивание в фоне; возвращает текст ошибки, если запуск невозможен. */
     @Synchronized
     fun downloadAsync(): String? {
@@ -56,51 +59,125 @@ object Stt {
         Thread {
             try {
                 download()
+                lastError = ""
                 state = "ready"
                 FLog.i("stt", "модель распознавания скачана и распакована")
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
                 state = "error"
                 FLog.e("stt", "модель не скачана", e)
-                File(root, "tmp").deleteRecursively()
             }
         }.start()
         return null
     }
 
+    /**
+     * Скачивает zip с докачкой: обрыв или таймаут на медленной сети не повод сдаваться, попытки повторяются (до [ATTEMPTS]),
+     * каждая продолжает с места обрыва, если сервер умеет Range. Недокачанный файл остаётся: повторное нажатие продолжит.
+     */
     private fun download() {
-        val tmp = File(root, "tmp").also { it.deleteRecursively(); it.mkdirs() }
-        val zip = File(tmp, "model.zip")
+        val dir = dlDir().also { it.mkdirs() }
+        val zip = File(dir, "model.zip")
         FLog.i("stt", "скачиваю модель $MODEL_URL")
-        val r = Net.request("updates", "GET", MODEL_URL, saveTo = zip, timeoutMs = 60_000) { d, t -> done = d; total = t }
-        if (r.code != 200) throw java.io.IOException("скачивание: HTTP ${r.code} (${r.via})")
-        if (zip.length() < 10L * 1024 * 1024) throw java.io.IOException("файл модели слишком мал (${zip.length()} байт)")
-        state = "unpacking"
-        val out = File(tmp, "out").also { it.mkdirs() }
-        val base = out.canonicalPath + File.separator
-        ZipInputStream(zip.inputStream().buffered()).use { z ->
-            while (true) {
-                val e = z.nextEntry ?: break
-                val f = File(out, e.name)
-                if (!f.canonicalPath.startsWith(base)) throw java.io.IOException("недопустимое имя в архиве: ${e.name}")
-                if (e.isDirectory) f.mkdirs() else {
-                    f.parentFile?.mkdirs()
-                    f.outputStream().use { o -> z.copyTo(o) }
-                }
+        var last = ""
+        for (attempt in 1..ATTEMPTS) {
+            try {
+                val have = if (zip.exists()) zip.length() else 0L
+                val headers = if (have > 0) mapOf("Range" to "bytes=$have-") else emptyMap()
+                val r = Net.request("updates", "GET", MODEL_URL, headers = headers, saveTo = zip, timeoutMs = 120_000) { d, t -> done = d; total = t }
+                if (r.code == 416 && zip.length() > MIN_ZIP) break // файл уже целиком
+                if (r.code != 200 && r.code != 206) throw java.io.IOException("HTTP ${r.code}")
+                if (total > 0 && zip.length() < total) throw java.io.IOException("получено ${zip.length()} из $total байт")
+                break
+            } catch (e: java.io.IOException) {
+                last = e.message ?: e.javaClass.simpleName
+                if (attempt == ATTEMPTS) throw java.io.IOException("не удалось скачать за $ATTEMPTS попыток ($last). Скачанное сохранено, можно нажать «Скачать модель» ещё раз или загрузить zip с компьютера")
+                lastError = "попытка $attempt из $ATTEMPTS не удалась ($last), повторяю"
+                FLog.w("stt", lastError)
+                try { Thread.sleep(3000) } catch (x: InterruptedException) {}
             }
         }
-        // в архиве одна папка верхнего уровня (vosk-model-small-ru-0.22), её содержимое и есть модель
-        val top = out.listFiles()?.singleOrNull { it.isDirectory } ?: out
-        if (!File(top, "am").isDirectory) throw java.io.IOException("в архиве нет модели (нет папки am)")
-        modelDir().deleteRecursively()
-        if (!top.renameTo(modelDir())) throw java.io.IOException("не удалось сохранить модель")
-        tmp.deleteRecursively()
+        lastError = ""
+        if (zip.length() < MIN_ZIP) { zip.delete(); throw java.io.IOException("файл модели слишком мал (${zip.length()} байт)") }
+        try { install(zip) } catch (e: Exception) { dlDir().deleteRecursively(); throw e }
+    }
+
+    private const val MIN_ZIP = 10L * 1024 * 1024
+
+    /** Распаковывает zip модели (скачанный или загруженный с компьютера) и ставит её на место. */
+    private fun install(zip: File) {
+        state = "unpacking"
+        val out = File(root, "unpack").also { it.deleteRecursively(); it.mkdirs() }
+        try {
+            val base = out.canonicalPath + File.separator
+            ZipInputStream(zip.inputStream().buffered()).use { z ->
+                while (true) {
+                    val e = z.nextEntry ?: break
+                    val f = File(out, e.name)
+                    if (!f.canonicalPath.startsWith(base)) throw java.io.IOException("недопустимое имя в архиве: ${e.name}")
+                    if (e.isDirectory) f.mkdirs() else {
+                        f.parentFile?.mkdirs()
+                        f.outputStream().use { o -> z.copyTo(o) }
+                    }
+                }
+            }
+            // в архиве одна папка верхнего уровня (vosk-model-small-ru-0.22), её содержимое и есть модель
+            val top = out.listFiles()?.singleOrNull { it.isDirectory } ?: out
+            if (!File(top, "am").isDirectory || !File(top, "conf").isDirectory) throw java.io.IOException("в архиве нет модели Vosk (нет папок am и conf)")
+            release()
+            modelDir().deleteRecursively()
+            if (!top.renameTo(modelDir())) throw java.io.IOException("не удалось сохранить модель")
+        } finally {
+            out.deleteRecursively()
+        }
+        dlDir().deleteRecursively()
+    }
+
+    /** Сохраняет тело запроса (zip модели с компьютера) во временный файл не больше 200 МБ. */
+    fun receive(ctx: Context, input: java.io.InputStream, len: Long): File {
+        require(len in 1..(200L * 1024 * 1024)) { "zip модели должен быть не больше 200 МБ" }
+        val tmp = File(ctx.cacheDir, "stt-upload.zip")
+        tmp.delete()
+        tmp.outputStream().use { out ->
+            val buf = ByteArray(64 * 1024)
+            var left = len
+            while (left > 0) {
+                val k = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                if (k < 0) break
+                out.write(buf, 0, k)
+                left -= k
+            }
+            require(left == 0L) { "загрузка оборвалась, получено ${len - left} из $len байт" }
+        }
+        return tmp
+    }
+
+    /** Установка модели из zip, загруженного с компьютера; возвращает текст ошибки или null. */
+    fun installFromFile(zip: File): String? {
+        synchronized(this) {
+            if (state == "downloading" || state == "unpacking") return "уже выполняется скачивание или распаковка"
+            state = "unpacking"; lastError = ""
+        }
+        return try {
+            install(zip)
+            state = "ready"
+            FLog.i("stt", "модель распознавания установлена из загруженного zip")
+            null
+        } catch (e: Exception) {
+            state = if (modelReady()) "ready" else "none"
+            lastError = e.message ?: e.javaClass.simpleName
+            FLog.w("stt", "загруженный zip не подошёл: $lastError")
+            lastError
+        } finally {
+            zip.delete()
+        }
     }
 
     @Synchronized
     fun delete() {
         release()
         modelDir().deleteRecursively()
+        dlDir().deleteRecursively()
         state = "none"; lastError = ""
     }
 

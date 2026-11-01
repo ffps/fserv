@@ -276,8 +276,14 @@ object Script {
             when (word) {
                 "say", "ask", "log", "telegram" -> {
                     if (pv == null) fail(l.no, "$word: нужен текст в кавычках, например $word \"Привет\"")
-                    if (pv !is Q) fail(l.no, "$word: текст нужно написать в кавычках, например $word \"Привет\"")
-                    s.put(word, pv.s)
+                    if (pv is List<*> && (word == "say" || word == "ask")) {
+                        // список фраз: при каждом запуске выбирается случайная
+                        if (pv.isEmpty() || pv.any { it !is Q }) fail(l.no, "$word: в списке должны быть тексты в кавычках, например $word [\"Привет\", \"Здравствуйте\"]")
+                        s.put(word, JSONArray().also { a -> pv.forEach { a.put((it as Q).s) } })
+                    } else {
+                        if (pv !is Q) fail(l.no, "$word: текст нужно написать в кавычках, например $word \"Привет\"" + if (word == "say" || word == "ask") " или список фраз $word [\"Привет\", \"Здравствуйте\"]" else "")
+                        s.put(word, pv.s)
+                    }
                 }
                 "stop" -> s.put("stop", if (pv == null) "" else (pv as? Q)?.s ?: fail(l.no, "stop: причину нужно написать в кавычках"))
                 "play" -> {

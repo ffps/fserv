@@ -163,6 +163,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val err = Stt.downloadAsync()
                 if (err == null) ok("скачивание запущено") else fail(Response.Status.CONFLICT, err)
             }
+            post && uri == "/api/stt/upload" -> {
+                val f = Stt.receive(ctx, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
+                val err = Stt.installFromFile(f)
+                if (err == null) ok("модель установлена") else fail(Response.Status.BAD_REQUEST, "zip не подошёл: $err")
+            }
             post && uri == "/api/stt/delete" -> { Stt.delete(); FLog.i("stt", "модель распознавания удалена"); ok("модель удалена") }
             post && uri == "/api/stt/stop" -> { sttStop = true; ok("остановлено") }
             post && uri == "/api/stt/test" -> {
@@ -512,6 +517,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/say/stop" to "прервать речь",
         "GET /api/stt" to "распознавание речи: состояние модели, разрешение микрофона, ход скачивания",
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
+        "POST /api/stt/upload" to "установить модель из zip, загруженного с компьютера (тело запроса — файл vosk-model-small-ru-0.22.zip)",
         "POST /api/stt/delete" to "удалить модель распознавания",
         "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number&listen=10 (секунд); возвращает услышанное и значение",
         "POST /api/stt/stop" to "прервать проверку микрофона",

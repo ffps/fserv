@@ -97,6 +97,22 @@ object TaskSchema {
         return steps(steps, c, 1)
     }
 
+    /** Текст say и ask: строка либо непустой список строк (случайный выбор). Возвращает описание ошибки или null. */
+    private fun phrases(v: Any?, what: String, c: Ctx): String? {
+        val list = when (v) {
+            is String -> listOf(v)
+            is JSONArray -> (0 until v.length()).map { v.opt(it) }
+            else -> return "$what: нужен текст в кавычках или список текстов"
+        }
+        if (list.isEmpty()) return "$what: список фраз пуст"
+        for (t in list) {
+            if (t !is String || t.isBlank()) return "$what: нужен непустой текст"
+            tpl(t, c)?.let { return "$what: $it" }
+            pauses(t)?.let { return "$what: $it" }
+        }
+        return null
+    }
+
     /** Переменные, которые задача создаёт через assign: [vars] — все, [photos] — только пути фотографий. */
     private fun collectVars(steps: Any?, vars: MutableSet<String>, photos: MutableSet<String>) {
         when (steps) {
@@ -156,16 +172,12 @@ object TaskSchema {
         val v = s.opt(a)
         when (a) {
             "say" -> {
-                if (v !is String || v.isBlank()) return e("say: нужен непустой текст")
-                tpl(v, c)?.let { return e("say: $it") }
-                pauses(v)?.let { return e("say: $it") }
+                phrases(v, "say", c)?.let { return e(it) }
                 volume(s)?.let { return e(it) }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: true или false (или флаг wait)")
             }
             "ask" -> {
-                if (v !is String || v.isBlank()) return e("ask: нужен непустой текст вопроса")
-                tpl(v, c)?.let { return e("ask: $it") }
-                pauses(v)?.let { return e("ask: $it") }
+                phrases(v, "ask", c)?.let { return e(it) }
                 val n = s.opt("assign")
                 if (n !is String || !VAR_RE.matches(n)) return e("ask: нужен assign=имя (латинские буквы, цифры и _), куда попадёт ответ, например ask \"Какое давление?\" assign=bp kind=number")
                 if (n in BUILTINS) return e("ask: имя «$n» занято встроенной подстановкой")

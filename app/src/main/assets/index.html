@@ -194,13 +194,17 @@
     <button class="btn" id="sttDownload">Скачать модель</button>
     <button class="ib del" id="sttDelete" title="Удалить модель распознавания"></button>
   </div>
+  <div class="row" style="margin-top:6px">
+    <input type="file" id="sttFile" accept=".zip,application/zip">
+    <button class="btn sec" id="sttUpload">Загрузить zip с компьютера</button>
+  </div>
   <div class="msg" id="sttMsg"></div>
   <div class="row" style="margin-top:6px">
     <label>Проверка микрофона: ответ <select id="sttKind"><option value="yesno">да или нет</option><option value="number">число</option></select></label>
     <button class="ib add" id="sttTest" title="Слушать 10 секунд"></button>
   </div>
   <div class="msg" id="sttTMsg"></div>
-  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
+  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -954,6 +958,7 @@ async function loadStt() {
     const st = {none: "модель не скачана", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готова", error: "ошибка скачивания"}[t.state] || t.state;
     $("#sttInfo").innerHTML = kvRow("Модель", st) + (t.error ? kvRow("Ошибка", t.error) : "") + kvRow("Микрофон", t.permission ? "разрешён" : "нет разрешения: нажмите Allow microphone на устройстве");
     $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
+    $("#sttUpload").disabled = t.state === "downloading" || t.state === "unpacking";
     $("#sttDelete").disabled = t.state !== "ready";
     const busy = t.state === "downloading" || t.state === "unpacking";
     if (busy && !sttTimer) sttTimer = setInterval(() => { if (current === "sound") loadStt(); }, 1500);
@@ -961,6 +966,13 @@ async function loadStt() {
   } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
 $("#sttDownload").onclick = () => run("#sttMsg", async () => { const r = await post("/api/stt/download"); loadStt(); return r.json.message; });
+$("#sttUpload").onclick = () => run("#sttMsg", async () => {
+  const f = $("#sttFile").files[0]; if (!f) throw new Error("выберите zip-файл модели");
+  say("#sttMsg", "загружаю " + f.name + " (" + Math.round(f.size / 1048576) + " МБ) и распаковываю, это может занять минуту…", true);
+  const r = await fetch("/api/stt/upload", {method: "POST", headers: {"Content-Type": "application/zip"}, body: f});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  $("#sttFile").value = ""; loadStt(); return j.message || "модель установлена";
+});
 $("#sttDelete").onclick = () => { if (confirm("Удалить модель распознавания? Для шага ask её придётся скачать снова.")) run("#sttMsg", async () => { const r = await post("/api/stt/delete"); loadStt(); return r.json.message; }); };
 function setSttBtn(on) { sttBusy = on; const b = $("#sttTest"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Слушать 10 секунд"; }
 $("#sttTest").onclick = () => {

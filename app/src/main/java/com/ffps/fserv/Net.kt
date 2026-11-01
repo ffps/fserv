@@ -77,11 +77,13 @@ object Net {
                 FLog.d("net", "ответ HTTP $code за ${System.currentTimeMillis() - t0} мс ($purpose)")
                 val rbody = resp.body
                 if (saveTo != null && code in 200..299 && rbody != null) {
-                    val total = rbody.contentLength()
-                    var done = 0L
+                    // 206: сервер продолжил с места, указанного в заголовке Range; дописываем в конец файла
+                    val append = code == 206 && saveTo.exists()
+                    var done = if (append) saveTo.length() else 0L
+                    val total = if (append) done + rbody.contentLength() else rbody.contentLength()
                     saveTo.parentFile?.mkdirs()
                     rbody.byteStream().use { ins ->
-                        saveTo.outputStream().use { out ->
+                        java.io.FileOutputStream(saveTo, append).use { out ->
                             val buf = ByteArray(64 * 1024)
                             while (true) {
                                 val n = ins.read(buf)
