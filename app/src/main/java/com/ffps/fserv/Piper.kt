@@ -272,6 +272,7 @@ object Piper {
         try {
             phase = "speaking"
             val lang = t.lang().ifEmpty { "ru" }
+            FLog.i("piper", "фонемизация (язык модели «${t.lang()}» → «$lang»), $text".take(200) + "; " + mem())
             val ph = piperPhonemizeText(text, lang) ?: return "не удалось разобрать текст для голоса Piper"
             val sentences = try { Array(ph.numSentences) { i -> ph.getPhonemes(i) } } finally { ph.close() }
             val tPh = System.currentTimeMillis() - t0
@@ -288,9 +289,10 @@ object Piper {
             var firstMs = -1L
             val g = GenerationConfig(speed = speed, sid = 0, silenceScale = 0.2f, phonemeCodepoints = sentences)
             val tGen = System.currentTimeMillis()
+            FLog.i("piper", "синтез: предложений ${sentences.size}, фонем в первом ${sentences.firstOrNull()?.size}, скорость $speed; " + mem())
             t.generateWithConfigAndCallback("", g) { samples ->
                 if (stopFlag || cancel()) return@generateWithConfigAndCallback 0
-                if (firstMs < 0) firstMs = System.currentTimeMillis() - t0
+                if (firstMs < 0) { firstMs = System.currentTimeMillis() - t0; FLog.i("piper", "первый кусок звука: ${samples.size} отсчётов, $firstMs мс; " + mem()) }
                 tr.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
                 frames += samples.size
                 1
@@ -318,6 +320,13 @@ object Piper {
     }
 
     fun stop() { stopFlag = true }
+
+    /** Память для журнала: свободно в системе и занято нативной кучей приложения. */
+    private fun mem(): String {
+        val mi = android.app.ActivityManager.MemoryInfo()
+        (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(mi)
+        return "свободно ${mi.availMem / 1048576} МБ (порог ${mi.threshold / 1048576}${if (mi.lowMemory) ", МАЛО ПАМЯТИ" else ""}), нативная куча ${android.os.Debug.getNativeHeapAllocatedSize() / 1048576} МБ"
+    }
 
     // ---------------- память ----------------
 
