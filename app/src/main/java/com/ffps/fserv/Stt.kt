@@ -62,6 +62,7 @@ object Stt {
                 lastError = ""
                 state = "ready"
                 FLog.i("stt", "модель распознавания скачана и распакована")
+                TaskEngine.refreshStt()
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
                 state = "error"
@@ -178,6 +179,7 @@ object Stt {
             install(zip)
             state = "ready"
             FLog.i("stt", "модель распознавания установлена из загруженного zip")
+            TaskEngine.refreshStt()
             null
         } catch (e: Exception) {
             state = if (modelReady()) "ready" else "none"
@@ -202,26 +204,24 @@ object Stt {
         model?.let { return it }
         if (!modelReady()) throw IllegalStateException("модель распознавания речи не скачана: вкладка «Звук», раздел «Распознавание речи»")
         val t0 = System.currentTimeMillis()
+        val mem0 = android.os.Debug.getNativeHeapAllocatedSize()
         val m = try { Model(modelDir().absolutePath) } catch (e: Throwable) { throw IllegalStateException("модель распознавания не открылась: ${e.message}") }
         model = m
-        FLog.d("stt", "модель загружена за ${System.currentTimeMillis() - t0} мс")
+        FLog.i("stt", "модель загружена в память за ${System.currentTimeMillis() - t0} мс (+${(android.os.Debug.getNativeHeapAllocatedSize() - mem0) / 1048576} МБ нативной памяти)")
         return m
     }
 
-    private var rec: Recognizer? = null
-    private var recKind = ""
+    private val recs = HashMap<String, Recognizer>()
 
     /** Распознаватель для вида ответа [kind]: собирается один раз и живёт до [release] (сборка словаря занимает время). */
     @Synchronized
     private fun recognizer(kind: String): Recognizer {
-        rec?.let { if (recKind == kind) return it }
-        try { rec?.close() } catch (e: Throwable) {}
-        rec = null
+        recs[kind]?.let { return it }
         val m = loadModel()
         val t0 = System.currentTimeMillis()
         val r = Recognizer(m, RATE.toFloat(), JSONArray(Speech.grammar(kind)).toString())
         FLog.d("stt", "распознаватель ($kind) собран за ${System.currentTimeMillis() - t0} мс")
-        rec = r; recKind = kind
+        recs[kind] = r
         return r
     }
 
@@ -240,11 +240,40 @@ object Stt {
     /** Освобождает память модели (вызывается в конце задачи и после проверки). */
     @Synchronized
     fun release() {
-        try { rec?.close() } catch (e: Throwable) {}
-        rec = null; recKind = ""
+        idle?.cancel(); idle = null
+        for (r in recs.values) try { r.close() } catch (e: Throwable) {}
+        recs.clear()
         try { model?.close() } catch (e: Throwable) {}
         model = null
     }
+
+    private val timer = java.util.Timer("stt-idle", true)
+    private var idle: java.util.TimerTask? = null
+
+    /** true, если задачи используют ask: тогда модель держится в памяти постоянно (иначе каждое слушание ждало бы её загрузки около 7 секунд). */
+    @Volatile var pinned = false
+
+    /**
+     * Вызывается при старте и после любого изменения задач или модели: если в задачах есть шаги ask ([kinds] — виды их ответов),
+     * модель загружается в фоне и остаётся в памяти; если их нет, она выгружается после [IDLE_MS] простоя.
+     */
+    fun pin(kinds: Set<String>) {
+        pinned = kinds.isNotEmpty()
+        if (pinned && state == "ready") Thread { for (k in kinds) try { recognizer(k) } catch (e: Throwable) { FLog.w("stt", "подготовка распознавателя: ${e.message}") } }.start()
+        else touch()
+    }
+
+    /** Отмечает использование: без закрепления модель выгрузится через [IDLE_MS] после последнего слушания. */
+    @Synchronized
+    fun touch() {
+        idle?.cancel(); idle = null
+        if (pinned || model == null) return
+        val t = object : java.util.TimerTask() { override fun run() { if (!pinned) { release(); FLog.d("stt", "модель выгружена из памяти (простой)") } } }
+        idle = t
+        timer.schedule(t, IDLE_MS)
+    }
+
+    private const val IDLE_MS = 5 * 60_000L
 
     /** «loading» — готовится модель, «listening» — микрофон слушает, пусто — не занят. Для подсказки в веб-интерфейсе. */
     @Volatile var phase = ""
@@ -300,6 +329,7 @@ object Stt {
             phase = ""
             try { ar.stop() } catch (e: Exception) {}
             ar.release()
+            touch()
             FLog.i("stt", "слушал ${(System.currentTimeMillis() - t1) / 1000.0} с (подготовка ${prepMs} мс), пик сигнала $rawPeak из 32767, усиление до ×${"%.1f".format(maxGain)}")
         }
     }
@@ -308,11 +338,7 @@ object Stt {
 
     /** Проверка из веб-интерфейса: слушает [maxMs] и возвращает услышанное и разобранное значение. */
     fun test(ctx: Context, kind: String, maxMs: Long, cancel: () -> Boolean): JSONObject {
-        try {
-            val heard = listen(ctx, kind, maxMs, cancel)
-            return obj("heard" to heard, "value" to Speech.parse(kind, heard))
-        } finally {
-            release()
-        }
+        val heard = listen(ctx, kind, maxMs, cancel)
+        return obj("heard" to heard, "value" to Speech.parse(kind, heard))
     }
 }

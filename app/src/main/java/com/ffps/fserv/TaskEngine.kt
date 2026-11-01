@@ -68,6 +68,29 @@ object TaskEngine {
 
     fun init(ctx: Context) {
         app = ctx.applicationContext
+        Thread { refreshStt() }.start()
+    }
+
+    /** Виды ответов (yesno, number) всех шагов ask в исправных задачах. */
+    private fun askKinds(node: Any?, out: MutableSet<String>) {
+        when (node) {
+            is JSONArray -> for (i in 0 until node.length()) askKinds(node.opt(i), out)
+            is JSONObject -> {
+                if (node.has("ask")) out.add(node.optString("kind", "yesno"))
+                for (k in listOf("then", "else", "do", "background", "steps")) askKinds(node.opt(k), out)
+            }
+        }
+    }
+
+    /** Если в задачах есть ask, держит модель распознавания речи в памяти; иначе позволяет выгрузить. Вызывать при старте и после правки задач. */
+    fun refreshStt() {
+        try {
+            val kinds = HashSet<String>()
+            askKinds(TaskStore.load().root.optJSONArray("tasks"), kinds)
+            Stt.pin(kinds)
+        } catch (e: Exception) {
+            FLog.w("task", "refreshStt: ${e.message}")
+        }
     }
 
     @Synchronized
@@ -215,7 +238,7 @@ object TaskEngine {
         r.cancelled = true
         r.bg.forEach { try { it.join(2000) } catch (e: Exception) {} }
         Voice.stop()
-        Stt.release()
+        Stt.touch()
         CameraEngine.setOverride(null)
         CameraEngine.stop("task")
     }

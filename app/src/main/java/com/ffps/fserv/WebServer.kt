@@ -229,7 +229,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
-                if (err == null) { FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
+                if (err == null) { TaskEngine.refreshStt(); FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
             post && uri == "/api/config/global" -> {
                 val err = TaskStore.saveCommon(body(s))
@@ -590,6 +590,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     private fun saveTaskReq(originalId: String, newId: String, bodyText: String): Response {
         val err = TaskStore.saveTask(originalId, newId.ifEmpty { originalId }, bodyText)
         if (err != null) return fail(Response.Status.BAD_REQUEST, err)
+        TaskEngine.refreshStt()
         FLog.i("web", if (originalId.isNotEmpty() && newId.isNotEmpty() && newId != originalId) "задача «$originalId» сохранена как «$newId»" else "задача «${newId.ifEmpty { originalId }}» сохранена")
         return ok("задача сохранена")
     }
@@ -597,6 +598,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     private fun restoreConfig(name: String): Response {
         val err = TaskStore.restore(name)
         if (err != null) return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to err))
+        TaskEngine.refreshStt()
         FLog.i("web", "конфиг задач восстановлен из $name")
         return json(Response.Status.OK, obj("ok" to true, "message" to "восстановлено"))
     }
