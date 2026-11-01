@@ -152,7 +152,8 @@
   <div class="msg" id="tkMsg"></div>
 
   <div id="tkEditor" style="display:none;margin-top:14px">
-    <div class="row"><b id="tkName"></b><button class="btn sec sm" id="tkClose">Закрыть</button></div>
+    <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="btn sec sm" id="tkClose">Закрыть</button></div>
+    <p class="hint" id="tkIdHint" style="margin:0">id (латиница, цифры, _ и -) служит именем файла tasks/id.txt; если его изменить и сохранить, файл будет переименован.</p>
     <textarea id="tkText" rows="22" spellcheck="false" wrap="off"></textarea>
     <div class="row" style="margin-top:8px">
       <button class="btn" id="tkSave">Сохранить задачу</button>
@@ -165,16 +166,13 @@
   </div>
   <p class="hint">Запускать (значок ▶ в списке) можно только сохранённую задачу; во время работы значок меняется на ■ — остановить. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Полное описание языка: <a href="https://github.com/ffps/fserv/blob/main/script.md" target="_blank" rel="noopener">script.md</a>. Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
 
-  <details style="margin-top:22px"><summary>Весь файл задач одним текстом и история версий</summary>
-    <textarea id="cfgText" rows="22" spellcheck="false" style="margin-top:8px"></textarea>
+  <details style="margin-top:22px"><summary>История версий</summary>
     <div class="row" style="margin-top:8px">
-      <button class="btn" id="cfgSave">Сохранить весь файл</button>
-      <button class="btn sec" id="cfgReload">Перечитать</button>
       <label>Версии <select id="cfgHist"></select></label>
       <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
     </div>
     <div class="msg" id="cfgMsg"></div>
-    <p class="hint">Перед каждым сохранением (в том числе одной задачи) предыдущая версия попадает в историю, последние 20. Номера строк в сообщениях об ошибках совпадают с номерами слева от текста.</p>
+    <p class="hint">Перед каждым изменением (сохранение или удаление задачи, общие настройки) весь набор файлов задач копируется в историю, последние 20 версий. При восстановлении текущий набор тоже попадает в историю.</p>
   </details>
 </section>
 
@@ -422,7 +420,6 @@ track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
 track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
-track("cfgSave", ["cfgText"]);
 track("gSave", ["gVol", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
 track("pgSave", ["pgText"]);
 track("tkSave", [], () => tkOpen && (tkDirty() || tkOrig === ""));
@@ -510,7 +507,7 @@ function mkEditor(ta) {
   return sync;
 }
 const syncEditors = () => EDITORS.forEach(f => f());
-for (const id of ["tkText", "cfgText"]) mkEditor(document.getElementById(id));
+for (const id of ["tkText"]) mkEditor(document.getElementById(id));
 
 // ---- вкладки ----
 let current = "status";
@@ -699,7 +696,7 @@ $("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/setti
 function onTab() {
   if (current === "status") loadStatus();
   if (current === "logs") loadLogs();
-  if (current === "config") { loadTasksEditor(true).then(loadTasks); loadConfig(); loadHist(); }
+  if (current === "config") { loadTasksEditor(true).then(loadTasks); loadHist(); }
   if (current === "sound") loadSound();
   if (current === "system") { loadSettings(); loadUpdate(); loadPage(); loadPower(); }
   if (current === "comm") loadComm();
@@ -749,20 +746,17 @@ $("#logClear").onclick = () => { if (confirm("Очистить журнал?")) 
 
 
 // ---- конфиг задач ----
-async function loadConfig() { try { $("#cfgText").value = (await api("/api/config")).text; say("#cfgMsg", ""); rebase("cfgSave"); } catch (e) { say("#cfgMsg", e.message, false); } }
 async function loadHist() {
   try {
     const h = (await api("/api/config/history")).json;
-    $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
+    $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + ", задач " + x.tasks + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
   } catch (e) {}
 }
-$("#cfgSave").onclick = () => run("#cfgMsg", async () => { await post("/api/config", $("#cfgText").value); loadHist(); return "сохранено"; }, "cfgSave", "#cfgText");
-$("#cfgReload").onclick = loadConfig;
-$("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); await loadConfig(); loadHist(); return "восстановлено"; }); };
+$("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); closeEditor(); await loadGlobal(); loadTasks(); loadHist(); return "восстановлено"; }); };
 
 
 // ---- задачи: общие настройки, список, редактор одной задачи ----
-const EXAMPLE_TASK = `task wakeup "Подъём" cron="0 9 * * *" timeout=40m
+const EXAMPLE_TASK = `task "Подъём" cron="0 9 * * *" timeout=40m
 
   repeat 6 until=moved
     watch 30s poll=600ms assign=moved
@@ -779,10 +773,11 @@ const EXAMPLE_TASK = `task wakeup "Подъём" cron="0 9 * * *" timeout=40m
   else
     telegram "К {time} движения нет, <u>не вставала</u>"
 `;
-let cfgObj = {tasks: [], global: "", error: null};   // последнее, что прочитано с сервера
+let cfgObj = {tasks: [], global: "", globalError: null};   // последнее, что прочитано с сервера
 let tkOrig = "";               // id редактируемой задачи на сервере ("" = новая, ещё не сохранена)
 let tkOpen = false;            // открыт ли редактор
 let tkShown = "";              // текст, с которого начато редактирование (для проверки изменений)
+let tkIdShown = "";            // id, с которым начато редактирование
 let tkState = {};              // id -> {running, queued, next, enabled, cron}
 
 // общие строки: voice разбирается в поля формы, остальное (zone) идёт в текстовое поле зон
@@ -814,9 +809,7 @@ function buildGlobal() {
 
 async function loadGlobal() {
   cfgObj = (await api("/api/config/tasks")).json;
-  const text = (await api("/api/config")).text;
-  if (DIRTY.cfgSave && val(DIRTY.cfgSave.ids) === DIRTY.cfgSave.base) { $("#cfgText").value = text; rebase("cfgSave"); }
-  if (cfgObj.error) say("#tkMsg", "Файл задач не читается: " + cfgObj.error + ". Исправьте его в разделе «Весь файл задач одним текстом» внизу.", false);
+  if (cfgObj.globalError) say("#gMsg", "Общие настройки не читаются: " + cfgObj.globalError + ". Исправьте их ниже и сохраните.", false);
   const g = parseGlobal(cfgObj.global || ""), v = g.voice;
   $("#gVol").value = v.volume ?? ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
   $("#gZones").value = g.zones;
@@ -839,25 +832,15 @@ $("#gSave").onclick = () => run("#gMsg", async () => {
   await loadGlobal(); return "сохранено";
 }, "gSave");
 
-function taskTitleOf(text) {
-  const line = (/^task\s.*$/m.exec(text) || [""])[0];
-  const re = /\btitle=(?:"((?:[^"\\]|\\.)*)"|([^\s#]+))/;
-  let m = re.exec(line) || /^\s+title=(?:"((?:[^"\\]|\\.)*)"|([^\s#]+))/m.exec(text);
-  if (m) return m[1] || m[2] || "";
-  m = /^task\s+\S+\s+"((?:[^"\\]|\\.)*)"/.exec(line);
-  return m ? m[1] : "";
-}
-function showTask(text, orig) {
-  tkOrig = orig; tkOpen = true; tkShown = text;
+function showTask(text, orig, id) {
+  tkOrig = orig; tkOpen = true; tkShown = text; tkIdShown = id || orig; $("#tkId").value = tkIdShown;
   $("#tkText").value = tkShown; $("#tkText").markLine(0); syncEditors();
   $("#tkEditor").style.display = "";
-  const title = taskTitleOf(text);
-  $("#tkName").textContent = orig ? "Задача «" + (title || orig) + "» (" + orig + ")" : "Новая задача (ещё не сохранена)";
   $("#tkDry").disabled = !orig;
   say("#tkSMsg", ""); renderTasks();
 }
 function closeEditor() { tkOpen = false; tkOrig = ""; $("#tkEditor").style.display = "none"; renderTasks(); }
-function tkDirty() { return tkOpen && $("#tkText").value !== tkShown; }
+function tkDirty() { return tkOpen && ($("#tkText").value !== tkShown || $("#tkId").value.trim() !== tkIdShown); }
 function confirmDiscard() { return !tkDirty() || confirm("В редакторе есть несохранённые изменения. Продолжить без сохранения?"); }
 async function loadTasksEditor(keep) {
   await loadGlobal();
@@ -866,31 +849,30 @@ async function loadTasksEditor(keep) {
 function newId() { let n = 1; const ids = (cfgObj.tasks || []).map(t => t.id); while (ids.includes("task" + n)) n++; return "task" + n; }
 $("#tkAdd").onclick = () => {
   if (!confirmDiscard()) return;
-  showTask('task ' + newId() + ' "Новая задача" enabled=false cron="0 9 * * *" timeout=30m\n  log "привет из {task}"\n', "");
+  showTask('task "Новая задача" enabled=false cron="0 9 * * *" timeout=30m\n  log "привет из {task}"\n', "", newId());
   say("#tkSMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
 };
 $("#tkExample").onclick = () => {
   if (!confirmDiscard()) return;
-  let t = EXAMPLE_TASK; if ((cfgObj.tasks || []).some(x => x.id === "wakeup")) t = t.replace("task wakeup ", "task " + newId() + " ");
-  showTask(t, "");
+  showTask(EXAMPLE_TASK, "", (cfgObj.tasks || []).some(x => x.id === "wakeup") ? newId() : "wakeup");
   say("#tkSMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
 };
 $("#tkClose").onclick = () => { if (confirmDiscard()) closeEditor(); };
 $("#tkSave").onclick = () => run("#tkSMsg", async () => {
-  const text = $("#tkText").value;
-  const m = /^task\s+([A-Za-z0-9_-]+)/m.exec(text); const id = m ? m[1] : "";
-  await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig), text);
+  const text = $("#tkText").value, id = $("#tkId").value.trim();
+  if (!id) throw new Error("введите id задачи (имя файла), например wakeup");
+  await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig) + "&new=" + encodeURIComponent(id), text);
   tkOrig = id; await loadGlobal();
   const saved = (cfgObj.tasks || []).find(x => x.id === id); if (saved) showTask(saved.text, saved.id);
-  loadTasks(); return "задача «" + id + "» сохранена";
+  loadTasks(); loadHist(); return "задача «" + id + "» сохранена";
 }, "tkSave", "#tkText");
 
 function renderTasks() {
   const ts = cfgObj.tasks || [];
   $("#tkBody").innerHTML = ts.length ? ts.map(x => {
     const st = tkState[x.id] || {};
-    const status = st.running ? "выполняется" : st.queued ? "в очереди" : st.enabled === false ? "выключена" : "ждёт";
-    return '<tr' + (tkOpen && tkOrig === x.id ? ' class="sel"' : "") + "><td>" + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + "</div></td><td>" + esc(st.cron || "только вручную") + "</td><td>" + esc(st.next ? dt(st.next) : "") + "</td><td>" + status + "</td>" +
+    const status = x.error ? '<span style="color:var(--bad)" title="' + esc(x.error) + '">ошибка</span>' : st.running ? "выполняется" : st.queued ? "в очереди" : st.enabled === false ? "выключена" : "ждёт";
+    return '<tr' + (tkOpen && tkOrig === x.id ? ' class="sel"' : "") + "><td>" + esc(x.title || x.id) + '<div class="hint" style="margin:0">' + esc(x.id) + (x.error ? ' <span style="color:var(--bad)">— ' + esc(x.error) + "</span>" : "") + "</div></td><td>" + esc(x.error ? "—" : st.cron || "только вручную") + "</td><td>" + esc(st.next ? dt(st.next) : "") + "</td><td>" + status + "</td>" +
       '<td style="white-space:nowrap">' +
       '<button class="ib" data-tk="run" data-id="' + esc(x.id) + '" title="' + (st.running ? "Остановить" : "Запустить") + '">' + (st.running ? ICO.stop : ICO.play) + "</button>" +
       '<button class="ib" data-tk="edit" data-id="' + esc(x.id) + '" title="Редактировать">' + ICO.edit + "</button>" +
@@ -907,7 +889,7 @@ async function loadTasks() {
     if (tkOpen && tkOrig) {
       const runs = t.runs.filter(r => r.task === tkOrig), r = runs[0];
       const full = t.runs[0] && t.runs[0].task === tkOrig ? t.runs[0] : null;
-      $("#tkRunInfo").textContent = r ? "Последний запуск: " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : (t.configOk ? "У этой задачи запусков ещё не было." : "файл задач не читается");
+      $("#tkRunInfo").textContent = r ? "Последний запуск: " + dt(r.started) + ", " + (r.status === "running" ? "идёт, шаг " + r.step : r.status + (r.message ? " (" + r.message + ")" : "")) + (r.dry ? ", пробный" : "") : "У этой задачи запусков ещё не было.";
       $("#tkLog").textContent = full && full.lines ? full.lines.join("\n") : (r ? "(подробный ход виден только у самого последнего запуска среди всех задач)" : "—");
     }
   } catch (e) { say("#tkMsg", e.message, false); }

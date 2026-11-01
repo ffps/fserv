@@ -9,11 +9,7 @@ import org.junit.Test
 
 class ScriptTest {
     private val example = """
-        # общие настройки
-        voice volume=70 lang=ru-RU rate=0.95
-        zone bed rect=[0.1,0.2,0.9,0.9] exclude=[[0,0,0.2,0.2]]
-
-        task wake "Подъём"
+        task "Подъём"
           cron="0 8 * * *"
           timeout=60m
 
@@ -32,6 +28,9 @@ class ScriptTest {
             telegram "К {time} не встал"
     """.trimIndent()
 
+    private val common = "voice volume=70 lang=ru-RU rate=0.95\nzone bed rect=[0.1,0.2,0.9,0.9] exclude=[[0,0,0.2,0.2]]\n"
+    private val bed = setOf("bed")
+
     private fun err(text: String): String {
         val e = Script.validate(text)
         assertNotNull("ожидалась ошибка", e)
@@ -43,11 +42,12 @@ class ScriptTest {
         assertTrue("ошибка «$e» не содержит «$part»", e.contains(part))
     }
 
-    private fun task(vararg steps: String) = "task t cron=\"0 9 * * *\"\n" + steps.joinToString("\n") { "  $it" }
+    private fun task(vararg steps: String) = "task cron=\"0 9 * * *\"\n" + steps.joinToString("\n") { "  $it" }
 
     @Test fun exampleParsesAndIsValid() {
-        assertNull(Script.validate(example))
-        val p = Script.parse(example)
+        assertNull(Script.validate(example, "wake", bed))
+        assertNotNull(Script.validate(example, "wake"))
+        val p = Script.parse(example, "wake")
         val t = p.root.getJSONArray("tasks").getJSONObject(0)
         assertEquals("wake", t.getString("id"))
         assertEquals("Подъём", t.getString("title"))
@@ -66,15 +66,14 @@ class ScriptTest {
         val iff = t.getJSONArray("steps").getJSONObject(1)
         assertEquals("Встал в <b>{time}</b> #не комментарий", iff.getJSONArray("then").getJSONObject(2).getString("telegram"))
         assertEquals(1, iff.getJSONArray("else").length())
-        assertEquals("ru-RU", p.root.getJSONObject("voice").getString("lang"))
-        assertEquals(2, p.globalLines.size)
         assertEquals(1, p.tasks.size)
-        assertEquals(5, p.tasks[0].startLine)
-        assertEquals(21, p.tasks[0].endLine)
+        assertEquals("wake", p.tasks[0].id)
+        assertEquals(1, p.tasks[0].startLine)
+        assertEquals(17, p.tasks[0].endLine)
     }
 
     @Test fun errorsHaveLineNumbers() {
-        val text = "task t\n  cron=\"0 9 * * *\"\n  say \"a\"\n  play system:alarm fade=3s"
+        val text = "task\n  cron=\"0 9 * * *\"\n  say \"a\"\n  play system:alarm fade=3s"
         val e = err(text)
         assertTrue(e, e.startsWith("строка 4: "))
         assertTrue(e, e.contains("у play нет параметра «fade»; допустимы: volume, fade_in"))
@@ -84,8 +83,8 @@ class ScriptTest {
         expect(task("delay"), "нужна длительность")
         expect(task("delay 5x"), "длительность")
         expect(task("say \"a\"", "  say \"b\""), "лишний отступ")
-        expect("task t\n   say \"a\"", "кратен 2")
-        expect("task t\n\tsay \"a\"", "табуляц")
+        expect("task\n   say \"a\"", "кратен 2")
+        expect("task\n\tsay \"a\"", "табуляц")
         expect(task("else"), "else без if")
         expect(task("if moved\n    say \"a\""), "moved")
         expect(task("if not x"), "вложенные шаги")
@@ -96,33 +95,34 @@ class ScriptTest {
         expect(task("play system:alarm pause=3s"), "loop")
         expect(task("play a.mp3").replace("cron=\"0 9 * * *\"", "cron=\"61 * * * *\""), "cron")
         expect("hello", "на верхнем уровне")
-        expect("task t\n  say \"a\"\ntask t\n  say \"b\"", "уже есть")
-        expect("zone z rect=[0.5,0.5,0.2,0.2]\ntask t\n  say \"a\"", "x1 < x2")
-        expect("voice volume=300\ntask t\n  say \"a\"", "volume")
+        expect("task\n  say \"a\"\ntask\n  say \"b\"", "одна задача")
+        expect("voice volume=300\ntask\n  say \"a\"", "общих настройках")
+        expect("# только комментарий", "нет строки task")
+        expect("task wake\n  say \"a\"", "у task нет настройки «wake»")
         expect(task("watch 5s zone=nope"), "зона «nope»")
         expect(task("say \"a\" volume=1 volume=2"), "дважды")
         expect(task("ask \"?\""), "этапе 5")
         expect(task("background\n    watch 5s"), "внутри background")
-        expect("task t\n  say \"a\"\n  cron=\"0 9 * * *\"", "в строке task или сразу под ней")
-        expect("task t crn=1\n  say \"a\"", "у task нет настройки «crn»")
-        expect("task t cron=\"0 9 * * *\"\n  cron=\"0 8 * * *\"\n  say \"a\"", "уже задана")
-        expect("task t \"A\" title=\"B\"\n  say \"a\"", "уже задана")
-        expect("task t", "нет шагов")
+        expect("task\n  say \"a\"\n  cron=\"0 9 * * *\"", "в строке task или сразу под ней")
+        expect("task crn=1\n  say \"a\"", "у task нет настройки «crn»")
+        expect("task cron=\"0 9 * * *\"\n  cron=\"0 8 * * *\"\n  say \"a\"", "уже задана")
+        expect("task \"A\" title=\"B\"\n  say \"a\"", "уже задана")
+        expect("task", "нет шагов")
         expect(task("play a.mp3 b.mp3"), "параметры пишутся как ключ=значение")
     }
 
     @Test fun lineNumbersMatchEditor() {
-        val text = "# заголовок\n\ntask a\n  say \"x\"\n\ntask b\n  say \"y\"\n  telegram \"z\" files=[q]\n"
+        val text = "# заголовок\n\ntask\n  say \"x\"\n\n  say \"y\"\n  telegram \"z\" files=[q]\n"
         val e = err(text)
-        assertTrue(e, e.startsWith("строка 8: "))
+        assertTrue(e, e.startsWith("строка 7: "))
     }
 
     @Test fun spans() {
-        val text = "voice volume=50\n\n# про a\ntask a\n  say \"x\"\n  # внутри\n\n  say \"y\"\n\n# про b\ntask b\n  say \"z\"\n"
-        val p = Script.parse(text)
-        assertEquals(listOf(4, 11), p.tasks.map { it.startLine })
-        assertEquals(listOf(8, 12), p.tasks.map { it.endLine })
-        assertEquals(listOf(1), p.globalLines)
+        val text = "# про a\ntask\n  say \"x\"\n  # внутри\n\n  say \"y\"\n\n# конец\n"
+        val p = Script.parse(text, "a")
+        assertEquals(listOf(2), p.tasks.map { it.startLine })
+        assertEquals(listOf(6), p.tasks.map { it.endLine })
+        assertEquals("a", p.tasks[0].id)
     }
 
     @Test fun valuesAndEscapes() {
@@ -134,94 +134,82 @@ class ScriptTest {
             .getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
         assertEquals(2, q.getJSONArray("play").length())
         assertEquals(false, q.getBoolean("wait"))
-        assertNull(Script.validate(task("stop"), { true }))
+        assertNull(Script.validate(task("stop")))
         assertNull(Script.validate(task("stop \"не нужно {time}\"")))
     }
 
-    private val file = """
-        # настройки
-        voice volume=50
-
-        # будильник
-        task a title="Первая" cron="0 8 * * *"
-          # внутренний комментарий
-          say "а"
-
-        # тонометр
-        task b
-          say "б"
-    """.trimIndent() + "\n"
-
-    @Test fun replaceOneTaskKeepsRestOfFile() {
-        val e = ScriptEdit.replaceTask(file, "a", "task a title=\"Новая\"\n  say \"новый текст\"\n")
-        assertNull(e.error)
-        val t = e.text!!
-        assertTrue(t, t.contains("# настройки\nvoice volume=50\n\n# будильник\ntask a title=\"Новая\"\n  say \"новый текст\"\n\n# тонометр\ntask b\n  say \"б\"\n"))
-        assertEquals(5, e.start)
-        assertNull(Script.validate(t))
+    @Test fun commonFile() {
+        assertNull(Script.checkCommon(common).first)
+        val p = Script.parseCommon(common)
+        assertEquals("ru-RU", p.root.getJSONObject("voice").getString("lang"))
+        assertTrue(p.root.getJSONObject("zones").has("bed"))
+        assertEquals(listOf(1, 2), p.globalLines)
+        assertTrue(Script.checkCommon("# пусто\n").first == null)
+        assertTrue(Script.checkCommon("task\n  say \"x\"\n").first!!.contains("только voice и zone"))
+        assertTrue(Script.checkCommon("zone z rect=[0.5,0.5,0.2,0.2]\n").first!!.contains("x1 < x2"))
+        assertTrue(Script.checkCommon("voice volume=300\n").first!!.startsWith("строка 1: "))
+        assertTrue(Script.checkCommon("voice volume=1\nvoice volume=2\n").first!!.contains("уже есть"))
+        assertTrue(Script.checkCommon("zone a rect=[0,0,1,1]\nzone a rect=[0,0,1,1]\n").first!!.contains("уже есть"))
     }
 
-    @Test fun addRenameDeleteTask() {
-        val added = ScriptEdit.replaceTask(file, "", "task c\n  say \"в\"\n").text!!
-        assertTrue(added.endsWith("task b\n  say \"б\"\n\ntask c\n  say \"в\"\n"))
-        val renamed = ScriptEdit.replaceTask(added, "b", "task b2\n  say \"б\"\n").text!!
-        assertTrue(renamed.contains("# тонометр\ntask b2\n"))
-        val deleted = ScriptEdit.deleteTask(renamed, "a").text!!
-        assertTrue(deleted, deleted.startsWith("# настройки\nvoice volume=50\n\n# будильник\n\n# тонометр\ntask b2") || deleted.startsWith("# настройки\nvoice volume=50\n\n# будильник\n# тонометр"))
-        assertNull(Script.validate(deleted))
-        assertNotNull(ScriptEdit.deleteTask(deleted, "zzz").error)
-        assertNotNull(ScriptEdit.replaceTask(file, "zzz", "task z\n  say \"x\"\n").error)
-        assertNotNull(ScriptEdit.replaceTask(file, "a", "voice volume=1\n").error)
-        assertNotNull(ScriptEdit.replaceTask(file, "a", "task a\n  say \"x\"\ntask q\n  say \"y\"\n").error)
+    @Test fun taskSetIsolatesErrors() {
+        val ok = "task \"Хорошая\" cron=\"0 8 * * *\"\n  watch 5s zone=bed assign=m\n  say \"a\"\n"
+        val l = TaskSet.parseSet(mapOf(
+            "_common.txt" to common, "good.txt" to ok,
+            "broken.txt" to "task\n  say \"a\"\n  bogus\n", "nozone.txt" to "task\n  watch 5s zone=zzz\n  say \"a\"\n",
+            "bad id.txt" to "task\n  say \"a\"\n"
+        )) { true }
+        assertNull(l.commonError)
+        assertEquals(listOf("good"), (0 until l.root.getJSONArray("tasks").length()).map { l.root.getJSONArray("tasks").getJSONObject(it).getString("id") })
+        assertEquals(setOf("broken", "nozone", "bad id"), l.errors.keys)
+        assertTrue(l.errors.getValue("broken"), l.errors.getValue("broken").startsWith("строка 3: "))
+        assertTrue(l.errors.getValue("nozone").contains("зона «zzz»"))
+        assertEquals(70, l.root.getJSONObject("voice").getInt("volume"))
+        // без общего файла зон нет, и задача с зоной становится ошибочной
+        assertTrue(TaskSet.parseSet(mapOf("good.txt" to ok)) { true }.errors.containsKey("good"))
+        // сломанный общий файл не отключает задачи без зон
+        val c = TaskSet.parseSet(mapOf("_common.txt" to "voice volume=999\n", "t.txt" to "task\n  say \"a\"\n")) { true }
+        assertTrue(c.commonError!!.startsWith("строка 1: "))
+        assertEquals(1, c.root.getJSONArray("tasks").length())
     }
 
-    @Test fun duplicateIdAndLocalizedErrors() {
-        val e = ScriptEdit.replaceTask(file, "a", "task b\n  say \"x\"\n")
-        val err = Script.validate(e.text!!)!!
-        assertTrue(err, err.contains("уже есть"))
-        val bad = ScriptEdit.replaceTask(file, "a", "task a\n  say \"x\"\n  play system:alarm loop\n")
-        val msg = Script.validate(bad.text!!)!!
-        val local = ScriptEdit.localize(msg, bad.start, bad.count, "в другом месте файла")
-        assertTrue(local, local.startsWith("строка 3: "))
-        val other = ScriptEdit.localize("строка 1: плохо", bad.start, bad.count, "в другом месте файла")
-        assertTrue(other, other.startsWith("в другом месте файла, строка 1:"))
-    }
-
-    @Test fun globalLines() {
-        assertEquals("voice volume=50\n", ScriptEdit.globalText(file))
-        val t = ScriptEdit.replaceGlobal(file, "voice volume=70 lang=ru-RU\nzone z rect=[0,0,1,1]\n").text!!
-        assertTrue(t, t.startsWith("# настройки\nvoice volume=70 lang=ru-RU\nzone z rect=[0,0,1,1]\n\n# будильник"))
-        assertNull(Script.validate(t))
-        val none = ScriptEdit.replaceGlobal(file, "").text!!
-        assertFalse(none.contains("voice"))
-        val fresh = ScriptEdit.replaceGlobal("task a\n  say \"x\"\n", "voice volume=10\n").text!!
-        assertEquals("voice volume=10\n\ntask a\n  say \"x\"\n", fresh)
-        assertNotNull(ScriptEdit.replaceGlobal(file, "task q\n  say \"y\"\n").error)
+    @Test fun taskSetValidation() {
+        assertNull(TaskSet.validateSet(mapOf("_common.txt" to common, "a.txt" to "task\n  say \"x\"\n")) { true })
+        assertTrue(TaskSet.validateSet(mapOf("a.txt" to "task\n  oops\n")) { true }!!.startsWith("tasks/a.txt: строка 2: "))
+        assertTrue(TaskSet.validateSet(mapOf("../x.txt" to "task\n  say \"x\"\n")) { true }!!.contains("недопустимое имя"))
+        assertTrue(TaskSet.validateSet(mapOf("a.json" to "{}")) { true }!!.contains("недопустимое имя"))
+        assertNull(TaskSet.checkId("wake-up_2"))
+        for (bad in listOf("", "_x", "-x", "a b", "а", "x".repeat(41), "a.b")) assertNotNull(bad, TaskSet.checkId(bad))
     }
 
     /** Примеры из script.md обязаны проходить проверку: описание не должно расходиться с разбором. */
     @Test fun examplesInDocsAreValid() {
         val f = listOf("../script.md", "script.md").map { java.io.File(it) }.firstOrNull { it.isFile } ?: return
         val blocks = Regex("```\\n(.*?)```", RegexOption.DOT_MATCHES_ALL).findAll(f.readText()).map { it.groupValues[1] }.toList()
+        val zones = blocks.flatMap { b -> b.lines().mapNotNull { Regex("^zone (\\w+) ").find(it)?.groupValues?.get(1) } }.toSet()
         var checked = 0
         for (b in blocks) {
             val top = b.lines().filter { it.isNotEmpty() && !it.startsWith(" ") && !it.startsWith("#") }
-            if (top.isEmpty() || !top.all { it.startsWith("task ") || it.startsWith("voice ") || it.startsWith("zone ") }) continue
-            assertNull("пример из script.md не проходит проверку:\n$b", Script.validate(b))
+            if (top.isEmpty()) continue
+            val isTask = top.all { it == "task" || it.startsWith("task ") }
+            val isCommon = top.all { it.startsWith("voice ") || it.startsWith("zone ") }
+            if (isTask) assertNull("пример задачи из script.md не проходит проверку:\n$b", Script.validate(b, "x", zones))
+            else if (isCommon) assertNull("пример общих настроек из script.md не проходит проверку:\n$b", Script.checkCommon(b).first)
+            else continue
             checked++
         }
         assertTrue("в script.md найдено слишком мало примеров ($checked)", checked >= 5)
     }
 
     @Test fun taskSettingsInHeaderOrBelow() {
-        val one = Script.parse("task wake title=\"Подъём\" cron=\"0 8 * * *\" timeout=40m enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
-        val two = Script.parse("task wake \"Подъём\" cron=\"0 8 * * *\"\n  timeout=40m\n  enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
+        val one = Script.parse("task title=\"Подъём\" cron=\"0 8 * * *\" timeout=40m enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
+        val two = Script.parse("task \"Подъём\" cron=\"0 8 * * *\"\n  timeout=40m\n  enabled=false\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0)
         for (k in listOf("title", "cron", "timeout", "enabled")) assertEquals(one.get(k), two.get(k))
         assertEquals("Подъём", one.getString("title"))
         assertEquals(false, one.getBoolean("enabled"))
         assertEquals(1, two.getJSONArray("steps").length())
-        assertNull(Script.validate("task t title=\"x\" cron=\"0 9 * * *\"\n  say \"a\"\n"))
-        expect("task t title=5\n  say \"a\"", "title")
+        assertNull(Script.validate("task title=\"x\" cron=\"0 9 * * *\"\n  say \"a\"\n"))
+        expect("task title=5\n  say \"a\"", "title")
     }
 
     @Test fun pausesInSay() {

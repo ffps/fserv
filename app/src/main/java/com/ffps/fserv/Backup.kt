@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 /**
  * Резервная копия настроек одним zip-файлом, восстановление из неё и сброс к исходному состоянию.
  *
- * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks.txt (задачи на языке сценариев),
+ * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt, и общий tasks/_common.txt),
  * sounds/ (загруженные звуки), pages/ (заменённые страницы index.html и kiosk.html). Очереди, журналы и логи в копию не входят.
  * Восстановление сначала целиком проверяет архив и только потом что-либо удаляет.
  */
@@ -41,7 +41,7 @@ object Backup {
     fun write(ctx: Context, out: OutputStream) {
         ZipOutputStream(out).use { z ->
             z.put("settings.json", Settings.exportJson().toString(2).toByteArray(Charsets.UTF_8))
-            z.put("tasks.txt", TaskStore.read().toByteArray(Charsets.UTF_8))
+            for ((n, t) in TaskStore.files()) z.put("tasks/$n", t.toByteArray(Charsets.UTF_8))
             for (n in Sounds.names()) {
                 z.putNextEntry(ZipEntry("sounds/$n"))
                 Sounds.file(n).inputStream().use { it.copyTo(z) }
@@ -68,7 +68,7 @@ object Backup {
             var total = 0L
             val sounds = HashSet<String>()
             var settings: JSONObject? = null
-            var tasks: String? = null
+            val tasks = LinkedHashMap<String, String>()
             for (e in entries) {
                 val n = e.name
                 if (n.contains("..") || n.startsWith("/") || n.contains("\\")) return "недопустимое имя в архиве: $n"
@@ -76,7 +76,8 @@ object Backup {
                 when {
                     n == "settings.json" -> settings = try { JSONObject(readText(zf, e)) } catch (x: Exception) { return "settings.json: ${x.message}" }
                     n == "tasks.json" -> return "в архиве задачи в старом формате JSON (до версии 0.8.0): он больше не поддерживается; перепишите задачи на новом языке и сделайте новую копию"
-                    n == "tasks.txt" -> tasks = try { readText(zf, e) } catch (x: IllegalArgumentException) { return x.message }
+                    n == "tasks.txt" -> return "в архиве задачи одним файлом (до версии 0.8.3): он больше не поддерживается"
+                    n.startsWith("tasks/") && n.count { it == '/' } == 1 -> tasks[n.removePrefix("tasks/")] = try { readText(zf, e) } catch (x: IllegalArgumentException) { return x.message }
                     n.startsWith("sounds/") && n.count { it == '/' } == 1 -> {
                         val name = n.removePrefix("sounds/")
                         try { Sounds.checkName(name) } catch (x: IllegalArgumentException) { return "звук «$name»: недопустимое имя" }
@@ -88,11 +89,9 @@ object Backup {
                 }
             }
             if (settings == null) return "в архиве нет settings.json (это не копия fServe?)"
-            if (tasks == null) return "в архиве нет tasks.txt"
             if (total > Sounds.MAX_TOTAL + 10_000_000) return "архив слишком большой"
             if (sounds.sumOf { s -> zf.getEntry("sounds/$s").size } > Sounds.MAX_TOTAL) return "звуки вместе больше ${Sounds.MAX_TOTAL / 1048576} МБ"
-            val err = Script.validate(tasks) { name -> sounds.contains(name) }
-            if (err != null) return "tasks.txt: $err"
+            TaskSet.validateSet(tasks) { name -> sounds.contains(name) }?.let { return it }
         }
         return null
     }
@@ -110,7 +109,8 @@ object Backup {
         val zf = ZipFile(file)
         zf.use {
             val settings = JSONObject(readText(zf, zf.getEntry("settings.json")))
-            val tasks = readText(zf, zf.getEntry("tasks.txt"))
+            val tasks = zf.entries().asSequence().filter { !it.isDirectory && it.name.startsWith("tasks/") }
+                .associate { it.name.removePrefix("tasks/") to readText(zf, it) }
             wipe(ctx)
             for (e in zf.entries().asSequence().filter { !it.isDirectory }) {
                 when {

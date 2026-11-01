@@ -9,7 +9,7 @@ import java.util.Random
 import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * Движок задач: запускает сценарии из файла tasks.txt по cron или вручную и выполняет их шаги по порядку.
+ * Движок задач: запускает сценарии из файлов tasks/*.txt по cron или вручную и выполняет их шаги по порядку.
  * Задачи идут по одной (камера и звук общие), остальные ждут в очереди. Запуск, опоздавший больше чем на late_ok
  * (по умолчанию 0: «всегда пропускать»), не выполняется и записывается в журнал. Если задача оборвалась ошибкой или
  * не уложилась в timeout, сообщение уходит в Telegram.
@@ -65,8 +65,6 @@ object TaskEngine {
     @Volatile private var current: Run? = null
     private val recent = ArrayDeque<RunInfo>()
     private val nextCache = HashMap<String, Pair<String, Long>>()
-    @Volatile private var cachedText = ""
-    @Volatile private var cachedRoot: JSONObject? = null
 
     fun init(ctx: Context) {
         app = ctx.applicationContext
@@ -88,14 +86,8 @@ object TaskEngine {
 
     // ---------------- конфиг ----------------
 
-    @Synchronized
-    private fun config(): JSONObject? {
-        val text = try { TaskStore.read() } catch (e: Exception) { return null }
-        if (text == cachedText) return cachedRoot
-        cachedText = text
-        cachedRoot = try { Script.parse(text).root } catch (e: Exception) { null }
-        return cachedRoot
-    }
+    /** Голос, зоны и исправные задачи; задачи с ошибками сюда не попадают (они видны в редакторе). */
+    private fun config(): JSONObject = TaskStore.load().root
 
     private fun findTask(root: JSONObject, id: String): JSONObject? {
         val a = root.optJSONArray("tasks") ?: return null
@@ -107,8 +99,8 @@ object TaskEngine {
 
     /** Ставит задачу в очередь вручную. Возвращает текст ошибки или null. */
     fun runNow(id: String, dry: Boolean, assume: Map<String, Any?>): String? {
-        val root = config() ?: return "файл задач не читается (ошибка в тексте)"
-        if (findTask(root, id) == null) return "задачи «$id» нет"
+        val root = config()
+        if (findTask(root, id) == null) return TaskStore.load().errors[id]?.let { "в задаче «$id» ошибка, она не запускается: $it" } ?: "задачи «$id» нет"
         if (!dry && (current?.info?.id == id || queue.any { it.taskId == id })) return "задача «$id» уже выполняется или стоит в очереди"
         queue.add(Req(id, "manual", dry, assume, System.currentTimeMillis(), Long.MAX_VALUE / 4))
         start()
@@ -123,7 +115,7 @@ object TaskEngine {
 
     /** Вызывается планировщиком раз в 10 секунд: ищет задачи, которым пора запускаться. */
     fun tick(now: Long) {
-        val root = config() ?: return
+        val root = config()
         val tasks = root.optJSONArray("tasks") ?: return
         val nowMin = now / 60000
         for (i in 0 until tasks.length()) {
@@ -542,7 +534,7 @@ object TaskEngine {
     fun status(): JSONObject {
         val root = config()
         val tasks = JSONArray()
-        root?.optJSONArray("tasks")?.let { a ->
+        root.optJSONArray("tasks")?.let { a ->
             for (i in 0 until a.length()) {
                 val t = a.optJSONObject(i) ?: continue
                 val id = t.optString("id")
@@ -560,7 +552,7 @@ object TaskEngine {
         val runs = JSONArray()
         synchronized(recent) { recent.forEachIndexed { n, r -> runs.put(runJson(r, n == 0)) } }
         return obj(
-            "configOk" to (root != null), "tasks" to tasks,
+            "configOk" to (TaskStore.load().commonError == null), "tasks" to tasks,
             "running" to current?.let { runJson(it.info, false) },
             "queue" to arr(queue.map { it.taskId + if (it.dry) " (пробный)" else "" }),
             "runs" to runs

@@ -5,16 +5,19 @@ import org.json.JSONObject
 import java.util.IdentityHashMap
 
 /**
- * Текстовый формат сценариев (файл tasks.txt). Разбирается в то же дерево JSON-объектов, которое проверяет
+ * Текстовый формат сценариев: один файл на задачу (tasks/<id>.txt, id — имя файла, в тексте его нет) и общий файл
+ * tasks/_common.txt со строками voice и zone. Разбирается в то же дерево JSON-объектов, которое проверяет
  * [TaskSchema] и выполняет [TaskEngine]. Номера строк запоминаются для каждого узла, поэтому ошибки проверки
  * называют строку так же, как её видно в редакторе.
  *
  * Формат (отступ 2 пробела, комментарии с #):
  *
+ * Общий файл:
  *   voice volume=70 lang=ru-RU
  *   zone bed rect=[0.1,0.2,0.9,0.9]
  *
- *   task wake "Подъём" cron="0 8 * * *"     (название можно и как title=; настройки можно и на строках ниже)
+ * Файл задачи:
+ *   task "Подъём" cron="0 8 * * *"     (название можно и как title=; настройки можно и на строках ниже)
  *     timeout=60m
  *     repeat 10 until=moved
  *       watch 30s assign=moved
@@ -74,22 +77,35 @@ object Script {
     // ---------------- публичный вход ----------------
 
     /** Разбирает текст в дерево. Бросает [ScriptError] с номером строки. */
-    fun parse(text: String): Parsed = Parser(text).run()
+    fun parse(text: String, id: String = "task"): Parsed = Parser(text, id).run()
 
-    /** Полная проверка: разбор и схема. Текст ошибки начинается с «строка N: » либо null, если всё верно. */
-    fun validate(text: String, fileExists: (String) -> Boolean = { true }): String? = check(text, fileExists).first
+    /** Разбирает общий файл (строки voice и zone). */
+    fun parseCommon(text: String): Parsed = Parser(text, null).run()
+
+    /** Полная проверка файла задачи [id]: разбор и схема. [zones] — имена зон из общего файла. Текст ошибки начинается с «строка N: » либо null. */
+    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), fileExists: (String) -> Boolean = { true }): String? =
+        check(text, id, zones, fileExists).first
 
     /** Как [validate], но возвращает ещё и номер строки ошибки (0, если ошибки нет или у неё нет строки). */
-    fun check(text: String, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
-        val p = try { parse(text) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
-        val err = TaskSchema.validate(p.root, p.lines, fileExists) ?: return null to 0
+    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
+        val p = try { parse(text, id) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
+        val err = TaskSchema.validate(p.root, p.lines, fileExists, zones) ?: return null to 0
+        val n = Regex("""^строка (\d+): """).find(err)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        return err to n
+    }
+
+    /** Проверка общего файла. */
+    fun checkCommon(text: String): Pair<String?, Int> {
+        val p = try { parseCommon(text) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
+        val err = TaskSchema.validate(p.root, p.lines) ?: return null to 0
         val n = Regex("""^строка (\d+): """).find(err)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         return err to n
     }
 
     // ---------------- разбор ----------------
 
-    private class Parser(val text: String) {
+    /** [taskId] == null: общий файл (voice, zone); иначе файл одной задачи с этим id. */
+    private class Parser(val text: String, val taskId: String?) {
         val raw = text.replace("\r\n", "\n").replace('\r', '\n').split("\n")
         val lines = ArrayList<Line>()
         var pos = 0
@@ -116,16 +132,17 @@ object Script {
             val globals = ArrayList<Int>()
             var voice: JSONObject? = null
             val zones = JSONObject()
-            val ids = HashSet<String>()
             while (pos < lines.size) {
                 val l = lines[pos]
-                if (l.level > 0) fail(l.no, "лишний отступ: на верхнем уровне пишутся task, voice, zone")
+                if (l.level > 0) fail(l.no, "лишний отступ: на верхнем уровне пишется " + if (taskId == null) "voice или zone" else "task")
                 val word = l.text.substringBefore(' ')
+                if (taskId != null && (word == "voice" || word == "zone")) fail(l.no, "voice и zone пишутся в общих настройках, а не в файле задачи")
                 when (word) {
                     "task" -> {
+                        if (taskId == null) fail(l.no, "в общих настройках допустимы только voice и zone: задача пишется в своём файле")
+                        if (tasks.length() > 0) fail(l.no, "в файле одна задача: вторая строка task не нужна")
                         val t = parseTask(l)
                         val id = t.optString("id")
-                        if (!ids.add(id)) fail(l.no, "задача «$id» уже есть выше")
                         tasks.put(t)
                         spans.add(TaskSpan(id, l.no, taskEnd(l.no, pos)))
                     }
@@ -150,9 +167,10 @@ object Script {
                         globals.add(l.no)
                         pos++
                     }
-                    else -> fail(l.no, "на верхнем уровне допустимы task, voice, zone; встретилось «$word»" + if (word.contains('=')) " (настройки задачи пишутся в строке task или под ней, до шагов)" else "")
+                    else -> fail(l.no, "на верхнем уровне допустимы ${if (taskId == null) "voice и zone" else "только task"}; встретилось «$word»" + if (word.contains('=')) " (настройки задачи пишутся в строке task или под ней, до шагов)" else "")
                 }
             }
+            if (taskId != null && tasks.length() == 0) fail(1, "в файле нет строки task (она должна быть первой, например task \"Название\" cron=\"0 8 * * *\")")
             if (voice != null) root.put("voice", voice)
             if (zones.length() > 0) root.put("zones", zones)
             root.put("tasks", tasks)
@@ -178,9 +196,8 @@ object Script {
         }
 
         fun parseTask(h: Line): JSONObject {
-            val a = args(h, 4, true, true)
-            val id = a.positional
-            if (id !is String || !Regex("[A-Za-z0-9_-]{1,40}").matches(id)) fail(h.no, "task: нужен id из латинских букв, цифр, _ и - (до 40 знаков), например task wake \"Подъём\" cron=\"0 8 * * *\"")
+            val a = args(h, 4, false, true)
+            val id = taskId!!
             val t = JSONObject()
             map[t] = h.no
             t.put("id", id)

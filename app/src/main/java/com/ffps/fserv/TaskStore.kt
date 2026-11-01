@@ -2,138 +2,187 @@ package com.ffps.fserv
 
 import android.content.Context
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Файл задач (tasks.txt): текст на языке сценариев, см. [Script] и script.md. Редактируется из веб-интерфейса целиком,
- * по одной задаче и по общим строкам voice/zone. Правка одной задачи заменяет только её строки, поэтому комментарии
- * и порядок остальных задач сохраняются. Перед каждой записью предыдущая версия уходит в историю (последние 20).
+ * Хранилище задач: каталог tasks/ с файлом на каждую задачу (tasks/<id>.txt, id — имя файла, в тексте его нет)
+ * и общим файлом tasks/_common.txt со строками voice и zone. Язык описан в [Script] и script.md.
+ * Ошибка в одном файле отключает только его задачу: остальные работают. Перед каждым изменением набор файлов целиком
+ * копируется в историю (последние 20 версий, каталоги tasks-history/tasks-ДАТА-ВРЕМЯ).
  */
 object TaskStore {
     private const val KEEP = 20
-    const val DEFAULT = "# Задачи fServe. Язык описан в script.md в репозитории проекта.\n"
-    private val NAME_RE = Regex("tasks-[0-9]{8}-[0-9]{6}(-[0-9]+)?\\.txt")
+    private const val COMMON = TaskSet.COMMON
+    const val DEFAULT_COMMON = "# Общие настройки: голос (voice) и зоны детектора движения (zone). Язык описан в script.md.\n"
+    val ID_RE = TaskSet.ID_RE
+    private val HIST_RE = Regex("tasks-[0-9]{8}-[0-9]{6}(-[0-9]+)?")
 
-    private lateinit var file: File
+    private lateinit var dir: File
     private lateinit var histDir: File
+    @Volatile private var gen = 0
+    private var cache: TaskSet.Loaded? = null
+    private var cacheGen = -1
+    private var cacheAt = 0L
 
     fun init(ctx: Context) {
-        file = File(ctx.filesDir, "tasks.txt")
+        dir = File(ctx.filesDir, "tasks").also { it.mkdirs() }
         histDir = File(ctx.filesDir, "tasks-history").also { it.mkdirs() }
-        if (!file.exists()) file.writeText(DEFAULT)
+        File(ctx.filesDir, "tasks.txt").delete() // файл прежнего формата
     }
 
-    @Synchronized
-    fun read(): String = file.readText()
+    private fun file(id: String) = File(dir, "$id.txt")
 
-    /** null, если текст верный; иначе «строка N: описание». */
-    fun validate(text: String): String? {
-        if (text.isBlank()) return null
-        return Script.validate(text) { Sounds.exists(it) }
+    fun checkId(id: String): String? = TaskSet.checkId(id)
+
+    @Synchronized
+    fun ids(): List<String> =
+        (dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") } ?: emptyArray())
+            .map { it.name.removeSuffix(".txt") }.filter { ID_RE.matches(it) }.sorted()
+
+    @Synchronized
+    fun taskText(id: String): String? = if (ID_RE.matches(id) && file(id).isFile) file(id).readText() else null
+
+    @Synchronized
+    fun commonText(): String = file(COMMON).takeIf { it.isFile }?.readText() ?: ""
+
+    /** Все файлы набора как имя файла → текст (для копии и истории). */
+    @Synchronized
+    fun files(): Map<String, String> =
+        (dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") } ?: emptyArray()).sortedBy { it.name }.associate { it.name to it.readText() }
+
+    /** Разбор всего набора; результат кэшируется до следующего изменения файлов. */
+    @Synchronized
+    fun load(): TaskSet.Loaded {
+        // кэш живёт до изменения файлов и не дольше 5 секунд: проверка ссылается на звуки, которые тоже меняются
+        cache?.let { if (cacheGen == gen && System.currentTimeMillis() - cacheAt < 5000) return it }
+        val l = TaskSet.parseSet(files(), { Sounds.exists(it) })
+        cache = l; cacheGen = gen; cacheAt = System.currentTimeMillis()
+        return l
     }
 
-    /** Для редактора: задачи с их текстом и общие строки; если файл не читается, поле error описывает проблему. */
+    /** Для редактора: список задач (id, название, текст, ошибка) и общие строки. */
     @Synchronized
-    fun overview(): org.json.JSONObject {
-        val text = read()
-        val p = try { Script.parse(text) } catch (e: Script.ScriptError) {
-            return obj("error" to "строка ${e.line}: ${e.message}", "tasks" to JSONArray(), "global" to "")
-        }
-        val all = ScriptEdit.lines(text)
-        val arr = p.root.getJSONArray("tasks")
+    fun overview(): JSONObject {
+        val l = load()
+        val byId = HashMap<String, JSONObject>()
+        val a = l.root.getJSONArray("tasks")
+        for (i in 0 until a.length()) a.getJSONObject(i).let { byId[it.getString("id")] = it }
         val tasks = JSONArray()
-        for ((i, sp) in p.tasks.withIndex()) {
-            tasks.put(obj("id" to sp.id, "title" to arr.getJSONObject(i).optString("title"), "line" to sp.startLine, "text" to ScriptEdit.join(all.subList(sp.startLine - 1, sp.endLine))))
+        for (id in ids()) {
+            tasks.put(obj("id" to id, "title" to (byId[id]?.optString("title") ?: titleGuess(taskText(id) ?: "")), "text" to (taskText(id) ?: ""), "error" to l.errors[id]))
         }
-        return obj("error" to null, "tasks" to tasks, "global" to ScriptEdit.globalText(text))
+        return obj("tasks" to tasks, "global" to commonText(), "globalError" to l.commonError)
     }
 
-    @Synchronized
-    fun taskText(id: String): String? = ScriptEdit.taskText(read(), id)
+    /** Название для списка, если задача не читается: из заголовка `task "Название"`/`title=`. */
+    private fun titleGuess(text: String): String {
+        val line = text.lineSequence().firstOrNull { it.startsWith("task") } ?: return ""
+        return Regex("""title="((?:[^"\\]|\\.)*)"""").find(line)?.groupValues?.get(1)
+            ?: Regex("""^task\s+"((?:[^"\\]|\\.)*)"""").find(line)?.groupValues?.get(1) ?: ""
+    }
+
+    // ---------------- запись ----------------
+
+    private fun touch() { gen++ }
+
+    private fun writeAtomic(f: File, text: String) {
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(f)) { f.writeText(text); tmp.delete() }
+    }
 
     /**
-     * Сохраняет одну задачу: [originalId] пуст для новой, иначе заменяются строки задачи с этим id (её можно переименовать).
-     * Проверяется весь файл; при ошибке ничего не меняется. Возвращает текст ошибки или null.
+     * Сохраняет задачу: [originalId] пуст для новой, иначе файл этой задачи; если [newId] другой, файл переименовывается.
+     * Номера строк в ошибках совпадают с номерами в редакторе. Возвращает текст ошибки или null.
      */
     @Synchronized
-    fun saveTask(fragment: String, originalId: String): String? {
-        val e = ScriptEdit.replaceTask(read(), originalId, fragment)
-        if (e.error != null) return e.error
-        return save(e.text!!)?.let { ScriptEdit.localize(it, e.start, e.count, "в другом месте файла") }
+    fun saveTask(originalId: String, newId: String, text: String): String? {
+        checkId(newId)?.let { return it }
+        if (newId == COMMON || newId.startsWith("_")) return "id не может начинаться с _"
+        if (text.isBlank()) return "текст задачи пуст"
+        if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
+        if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
+        val zones = load().root.optJSONObject("zones")?.keys()?.asSequence()?.toSet() ?: emptySet()
+        Script.validate(text, newId, zones) { Sounds.exists(it) }?.let { return it }
+        if (originalId == newId && file(newId).readText() == text) return null
+        archive()
+        writeAtomic(file(newId), text)
+        if (originalId.isNotEmpty() && originalId != newId) file(originalId).delete()
+        touch()
+        return null
     }
 
     @Synchronized
     fun deleteTask(id: String): String? {
-        val e = ScriptEdit.deleteTask(read(), id)
-        if (e.error != null) return e.error
-        return save(e.text!!.let { if (it.isBlank()) DEFAULT else it })
-    }
-
-    @Synchronized
-    fun globalText(): String = ScriptEdit.globalText(read())
-
-    /** Заменяет все строки voice и zone файла текстом [newText]. */
-    @Synchronized
-    fun saveGlobal(newText: String): String? {
-        if (newText.isNotBlank()) Script.check(newText) { true }.first?.let { return it }
-        val e = ScriptEdit.replaceGlobal(read(), newText)
-        if (e.error != null) return e.error
-        return save(e.text!!.let { if (it.isBlank()) DEFAULT else it })
-    }
-
-    // ---------------- файл целиком ----------------
-
-    /** Полная замена файла и очистка истории версий (восстановление и сброс). */
-    @Synchronized
-    fun replaceAll(text: String?) {
-        histDir.listFiles()?.forEach { it.delete() }
-        file.writeText(text ?: DEFAULT)
-    }
-
-    /** null = сохранено; иначе текст ошибки (файл не изменён). */
-    @Synchronized
-    fun save(text: String): String? {
-        val err = validate(text)
-        if (err != null) return err
-        if (file.exists() && file.readText() == text) return null
+        if (!ID_RE.matches(id) || !file(id).isFile) return "задачи «$id» нет"
         archive()
-        val tmp = File(file.parentFile, "tasks.txt.tmp")
-        tmp.writeText(text)
-        if (!tmp.renameTo(file)) {
-            file.writeText(text)
-            tmp.delete()
-        }
+        file(id).delete()
+        touch()
         return null
     }
 
+    /** Заменяет общий файл (voice и zone); пустой текст оставляет только комментарий. */
+    @Synchronized
+    fun saveCommon(text: String): String? {
+        if (text.isNotBlank()) Script.checkCommon(text).first?.let { return it }
+        val t = if (text.isBlank()) DEFAULT_COMMON else text
+        if (commonText() == t) return null
+        archive()
+        writeAtomic(file(COMMON), t)
+        touch()
+        return null
+    }
+
+    // ---------------- набор целиком: копия, сброс, история ----------------
+
+    /** Полная замена набора и очистка истории (восстановление из копии и сброс). */
+    @Synchronized
+    fun replaceAll(files: Map<String, String>?) {
+        histDir.listFiles()?.forEach { it.deleteRecursively() }
+        dir.listFiles()?.forEach { it.delete() }
+        for ((n, t) in files ?: emptyMap()) File(dir, n).writeText(t)
+        touch()
+    }
+
     private fun archive() {
-        if (!file.exists()) return
+        val list = dir.listFiles { f -> f.isFile } ?: return
+        if (list.isEmpty()) return
         val base = "tasks-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        var f = File(histDir, "$base.txt")
+        var d = File(histDir, base)
         var n = 2
-        while (f.exists()) f = File(histDir, "$base-${n++}.txt")
-        f.writeText(file.readText())
-        val all = histDir.listFiles { x -> NAME_RE.matches(x.name) }?.sortedBy { it.name } ?: return
-        for (old in all.dropLast(KEEP)) old.delete()
+        while (d.exists()) d = File(histDir, "$base-${n++}")
+        d.mkdirs()
+        for (f in list) f.copyTo(File(d, f.name))
+        val all = histDir.listFiles { x -> x.isDirectory && HIST_RE.matches(x.name) }?.sortedBy { it.name } ?: return
+        for (old in all.dropLast(KEEP)) old.deleteRecursively()
     }
 
     @Synchronized
     fun history(): JSONArray {
         val res = JSONArray()
-        val all = histDir.listFiles { x -> NAME_RE.matches(x.name) }?.sortedByDescending { it.name } ?: return res
-        for (f in all) res.put(obj("name" to f.name, "size" to f.length(), "time" to Util.iso(f.lastModified())))
+        val all = histDir.listFiles { x -> x.isDirectory && HIST_RE.matches(x.name) }?.sortedByDescending { it.name } ?: return res
+        for (d in all) {
+            val fs = d.listFiles() ?: emptyArray()
+            res.put(obj("name" to d.name, "size" to fs.sumOf { it.length() }, "tasks" to fs.count { it.name != "$COMMON.txt" }, "time" to Util.iso(d.lastModified())))
+        }
         return res
     }
 
-    /** null = восстановлено; иначе ошибка. Текущая версия при этом сама попадает в историю. */
+    /** null = восстановлено; иначе ошибка. Текущий набор при этом сам попадает в историю. */
     @Synchronized
     fun restore(name: String): String? {
-        if (!NAME_RE.matches(name)) return "неверное имя версии"
-        val f = File(histDir, name)
-        if (!f.exists()) return "такой версии нет"
-        return save(f.readText())
+        if (!HIST_RE.matches(name)) return "неверное имя версии"
+        val d = File(histDir, name)
+        if (!d.isDirectory) return "такой версии нет"
+        val files = (d.listFiles() ?: emptyArray()).associate { it.name to it.readText() }
+        archive()
+        dir.listFiles()?.forEach { it.delete() }
+        for ((n, t) in files) File(dir, n).writeText(t)
+        touch()
+        return null
     }
 }

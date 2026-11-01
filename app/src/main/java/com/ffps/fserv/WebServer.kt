@@ -192,22 +192,20 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 ok("лог очищен")
             }
 
-            get && uri == "/api/config" -> text(Response.Status.OK, "text/plain", TaskStore.read())
             get && uri == "/api/config/tasks" -> json(Response.Status.OK, TaskStore.overview())
             get && uri == "/api/tasks/text" -> {
                 val t = TaskStore.taskText(q(s, "id") ?: "")
                 if (t == null) fail(Response.Status.NOT_FOUND, "задачи нет") else text(Response.Status.OK, "text/plain", t)
             }
-            get && uri == "/api/config/global" -> text(Response.Status.OK, "text/plain", TaskStore.globalText())
-            post && uri == "/api/config" -> saveConfig(body(s))
-            post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", body(s))
+            get && uri == "/api/config/global" -> text(Response.Status.OK, "text/plain", TaskStore.commonText())
+            post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", q(s, "new") ?: "", body(s))
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
                 if (err == null) { FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
             post && uri == "/api/config/global" -> {
-                val err = TaskStore.saveGlobal(body(s))
+                val err = TaskStore.saveCommon(body(s))
                 if (err == null) { FLog.i("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
             }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
@@ -428,7 +426,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
-    private fun voiceCfg(): JSONObject? = try { Script.parse(TaskStore.read()).root.optJSONObject("voice") } catch (e: Exception) { null }
+    private fun voiceCfg(): JSONObject? = try { TaskStore.load().root.optJSONObject("voice") } catch (e: Exception) { null }
 
     private fun screenInfo(): JSONObject {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -456,16 +454,14 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/logs" to "технический лог; ?lines=300&level=INFO",
         "GET /api/logs/download" to "весь лог файлом",
         "POST /api/logs/clear" to "очистить лог",
-        "GET /api/config" to "файл задач (текст на языке сценариев)",
-        "GET /api/config/tasks" to "для редактора: задачи с текстом каждой и общие строки voice/zone",
+        "GET /api/config/tasks" to "для редактора: задачи (id, название, текст, ошибка) и общий файл voice/zone",
         "GET /api/tasks/text" to "текст одной задачи; ?id=",
-        "GET /api/config/global" to "общие строки voice и zone",
-        "POST /api/tasks/save" to "сохранить одну задачу (тело: текст задачи, строки task …); ?id=прежний_id, пусто для новой; заменяются только её строки",
+        "GET /api/config/global" to "общий файл: строки voice и zone",
+        "POST /api/tasks/save" to "сохранить задачу (тело: её текст); ?id=прежний_id (пусто для новой)&new=id (имя файла tasks/<id>.txt; другой id переименовывает)",
         "POST /api/tasks/delete" to "удалить задачу; ?id=",
-        "POST /api/config/global" to "заменить все строки voice и zone (тело: текст этих строк)",
-        "POST /api/config" to "сохранить файл задач целиком (тело: текст), с проверкой и историей версий",
-        "GET /api/config/history" to "сохранённые версии конфига",
-        "POST /api/config/restore" to "восстановить версию конфига; ?name=файл",
+        "POST /api/config/global" to "заменить общий файл (тело: строки voice и zone)",
+        "GET /api/config/history" to "сохранённые версии набора задач",
+        "POST /api/config/restore" to "восстановить версию набора задач; ?name=…",
         "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
         "POST /api/ui" to "заменить страницу (тело: HTML); ?name=kiosk",
         "POST /api/ui/reset" to "вернуть встроенную страницу; ?name=kiosk",
@@ -558,21 +554,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return r
     }
 
-    private fun saveTaskReq(originalId: String, bodyText: String): Response {
-        val err = TaskStore.saveTask(bodyText, originalId)
+    private fun saveTaskReq(originalId: String, newId: String, bodyText: String): Response {
+        val err = TaskStore.saveTask(originalId, newId.ifEmpty { originalId }, bodyText)
         if (err != null) return fail(Response.Status.BAD_REQUEST, err)
-        val id = try { Script.parse(bodyText).tasks.firstOrNull()?.id ?: "" } catch (e: Exception) { "" }
-        FLog.i("web", "задача «$id» сохранена")
+        FLog.i("web", if (originalId.isNotEmpty() && newId.isNotEmpty() && newId != originalId) "задача «$originalId» сохранена как «$newId»" else "задача «${newId.ifEmpty { originalId }}» сохранена")
         return ok("задача сохранена")
-    }
-
-    private fun saveConfig(bodyText: String): Response {
-        val err = TaskStore.save(bodyText)
-        if (err != null) {
-            return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to err))
-        }
-        FLog.i("web", "конфиг задач сохранён (${bodyText.length} символов)")
-        return json(Response.Status.OK, obj("ok" to true, "message" to "сохранено"))
     }
 
     private fun restoreConfig(name: String): Response {

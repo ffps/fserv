@@ -28,10 +28,10 @@ object TaskSchema {
         fun err(node: Any?, msg: String): String = "строка ${lines[node] ?: 0}: $msg"
     }
 
-    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, fileExists: (String) -> Boolean = { true }): String? {
+    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
         fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
         root.optJSONObject("voice")?.let { v -> voice(v)?.let { return err(v, it) } }
-        val zones = HashSet<String>()
+        val zones = HashSet<String>(extraZones)
         root.optJSONObject("zones")?.let { z ->
             for (name in z.keys()) {
                 val zo = z.getJSONObject(name)
