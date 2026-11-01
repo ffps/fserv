@@ -131,11 +131,13 @@
   <h2>Общие настройки задач</h2>
   <div class="f">
     <label for="gVol">Громкость по умолчанию, %</label><input id="gVol" type="number" min="0" max="100" placeholder="не задана">
+    <label for="gEngine">Чем говорить</label><select id="gEngine"><option value="">голос Android (по умолчанию)</option><option value="piper">нейроголос Piper (скачивается на вкладке «Звук»)</option></select>
     <label for="gLang">Язык голоса</label><input id="gLang" placeholder="ru-RU">
     <label for="gVoice">Голос</label><select id="gVoice"><option value="">по умолчанию</option></select>
     <label for="gRate">Скорость речи (1 = обычная)</label><input id="gRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
     <label for="gPitch">Тон голоса (1 = обычный)</label><input id="gPitch" type="number" step="0.05" min="0.3" max="2" placeholder="1">
   </div>
+  <p class="hint">Язык, голос и тон относятся к голосу Android; нейроголос Piper их не использует (скорость и громкость работают у обоих).</p>
   <details style="margin-top:10px"><summary>Зоны детектора движения (строки zone)</summary>
     <textarea id="gZones" rows="6" spellcheck="false" placeholder="zone bed rect=[0.1,0.2,0.9,0.9] exclude=[[0,0,0.2,0.2]]"></textarea>
     <p class="hint">Одна зона на строке: <code>zone имя rect=[x1,y1,x2,y2]</code> (доли кадра от 0 до 1), можно <code>rects=[[…],[…]]</code> и <code>exclude=[[…]]</code>. Зона подключается в шаге watch параметром <code>zone=bed</code>.</p>
@@ -455,7 +457,7 @@ track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
 track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
-track("gSave", ["gVol", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
+track("gSave", ["gVol", "gEngine", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
 track("pgSave", ["pgText"]);
 track("tkSave", [], () => tkOpen && (tkDirty() || tkOrig === ""));
 
@@ -833,6 +835,7 @@ const qv = v => /^[A-Za-z0-9_.:-]+$/.test(v) ? v : JSON.stringify(v);
 function buildGlobal() {
   const p = [];
   if ($("#gVol").value !== "") p.push("volume=" + Number($("#gVol").value));
+  if ($("#gEngine").value) p.push("engine=" + $("#gEngine").value);
   if ($("#gLang").value.trim()) p.push("lang=" + qv($("#gLang").value.trim()));
   if ($("#gVoice").value) p.push("voice=" + JSON.stringify($("#gVoice").value));
   if ($("#gRate").value !== "") p.push("rate=" + Number($("#gRate").value));
@@ -846,7 +849,7 @@ async function loadGlobal() {
   cfgObj = (await api("/api/config/tasks")).json;
   if (cfgObj.globalError) say("#gMsg", "Общие настройки не читаются: " + cfgObj.globalError + ". Исправьте их ниже и сохраните.", false);
   const g = parseGlobal(cfgObj.global || ""), v = g.voice;
-  $("#gVol").value = v.volume ?? ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
+  $("#gVol").value = v.volume ?? ""; $("#gEngine").value = v.engine === "piper" ? "piper" : ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
   $("#gZones").value = g.zones;
   try {
     const vi = (await api("/api/voice")).json;
