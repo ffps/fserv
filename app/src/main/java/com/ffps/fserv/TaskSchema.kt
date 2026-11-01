@@ -103,6 +103,7 @@ object TaskSchema {
             is JSONArray -> for (i in 0 until steps.length()) collectVars(steps.opt(i), vars, photos)
             is JSONObject -> {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
                 for (k in listOf("then", "else", "do", "background")) collectVars(steps.opt(k), vars, photos)
             }
@@ -141,7 +142,7 @@ object TaskSchema {
     private fun cond(text: Any?, c: Ctx, what: String): String? {
         if (text !is String) return "$what: ожидается условие, например not moved"
         val ids = try { Expr.idents(text) } catch (e: IllegalArgumentException) { return "$what «$text»: ${e.message}" }
-        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (её задаёт assign у watch или photo)"
+        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (её задаёт assign у watch, ask или photo)"
         return null
     }
 
@@ -149,7 +150,7 @@ object TaskSchema {
         val a = Script.ACTIONS.first { s.has(it) }
         fun e(msg: String) = c.err(s, msg)
         if (c.inBg) {
-            if (a in setOf("watch", "background", "stop_background", "photo", "stop")) return e("$a: внутри background не допускается (камера и остановка задачи принадлежат основному ходу)")
+            if (a in setOf("watch", "background", "stop_background", "photo", "stop", "ask")) return e("$a: внутри background не допускается (камера, микрофон и остановка задачи принадлежат основному ходу)")
             if ((a == "say" || a == "play") && s.has("wait")) return e("$a: внутри background параметр wait не нужен (блок и так идёт в фоне)")
         }
         val v = s.opt(a)
@@ -160,6 +161,27 @@ object TaskSchema {
                 pauses(v)?.let { return e("say: $it") }
                 volume(s)?.let { return e(it) }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: true или false (или флаг wait)")
+            }
+            "ask" -> {
+                if (v !is String || v.isBlank()) return e("ask: нужен непустой текст вопроса")
+                tpl(v, c)?.let { return e("ask: $it") }
+                pauses(v)?.let { return e("ask: $it") }
+                val n = s.opt("assign")
+                if (n !is String || !VAR_RE.matches(n)) return e("ask: нужен assign=имя (латинские буквы, цифры и _), куда попадёт ответ, например ask \"Какое давление?\" assign=bp kind=number")
+                if (n in BUILTINS) return e("ask: имя «$n» занято встроенной подстановкой")
+                if (s.has("kind") && s.opt("kind") !in listOf("yesno", "number")) return e("ask: kind — yesno (да или нет, по умолчанию) или number (число от 0 до 999)")
+                if (s.has("listen")) {
+                    val ms = try { Dur.parse(s.opt("listen"), "listen") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "listen") }
+                    if (ms.minMs < 2_000 || ms.maxMs > 120_000) return e("ask: listen — от 2s до 2m (сколько ждать ответ)")
+                }
+                if (s.has("retries") && !(s.opt("retries") is Number && s.optInt("retries", -1) in 0..5)) return e("ask: retries — число от 0 до 5 (сколько раз переспросить)")
+                if (s.has("again")) {
+                    val t = s.opt("again")
+                    if (t !is String || t.isBlank()) return e("ask: again — текст в кавычках, который говорится при повторном вопросе")
+                    tpl(t, c)?.let { return e("ask: again: $it") }
+                    pauses(t)?.let { return e("ask: again: $it") }
+                }
+                volume(s)?.let { return e(it) }
             }
             "log", "telegram", "stop" -> {
                 if (v !is String || (v.isBlank() && a != "stop")) return e("$a: нужен непустой текст")

@@ -101,7 +101,7 @@ class ScriptTest {
         expect("task wake\n  say \"a\"", "у task нет настройки «wake»")
         expect(task("watch 5s zone=nope"), "зона «nope»")
         expect(task("say \"a\" volume=1 volume=2"), "дважды")
-        expect(task("ask \"?\""), "этапе 5")
+        expect(task("chat \"?\""), "этапе 6")
         expect(task("background\n    watch 5s"), "внутри background")
         expect("task\n  say \"a\"\n  cron=\"0 9 * * *\"", "в строке task или сразу под ней")
         expect("task crn=1\n  say \"a\"", "у task нет настройки «crn»")

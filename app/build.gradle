@@ -59,6 +59,9 @@ dependencies {
     // Собственный HTTP-клиент: платформенный в Android 8.0 падает с NullPointerException при закрытии соединения
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
+    // Офлайн-распознавание коротких ответов (шаг ask); модель речи скачивается отдельно, см. Stt.kt
+    implementation 'com.alphacephei:vosk-android:0.3.47'
+
     // Тесты логики (длительности, условия, схема задач) выполняются на обычной JVM
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20231013'

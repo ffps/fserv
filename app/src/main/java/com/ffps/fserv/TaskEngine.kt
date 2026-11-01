@@ -215,6 +215,7 @@ object TaskEngine {
         r.cancelled = true
         r.bg.forEach { try { it.join(2000) } catch (e: Exception) {} }
         Voice.stop()
+        Stt.release()
         CameraEngine.setOverride(null)
         CameraEngine.stop("task")
     }
@@ -294,6 +295,7 @@ object TaskEngine {
                     if (wait) { speak(); check(r) } else startSlot(r, "say", p) { speak() }
                 }
             }
+            s.has("ask") -> ask(r, s, p)
             s.has("play") -> play(r, s, p)
             s.has("photo") -> photo(r, s, p)
             s.has("background") -> {
@@ -434,6 +436,49 @@ object TaskEngine {
         var any = false
         for (n in r.slots.keys.toList()) if (stopSlot(r, n)) any = true
         return any
+    }
+
+    /** Вопрос голосом и ответ с микрофона: число или «да/нет» кладётся в переменную assign; не понято после переспросов — переменной нет. */
+    private fun ask(r: Run, s: JSONObject, p: String) {
+        val text = fill(r, s.optString("ask"))
+        val name = s.optString("assign")
+        val kind = s.optString("kind", "yesno")
+        val listenMs = if (s.has("listen")) Dur.parse(s.opt("listen"), "listen").sample(r.rnd) else 15_000L
+        val retries = s.optInt("retries", 1)
+        val again = if (s.has("again")) s.optString("again") else "Повторите, пожалуйста."
+        log(r, p, "ask: $text → $name ($kind, ждать ${Dur.human(listenMs)}, переспросов до $retries)")
+        if (r.info.dry) {
+            val v = r.assume[name]
+            val value: Any? = if (kind == "number") (v as? Number)?.toInt() else v as? Boolean
+            if (value != null) r.vars[name] = value
+            log(r, p, "пробный запуск: ответ ${value ?: "не получен"} (задайте assume=$name:${if (kind == "number") "120" else "true"}, чтобы проверить другую ветку)")
+            return
+        }
+        val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+        var attempt = 0
+        while (true) {
+            val phrase = if (attempt == 0) text else fill(r, again)
+            Voice.speak(phrase, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
+            check(r)
+            sleep(r, 300) // эхо синтезатора не должно попасть в микрофон
+            val heard = try {
+                Stt.listen(r.ctx, kind, listenMs) { r.stopRequested() }
+            } catch (e: IllegalStateException) {
+                throw StepError(e.message ?: "распознавание речи недоступно")
+            }
+            check(r)
+            log(r, p, "услышано: «$heard»")
+            val value = Speech.parse(kind, heard)
+            if (value != null) {
+                r.vars[name] = value
+                log(r, p, "$name = $value")
+                return
+            }
+            if (attempt++ >= retries) {
+                log(r, p, "ответ не получен, переменной $name нет")
+                return
+            }
+        }
     }
 
     /** Фото с камеры в PhotoStore; камера включается на время шага. */

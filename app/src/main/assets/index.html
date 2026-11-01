@@ -188,6 +188,19 @@
   <p class="hint" id="svInfo"></p>
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
   <p class="hint">Язык, голос, скорость и тон задаются строкой <code>voice</code> файла задач (вкладка «Задачи», общие настройки), например <code>voice lang=ru-RU rate=0.9 pitch=1 volume=80</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
+  <h2 style="margin-top:22px">Распознавание речи</h2>
+  <div class="kvwrap"><table class="kv"><tbody id="sttInfo"></tbody></table></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn" id="sttDownload">Скачать модель</button>
+    <button class="ib del" id="sttDelete" title="Удалить модель распознавания"></button>
+  </div>
+  <div class="msg" id="sttMsg"></div>
+  <div class="row" style="margin-top:6px">
+    <label>Проверка микрофона: ответ <select id="sttKind"><option value="yesno">да или нет</option><option value="number">число</option></select></label>
+    <button class="ib add" id="sttTest" title="Слушать 10 секунд"></button>
+  </div>
+  <div class="msg" id="sttTMsg"></div>
+  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -461,7 +474,7 @@ const ICO = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay") b.innerHTML = ICO.play; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -931,8 +944,34 @@ async function loadSound() {
     $("#svInfo").textContent = v.ready ? "Синтезатор: " + (v.engine || "?") + "; язык " + v.lang + (v.languageAvailable ? " доступен" : " НЕ доступен: установите голос в настройках устройства (Язык и ввод, Синтез речи)") : "Синтезатор не готов: " + v.error;
     $("#svVoices").textContent = v.voices && v.voices.length ? v.voices.map(x => x.name + "  (" + x.locale + (x.network ? ", нужен интернет" : ", автономный") + ")").join("\n") : "нет данных";
   } catch (e) { $("#svInfo").textContent = e.message; }
+  loadStt();
   loadSoundFiles();
 }
+let sttTimer = null, sttBusy = false;
+async function loadStt() {
+  try {
+    const t = (await api("/api/stt")).json;
+    const st = {none: "модель не скачана", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готова", error: "ошибка скачивания"}[t.state] || t.state;
+    $("#sttInfo").innerHTML = kvRow("Модель", st) + (t.error ? kvRow("Ошибка", t.error) : "") + kvRow("Микрофон", t.permission ? "разрешён" : "нет разрешения: нажмите Allow microphone на устройстве");
+    $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
+    $("#sttDelete").disabled = t.state !== "ready";
+    const busy = t.state === "downloading" || t.state === "unpacking";
+    if (busy && !sttTimer) sttTimer = setInterval(() => { if (current === "sound") loadStt(); }, 1500);
+    if (!busy && sttTimer) { clearInterval(sttTimer); sttTimer = null; }
+  } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
+}
+$("#sttDownload").onclick = () => run("#sttMsg", async () => { const r = await post("/api/stt/download"); loadStt(); return r.json.message; });
+$("#sttDelete").onclick = () => { if (confirm("Удалить модель распознавания? Для шага ask её придётся скачать снова.")) run("#sttMsg", async () => { const r = await post("/api/stt/delete"); loadStt(); return r.json.message; }); };
+function setSttBtn(on) { sttBusy = on; const b = $("#sttTest"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Слушать 10 секунд"; }
+$("#sttTest").onclick = () => {
+  if (sttBusy) { post("/api/stt/stop").catch(() => {}); return; }
+  setSttBtn(true);
+  run("#sttTMsg", async () => {
+    say("#sttTMsg", "слушаю 10 секунд, говорите…", true);
+    try { const r = await post("/api/stt/test?kind=" + $("#sttKind").value + "&listen=10"); const v = r.json.value; return r.json.message + (v === null || v === undefined ? ", значение не понято" : ", значение: " + v); }
+    finally { setSttBtn(false); }
+  });
+};
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {

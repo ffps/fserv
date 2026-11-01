@@ -37,6 +37,7 @@ class SettingsActivity : Activity() {
     private lateinit var allow: Button
     private lateinit var allowCam: Button
     private lateinit var allowPhoto: Button
+    private lateinit var allowMic: Button
     private lateinit var allowOv: Button
     private lateinit var crash: EditText
     private lateinit var crashLabel: TextView
@@ -143,6 +144,14 @@ class SettingsActivity : Activity() {
             setOnClickListener { requestPermissions(arrayOf("android.permission.CAMERA"), 2) }
         }
         root.addView(allowCam, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+
+        allowMic = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Allow microphone"
+            setOnClickListener { requestPermissions(arrayOf("android.permission.RECORD_AUDIO"), 4) }
+        }
+        root.addView(allowMic, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
@@ -292,6 +301,7 @@ class SettingsActivity : Activity() {
         allowOv.visibility = if (Build.VERSION.SDK_INT < 29 || android.provider.Settings.canDrawOverlays(this)) android.view.View.GONE else android.view.View.VISIBLE
         allowCam.visibility = if (CameraEngine.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         // на Android 8–9 фото в общую папку DCIM пишутся только с разрешением; на 10+ оно не нужно
+        allowMic.visibility = if (Stt.hasPermission(this)) android.view.View.GONE else android.view.View.VISIBLE
         allowPhoto.visibility = if (PhotoStore.needsPermission(this)) android.view.View.VISIBLE else android.view.View.GONE
         allow.visibility = if (Updater.canInstall(this)) android.view.View.GONE else android.view.View.VISIBLE
         status.text = ServerService.statusLine()
@@ -312,8 +322,8 @@ class SettingsActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // Разрешение камеры выдано: служба переоформляется с типом camera.
-        if (requestCode == 2 && Settings.serviceEnabled && Settings.isConfigured) ServerService.start(this)
+        // Разрешение камеры или микрофона выдано: служба переоформляется с типом camera или microphone.
+        if ((requestCode == 2 || requestCode == 4) && Settings.serviceEnabled && Settings.isConfigured) ServerService.start(this)
     }
 
     override fun onResume() {

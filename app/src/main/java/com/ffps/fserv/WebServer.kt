@@ -24,6 +24,7 @@ import java.util.TimeZone
  */
 class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     @Volatile private var sayStop = false
+    @Volatile private var sttStop = false
 
     private var lastAuthWarn = 0L
 
@@ -102,7 +103,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/run" -> {
                 val assume = HashMap<String, Any?>()
                 (q(s, "assume") ?: "").split(",").filter { it.contains(":") }.forEach {
-                    assume[it.substringBefore(":").trim()] = it.substringAfter(":").trim() == "true"
+                    val v = it.substringAfter(":").trim()
+                    assume[it.substringBefore(":").trim()] = if (v == "true") true else if (v == "false") false else v.toIntOrNull() ?: v
                 }
                 val err = TaskEngine.runNow(q(s, "id") ?: "", q(s, "dry") == "1", assume)
                 if (err == null) ok("задача поставлена на выполнение") else fail(Response.Status.CONFLICT, err)
@@ -155,6 +157,26 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             }
 
             post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
+
+            get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx))
+            post && uri == "/api/stt/download" -> {
+                val err = Stt.downloadAsync()
+                if (err == null) ok("скачивание запущено") else fail(Response.Status.CONFLICT, err)
+            }
+            post && uri == "/api/stt/delete" -> { Stt.delete(); FLog.i("stt", "модель распознавания удалена"); ok("модель удалена") }
+            post && uri == "/api/stt/stop" -> { sttStop = true; ok("остановлено") }
+            post && uri == "/api/stt/test" -> {
+                val kind = q(s, "kind") ?: "yesno"
+                require(kind == "yesno" || kind == "number") { "kind: yesno или number" }
+                val sec = (q(s, "listen")?.toIntOrNull() ?: 10).coerceIn(2, 60)
+                sttStop = false
+                try {
+                    val r = Stt.test(ctx, kind, sec * 1000L) { sttStop }
+                    json(Response.Status.OK, obj("ok" to true, "message" to (if (r.optString("heard").isEmpty()) "ничего не услышано" else "услышано: «${r.optString("heard")}»"), "heard" to r.optString("heard"), "value" to r.opt("value")))
+                } catch (e: IllegalStateException) {
+                    fail(Response.Status.CONFLICT, e.message ?: "распознавание недоступно")
+                }
+            }
 
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
             post && uri == "/api/camera/start" -> {
@@ -488,6 +510,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
         "POST /api/say" to "произнести текст (тело); ?volume=80",
         "POST /api/say/stop" to "прервать речь",
+        "GET /api/stt" to "распознавание речи: состояние модели, разрешение микрофона, ход скачивания",
+        "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
+        "POST /api/stt/delete" to "удалить модель распознавания",
+        "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number&listen=10 (секунд); возвращает услышанное и значение",
+        "POST /api/stt/stop" to "прервать проверку микрофона",
         "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",
         "POST /api/camera/start" to "включить камеру вручную",
         "POST /api/camera/stop" to "выключить камеру, включённую вручную",

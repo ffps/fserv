@@ -40,12 +40,13 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов, расположение задач и общих строк voice/zone в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>, val globalLines: List<Int>)
 
-    val ACTIONS = listOf("say", "play", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
-    private val RESERVED = mapOf("ask" to "ask (вопрос голосом) появится на этапе 5, вместе с распознаванием речи", "chat" to "chat (разговор с ИИ) появится на этапе 6")
+    val ACTIONS = listOf("say", "ask", "play", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    private val RESERVED = mapOf("chat" to "chat (разговор с ИИ) появится на этапе 6")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
         "say" to listOf("volume", "wait"),
+        "ask" to listOf("assign", "kind", "listen", "retries", "again", "volume"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "telegram" to listOf("files"),
         "photo" to listOf("assign", "size"),
@@ -273,7 +274,7 @@ object Script {
             pos++
             val pv = a.positional
             when (word) {
-                "say", "log", "telegram" -> {
+                "say", "ask", "log", "telegram" -> {
                     if (pv == null) fail(l.no, "$word: нужен текст в кавычках, например $word \"Привет\"")
                     if (pv !is Q) fail(l.no, "$word: текст нужно написать в кавычках, например $word \"Привет\"")
                     s.put(word, pv.s)
