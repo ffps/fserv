@@ -77,7 +77,7 @@ object Updater {
             latest = res
             lastCheck = System.currentTimeMillis()
             lastError = ""
-            FLog.i("update", "проверка: последняя ${res.optString("versionName")} (${res.optLong("versionCode")}), установлена ${BuildConfig.VERSION_NAME}")
+            FLog.d("update", "проверка: последняя ${res.optString("versionName")} (${res.optLong("versionCode")}), установлена ${BuildConfig.VERSION_NAME}")
             return res
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName

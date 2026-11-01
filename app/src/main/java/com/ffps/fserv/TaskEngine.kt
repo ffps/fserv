@@ -228,7 +228,7 @@ object TaskEngine {
             r.info.lines.add(line)
             while (r.info.lines.size > MAX_LINES) r.info.lines.removeAt(0)
         }
-        FLog.i("task", "${r.info.id}: " + (if (path.isEmpty()) "" else "[$path] ") + text)
+        FLog.d("task", "${r.info.id}: " + (if (path.isEmpty()) "" else "[$path] ") + text)
     }
 
     // ---------------- выполнение шагов ----------------
@@ -461,12 +461,14 @@ object TaskEngine {
             return
         }
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+        Stt.check(r.ctx)?.let { throw StepError(it) } // не спрашиваем, если слушать всё равно нечем
+        Stt.prepareAsync(kind) // модель и распознаватель готовятся, пока звучит вопрос: слушание начнётся сразу после него
         var attempt = 0
         while (true) {
             val phrase = if (attempt == 0) text else fill(r, again)
             Voice.speak(phrase, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
             check(r)
-            sleep(r, 300) // эхо синтезатора не должно попасть в микрофон
+            sleep(r, 150) // эхо синтезатора не должно попасть в микрофон
             val heard = try {
                 Stt.listen(r.ctx, kind, listenMs) { r.stopRequested() }
             } catch (e: IllegalStateException) {

@@ -256,7 +256,7 @@ object CameraEngine {
             val r = ImageReader.newInstance(size.width, size.height, ImageFormat.YUV_420_888, 3)
             reader = r
             r.setOnImageAvailableListener({ rd -> onImage(rd, gen) }, h)
-            FLog.i("camera", "открываю камеру $id, ${size.width}x${size.height}, ориентация сенсора $sensorOrientation")
+            FLog.d("camera", "открываю камеру $id, ${size.width}x${size.height}, ориентация сенсора $sensorOrientation")
             mgr.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(d: CameraDevice) {
                     if (gen != generation) { d.close(); return }
@@ -299,7 +299,7 @@ object CameraEngine {
                             req.addTarget(surface)
                             pickFps(ch)?.let { req.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
                             s.setRepeatingRequest(req.build(), null, h)
-                            FLog.i("camera", "поток кадров запущен")
+                            FLog.d("camera", "поток кадров запущен")
                         } catch (e: Exception) {
                             fail("запуск потока: ${e.javaClass.simpleName}: ${e.message}", true)
                         }
@@ -393,7 +393,7 @@ object CameraEngine {
                 retryDelay = 2000L
                 lastError = ""
                 firstFrameLatencyMs = now - openedAt
-                FLog.i("camera", "первый кадр через $firstFrameLatencyMs мс")
+                FLog.d("camera", "первый кадр через $firstFrameLatencyMs мс")
             }
             framesTotal++
             lastFrameAt = now

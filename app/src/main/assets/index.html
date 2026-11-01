@@ -980,9 +980,10 @@ $("#sttTest").onclick = () => {
   if (sttBusy) { post("/api/stt/stop").catch(() => {}); return; }
   setSttBtn(true);
   run("#sttTMsg", async () => {
-    say("#sttTMsg", "слушаю 10 секунд, говорите…", true);
+    say("#sttTMsg", "готовлю распознавание…", true);
+    const ph = setInterval(async () => { try { const t = (await api("/api/stt")).json; if (t.phase === "listening") say("#sttTMsg", "слушаю до 10 секунд, говорите!", true); else if (t.phase === "loading") say("#sttTMsg", "загружаю модель в память (несколько секунд)…", true); } catch (e) {} }, 700);
     try { const r = await post("/api/stt/test?kind=" + $("#sttKind").value + "&listen=10"); const v = r.json.value; return r.json.message + (v === null || v === undefined ? ", значение не понято" : ", значение: " + v); }
-    finally { setSttBtn(false); }
+    finally { clearInterval(ph); setSttBtn(false); }
   });
 };
 let playing = null;

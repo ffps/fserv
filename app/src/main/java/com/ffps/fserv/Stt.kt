@@ -44,7 +44,7 @@ object Stt {
     fun status(ctx: Context): JSONObject = obj(
         "state" to state, "ready" to (state == "ready"), "permission" to hasPermission(ctx),
         "percent" to (if (total > 0) (done * 100 / total).toInt() else null), "doneMb" to done / 1048576, "totalMb" to (if (total > 0) total / 1048576 else null),
-        "error" to lastError.ifEmpty { null }, "url" to MODEL_URL
+        "error" to lastError.ifEmpty { null }, "url" to MODEL_URL, "phase" to phase
     )
 
     private fun dlDir() = File(root, "dl")
@@ -87,12 +87,12 @@ object Stt {
                 val t0 = System.currentTimeMillis()
                 var nextLog = 0L
                 var first = true
-                FLog.i("stt", "попытка $attempt из $ATTEMPTS: ${if (have > 0) "продолжаю с $have байт" else "с начала"}")
+                FLog.d("stt", "попытка $attempt из $ATTEMPTS: ${if (have > 0) "продолжаю с $have байт" else "с начала"}")
                 val r = Net.request("stt", "GET", MODEL_URL, headers = headers + BROWSER, saveTo = zip, timeoutMs = 120_000) { d, t ->
                     done = d; total = t
                     val now = System.currentTimeMillis()
-                    if (first) { first = false; FLog.i("stt", "первые данные получены через ${now - t0} мс, размер ${if (t > 0) "$t байт" else "неизвестен"}") }
-                    if (now >= nextLog) { nextLog = now + 10_000; FLog.i("stt", "получено ${d / 1024} КБ из ${if (t > 0) "${t / 1024} КБ" else "?"}, ${d * 1000 / maxOf(1, now - t0) / 1024} КБ/с в среднем") }
+                    if (first) { first = false; FLog.d("stt", "первые данные получены через ${now - t0} мс, размер ${if (t > 0) "$t байт" else "неизвестен"}") }
+                    if (now >= nextLog) { nextLog = now + 10_000; FLog.d("stt", "получено ${d / 1024} КБ из ${if (t > 0) "${t / 1024} КБ" else "?"}, ${d * 1000 / maxOf(1, now - t0) / 1024} КБ/с в среднем") }
                 }
                 FLog.i("stt", "ответ HTTP ${r.code}, файл ${zip.length()} байт, за ${(System.currentTimeMillis() - t0) / 1000} с")
                 if (r.code == 416 && zip.length() > MIN_ZIP) break // файл уже целиком
@@ -201,51 +201,106 @@ object Stt {
     private fun loadModel(): Model {
         model?.let { return it }
         if (!modelReady()) throw IllegalStateException("модель распознавания речи не скачана: вкладка «Звук», раздел «Распознавание речи»")
+        val t0 = System.currentTimeMillis()
         val m = try { Model(modelDir().absolutePath) } catch (e: Throwable) { throw IllegalStateException("модель распознавания не открылась: ${e.message}") }
         model = m
+        FLog.d("stt", "модель загружена за ${System.currentTimeMillis() - t0} мс")
         return m
     }
+
+    private var rec: Recognizer? = null
+    private var recKind = ""
+
+    /** Распознаватель для вида ответа [kind]: собирается один раз и живёт до [release] (сборка словаря занимает время). */
+    @Synchronized
+    private fun recognizer(kind: String): Recognizer {
+        rec?.let { if (recKind == kind) return it }
+        try { rec?.close() } catch (e: Throwable) {}
+        rec = null
+        val m = loadModel()
+        val t0 = System.currentTimeMillis()
+        val r = Recognizer(m, RATE.toFloat(), JSONArray(Speech.grammar(kind)).toString())
+        FLog.d("stt", "распознаватель ($kind) собран за ${System.currentTimeMillis() - t0} мс")
+        rec = r; recKind = kind
+        return r
+    }
+
+    /** Условия слушания выполнены? Текст ошибки или null. Вызывается до вопроса, чтобы не спрашивать зря. */
+    fun check(ctx: Context): String? = when {
+        !hasPermission(ctx) -> "нет разрешения на микрофон: на устройстве нажмите Allow microphone в окне настроек"
+        !modelReady() -> "модель распознавания речи не скачана: вкладка «Звук», раздел «Распознавание речи»"
+        else -> null
+    }
+
+    /** Заранее загружает модель и собирает распознаватель (в фоне, пока задаётся вопрос), чтобы слушание началось сразу. */
+    fun prepareAsync(kind: String): Thread = Thread {
+        try { recognizer(kind) } catch (e: Throwable) { FLog.w("stt", "подготовка распознавателя: ${e.message}") }
+    }.also { it.start() }
 
     /** Освобождает память модели (вызывается в конце задачи и после проверки). */
     @Synchronized
     fun release() {
+        try { rec?.close() } catch (e: Throwable) {}
+        rec = null; recKind = ""
         try { model?.close() } catch (e: Throwable) {}
         model = null
     }
 
+    /** «loading» — готовится модель, «listening» — микрофон слушает, пусто — не занят. Для подсказки в веб-интерфейсе. */
+    @Volatile var phase = ""
+
+    private const val TARGET_PEAK = 20000
+    private const val MAX_GAIN = 8f
+
     /**
      * Слушает микрофон до ответа или [maxMs]; возвращает распознанный текст (пусто, если ничего не сказано).
      * [kind] — number или yesno: распознаются только слова из словаря этого вида. Ошибки условий (нет разрешения, нет модели)
-     * приходят как IllegalStateException с понятным текстом.
+     * приходят как IllegalStateException с понятным текстом. Тихий звук усиливается программно (до ×8, без перегруза).
      */
     fun listen(ctx: Context, kind: String, maxMs: Long, cancel: () -> Boolean): String {
-        if (!hasPermission(ctx)) throw IllegalStateException("нет разрешения на микрофон: на устройстве нажмите Allow microphone в окне настроек")
-        val m = loadModel()
-        val grammar = JSONArray(Speech.grammar(kind)).toString()
-        val rec = Recognizer(m, RATE.toFloat(), grammar)
+        check(ctx)?.let { throw IllegalStateException(it) }
+        phase = "loading"
+        val t0 = System.currentTimeMillis()
+        val rc = recognizer(kind)
+        rc.reset()
+        val prepMs = System.currentTimeMillis() - t0
         val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val ar = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RATE))
+        var rawPeak = 0
+        var maxGain = 1f
+        val t1 = System.currentTimeMillis()
         try {
             if (ar.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("микрофон не открылся (занят другим приложением?)")
             ar.startRecording()
-            val buf = ShortArray(RATE / 4)
+            phase = "listening"
+            val buf = ShortArray(RATE / 10)
             val end = System.currentTimeMillis() + maxMs
             var text = ""
+            var gain = 1f
             while (System.currentTimeMillis() < end && !cancel()) {
                 val n = ar.read(buf, 0, buf.size)
                 if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
                 if (n == 0) continue
-                if (rec.acceptWaveForm(buf, n)) {
-                    val t = clean(JSONObject(rec.result).optString("text"))
+                var peak = 0
+                for (i in 0 until n) { val a = Math.abs(buf[i].toInt()); if (a > peak) peak = a }
+                if (peak > rawPeak) rawPeak = peak
+                // усиление: растёт медленно по уровню сигнала, но для этого блока не выше, чем нужно, чтобы не было перегруза
+                if (peak > 150) gain = gain * 0.9f + (TARGET_PEAK.toFloat() / peak).coerceIn(1f, MAX_GAIN) * 0.1f
+                val g = if (peak > 0) minOf(gain, 32000f / peak) else gain
+                if (g > 1.05f) for (i in 0 until n) buf[i] = (buf[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+                if (g > maxGain) maxGain = g
+                if (rc.acceptWaveForm(buf, n)) {
+                    val t = clean(JSONObject(rc.result).optString("text"))
                     if (t.isNotEmpty()) { text = t; break }
                 }
             }
-            if (text.isEmpty()) text = clean(JSONObject(rec.finalResult).optString("text"))
+            if (text.isEmpty()) text = clean(JSONObject(rc.finalResult).optString("text"))
             return text
         } finally {
+            phase = ""
             try { ar.stop() } catch (e: Exception) {}
             ar.release()
-            rec.close()
+            FLog.i("stt", "слушал ${(System.currentTimeMillis() - t1) / 1000.0} с (подготовка ${prepMs} мс), пик сигнала $rawPeak из 32767, усиление до ×${"%.1f".format(maxGain)}")
         }
     }
 
