@@ -156,7 +156,7 @@ object Settings {
     @Synchronized
     fun allProxies(): List<ProxyCfg> = listOfNotNull(proxyCfg("test"))
 
-    val PURPOSES = listOf("telegram", "llm", "updates")
+    val PURPOSES = listOf("telegram", "llm", "updates", "stt")
 
     /** Настройки заданы: без пароля веб-интерфейс не запускается. */
     val isConfigured: Boolean get() = password.isNotEmpty()
@@ -210,7 +210,8 @@ object Settings {
                 "passwordSet" to !(p?.optString("password").isNullOrEmpty()),
                 "telegram" to (p?.optBoolean("telegram") ?: false),
                 "llm" to (p?.optBoolean("llm") ?: false),
-                "updates" to (p?.optBoolean("updates") ?: false)
+                "updates" to (p?.optBoolean("updates") ?: false),
+                "stt" to (p?.optBoolean("stt") ?: false)
             )
         },
         "updateRepo" to updateRepo,

@@ -88,7 +88,7 @@ object Stt {
                 var nextLog = 0L
                 var first = true
                 FLog.i("stt", "попытка $attempt из $ATTEMPTS: ${if (have > 0) "продолжаю с $have байт" else "с начала"}")
-                val r = Net.request("updates", "GET", MODEL_URL, headers = headers + BROWSER, saveTo = zip, timeoutMs = 120_000) { d, t ->
+                val r = Net.request("stt", "GET", MODEL_URL, headers = headers + BROWSER, saveTo = zip, timeoutMs = 120_000) { d, t ->
                     done = d; total = t
                     val now = System.currentTimeMillis()
                     if (first) { first = false; FLog.i("stt", "первые данные получены через ${now - t0} мс, размер ${if (t > 0) "$t байт" else "неизвестен"}") }
@@ -101,7 +101,7 @@ object Stt {
                 break
             } catch (e: java.io.IOException) {
                 last = e.message ?: e.javaClass.simpleName
-                if (attempt == ATTEMPTS) throw java.io.IOException("не удалось скачать за $ATTEMPTS попыток ($last). Скачанное сохранено, можно нажать «Скачать модель» ещё раз или загрузить zip с компьютера")
+                if (attempt == ATTEMPTS) throw java.io.IOException("не удалось скачать за $ATTEMPTS попыток ($last). Если сервер недоступен из вашей сети, включите прокси для модели на вкладке «Связь» или загрузите zip с компьютера. Скачанное сохранено, «Скачать модель» продолжит")
                 lastError = "попытка $attempt из $ATTEMPTS не удалась ($last), повторяю"
                 FLog.w("stt", lastError)
                 try { Thread.sleep(3000) } catch (x: InterruptedException) {}

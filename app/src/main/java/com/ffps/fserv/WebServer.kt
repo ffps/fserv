@@ -433,8 +433,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     /** Проверка связи: запрос к каждому из трёх адресов; через прокси, если для адреса стоит галочка, иначе напрямую. Любой HTTP-ответ означает, что связь есть. */
     private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
-        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"))
-        require(name == null || all.any { it.first == name }) { "name: telegram, llm или updates" }
+        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"), "stt" to ("Модель речи (alphacephei.com)" to "https://alphacephei.com/vosk/models/"))
+        require(name == null || all.any { it.first == name }) { "name: telegram, llm, updates или stt" }
         val targets = all.filter { name == null || it.first == name }.map { Triple(it.first, it.second.first, it.second.second) }
         val lines = ArrayList<String>()
         var bad = 0

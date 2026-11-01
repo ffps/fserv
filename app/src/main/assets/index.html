@@ -204,7 +204,7 @@
     <button class="ib add" id="sttTest" title="Слушать 10 секунд"></button>
   </div>
   <div class="msg" id="sttTMsg"></div>
-  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
+  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «Модель распознавания речи»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -250,6 +250,7 @@
     <label><input type="checkbox" id="pxTg"> Telegram</label><button class="btn sec sm" data-pt="telegram">Проверить</button><span class="msg" id="pt_telegram"></span>
     <label><input type="checkbox" id="pxLlm"> LLM</label><button class="btn sec sm" data-pt="llm">Проверить</button><span class="msg" id="pt_llm"></span>
     <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
+    <label><input type="checkbox" id="pxStt"> Модель распознавания речи</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
@@ -553,7 +554,7 @@ async function loadComm() {
     const p = st.proxy;
     $("#pxHost").value = p.host; $("#pxPort").value = p.port; $("#pxUser").value = p.user; $("#pxPass").value = "";
     $("#pxPass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
-    $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates;
+    $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates; $("#pxStt").checked = p.stt;
     const t = (await api("/api/telegram")).json;
     $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + dt(t.lastSentAt) : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
     const ob = (await api("/api/outbox")).json;
@@ -573,7 +574,7 @@ $("#pxSave").onclick = () => run("#pxMsg", async () => {
   if ($("#pxPass").value) px.password = $("#pxPass").value;
   await post("/api/settings", JSON.stringify({proxy: px})); loadComm(); return "сохранено";
 }, "pxSave");
-for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"]]) {
+for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"], ["#pxStt", "stt"]]) {
   $(id).onchange = () => run("#pxuMsg", async () => {
     try { await post("/api/settings", JSON.stringify({proxy: {[k]: $(id).checked}})); }
     finally { loadComm(); }
