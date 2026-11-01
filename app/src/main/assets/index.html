@@ -179,7 +179,7 @@
 <section id="sound">
   <div class="row"><label>Громкость проверки, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <div class="hint">Действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы): при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой. Не сохраняется. В задачах громкость задают параметром <code>volume=</code>.</div>
-  <h2>Голос</h2>
+  <h2 style="margin-top:22px">Голос</h2>
   <div class="row">
     <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
     <button class="ib add" id="svSay" title="Сказать"></button>
@@ -195,7 +195,7 @@
     <button class="btn" id="sdUpload">Загрузить</button>
   </div>
   <div class="msg" id="sdMsg"></div>
-  <h2 style="margin-top:22px">Системные сигналы</h2>
+  <h2 style="margin-top:0">Системные сигналы</h2>
   <table><thead><tr><th>Сигнал</th><th>Имя в задаче</th><th></th></tr></thead><tbody id="ssBody"></tbody></table>
   <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>play alarm.mp3 volume=80 fade_in=5s fade_out=3s</code>; список имён <code>play [a.mp3,b.mp3]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
 </section>
