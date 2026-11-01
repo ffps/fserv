@@ -84,7 +84,17 @@ object Stt {
             try {
                 val have = if (zip.exists()) zip.length() else 0L
                 val headers = if (have > 0) mapOf("Range" to "bytes=$have-") else emptyMap()
-                val r = Net.request("updates", "GET", MODEL_URL, headers = headers, saveTo = zip, timeoutMs = 120_000) { d, t -> done = d; total = t }
+                val t0 = System.currentTimeMillis()
+                var nextLog = 0L
+                var first = true
+                FLog.i("stt", "попытка $attempt из $ATTEMPTS: ${if (have > 0) "продолжаю с $have байт" else "с начала"}")
+                val r = Net.request("updates", "GET", MODEL_URL, headers = headers + BROWSER, saveTo = zip, timeoutMs = 120_000) { d, t ->
+                    done = d; total = t
+                    val now = System.currentTimeMillis()
+                    if (first) { first = false; FLog.i("stt", "первые данные получены через ${now - t0} мс, размер ${if (t > 0) "$t байт" else "неизвестен"}") }
+                    if (now >= nextLog) { nextLog = now + 10_000; FLog.i("stt", "получено ${d / 1024} КБ из ${if (t > 0) "${t / 1024} КБ" else "?"}, ${d * 1000 / maxOf(1, now - t0) / 1024} КБ/с в среднем") }
+                }
+                FLog.i("stt", "ответ HTTP ${r.code}, файл ${zip.length()} байт, за ${(System.currentTimeMillis() - t0) / 1000} с")
                 if (r.code == 416 && zip.length() > MIN_ZIP) break // файл уже целиком
                 if (r.code != 200 && r.code != 206) throw java.io.IOException("HTTP ${r.code}")
                 if (total > 0 && zip.length() < total) throw java.io.IOException("получено ${zip.length()} из $total байт")
@@ -101,6 +111,12 @@ object Stt {
         if (zip.length() < MIN_ZIP) { zip.delete(); throw java.io.IOException("файл модели слишком мал (${zip.length()} байт)") }
         try { install(zip) } catch (e: Exception) { dlDir().deleteRecursively(); throw e }
     }
+
+    /** Некоторые серверы долго не отвечают незнакомым клиентам: представляемся как обычный браузер. */
+    private val BROWSER = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Linux; Android 8.0; SM-A320F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0 Mobile Safari/537.36",
+        "Accept" to "*/*", "Accept-Encoding" to "identity"
+    )
 
     private const val MIN_ZIP = 10L * 1024 * 1024
 
