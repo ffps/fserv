@@ -188,6 +188,23 @@
   <p class="hint" id="svInfo"></p>
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
   <p class="hint">Язык, голос, скорость и тон задаются строкой <code>voice</code> файла задач (вкладка «Задачи», общие настройки), например <code>voice lang=ru-RU rate=0.9 pitch=1 volume=80</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
+  <h2 style="margin-top:22px">Голос Piper (нейроголос)</h2>
+  <div class="kvwrap"><table class="kv"><tbody id="pgInfo"></tbody></table></div>
+  <div class="row" style="margin-top:10px">
+    <label>Голос <select id="pgVoice"><option value="irina">Ирина (женский)</option><option value="denis">Денис (мужской)</option><option value="dmitri">Дмитрий (мужской)</option><option value="ruslan">Руслан (мужской)</option></select></label>
+    <button class="btn" id="pgDownload">Скачать голос</button>
+    <button class="ib del" id="pgDelete" title="Удалить голос Piper"></button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <input type="file" id="pgFile" accept=".bz2,.zip,.tar.bz2">
+    <button class="btn sec" id="pgUpload">Загрузить архив с компьютера</button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span style="color:var(--dim)">Проверить этим голосом текст из поля выше</span>
+    <button class="ib add" id="pgSay" title="Сказать голосом Piper"></button>
+  </div>
+  <div class="msg" id="pgMsg"></div>
+  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «Модели речи» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. В памяти голос держится 5 минут после последней фразы.</p>
   <h2 style="margin-top:22px">Распознавание речи</h2>
   <div class="kvwrap"><table class="kv"><tbody id="sttInfo"></tbody></table></div>
   <div class="row" style="margin-top:10px">
@@ -250,7 +267,7 @@
     <label><input type="checkbox" id="pxTg"> Telegram</label><button class="btn sec sm" data-pt="telegram">Проверить</button><span class="msg" id="pt_telegram"></span>
     <label><input type="checkbox" id="pxLlm"> LLM</label><button class="btn sec sm" data-pt="llm">Проверить</button><span class="msg" id="pt_llm"></span>
     <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
-    <label><input type="checkbox" id="pxStt"> Модель распознавания речи</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
+    <label><input type="checkbox" id="pxStt"> Модели речи (распознавание и голос Piper)</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
@@ -479,7 +496,7 @@ const ICO = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest" || b.id === "pgSay") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "pgDelete") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -950,6 +967,7 @@ async function loadSound() {
     $("#svVoices").textContent = v.voices && v.voices.length ? v.voices.map(x => x.name + "  (" + x.locale + (x.network ? ", нужен интернет" : ", автономный") + ")").join("\n") : "нет данных";
   } catch (e) { $("#svInfo").textContent = e.message; }
   loadStt();
+  loadPiper();
   loadSoundFiles();
 }
 let sttTimer = null, sttBusy = false;
@@ -984,6 +1002,38 @@ $("#sttTest").onclick = () => {
     const ph = setInterval(async () => { try { const t = (await api("/api/stt")).json; if (t.phase === "listening") say("#sttTMsg", "слушаю до 10 секунд, говорите!", true); else if (t.phase === "loading") say("#sttTMsg", "загружаю модель в память (несколько секунд)…", true); } catch (e) {} }, 700);
     try { const r = await post("/api/stt/test?kind=" + $("#sttKind").value + "&listen=10"); const v = r.json.value; return r.json.message + (v === null || v === undefined ? ", значение не понято" : ", значение: " + v); }
     finally { clearInterval(ph); setSttBtn(false); }
+  });
+};
+let pgTimer = null, pgBusy = false;
+async function loadPiper() {
+  try {
+    const t = (await api("/api/piper")).json;
+    const st = {none: "голос не скачан", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готов" + (t.voice ? ": " + t.voice : ""), error: "ошибка скачивания"}[t.state] || t.state;
+    $("#pgInfo").innerHTML = kvRow("Голос", st) + (t.error ? kvRow("Ошибка", t.error) : "");
+    const busy = t.state === "downloading" || t.state === "unpacking";
+    $("#pgDownload").disabled = busy;
+    $("#pgUpload").disabled = busy;
+    $("#pgDelete").disabled = t.state !== "ready";
+    if (busy && !pgTimer) pgTimer = setInterval(() => { if (current === "sound") loadPiper(); }, 1500);
+    if (!busy && pgTimer) { clearInterval(pgTimer); pgTimer = null; }
+  } catch (e) { $("#pgInfo").innerHTML = kvRow("Ошибка", e.message); }
+}
+$("#pgDownload").onclick = () => run("#pgMsg", async () => { const r = await post("/api/piper/download?voice=" + $("#pgVoice").value); loadPiper(); return r.json.message; });
+$("#pgUpload").onclick = () => run("#pgMsg", async () => {
+  const f = $("#pgFile").files[0]; if (!f) throw new Error("выберите файл голоса (.tar.bz2 или .zip)");
+  say("#pgMsg", "загружаю " + f.name + " (" + Math.round(f.size / 1048576) + " МБ) и распаковываю, это может занять минуту…", true);
+  const r = await fetch("/api/piper/upload", {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: f});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  $("#pgFile").value = ""; loadPiper(); return j.message || "голос установлен";
+});
+$("#pgDelete").onclick = () => { if (confirm("Удалить голос Piper?")) run("#pgMsg", async () => { const r = await post("/api/piper/delete"); loadPiper(); return r.json.message; }); };
+function setPgBtn(on) { pgBusy = on; const b = $("#pgSay"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Сказать голосом Piper"; }
+$("#pgSay").onclick = () => {
+  if (pgBusy) { post("/api/say/stop").catch(() => {}); return; }
+  setPgBtn(true);
+  run("#pgMsg", async () => {
+    say("#pgMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
+    try { const r = await post("/api/say?engine=piper&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
   });
 };
 let playing = null;

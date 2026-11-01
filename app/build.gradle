@@ -17,6 +17,8 @@ android {
         targetSdk 34
         versionCode vCode
         versionName vName
+        // 64- и 32-разрядные ARM: нативные библиотеки нейроголоса большие, x86 не нужен
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
     }
 
     signingConfigs {
@@ -61,6 +63,12 @@ dependencies {
 
     // Офлайн-распознавание коротких ответов (шаг ask); модель речи скачивается отдельно, см. Stt.kt
     implementation 'com.alphacephei:vosk-android:0.3.47'
+
+    // Офлайн-нейроголос Piper (sherpa-onnx). AAR скачивает CI в app/libs (см. .github/workflows/release.yml), в репозитории его нет
+    implementation files('libs/sherpa-onnx-2.0.1.aar')
+    implementation 'com.github.csukuangfj.piper-phonemize:piper-phonemize:v1.5.9'
+    // распаковка tar.bz2 с моделью голоса
+    implementation 'org.apache.commons:commons-compress:1.26.2'
 
     // Тесты логики (длительности, условия, схема задач) выполняются на обычной JVM
     testImplementation 'junit:junit:4.13.2'

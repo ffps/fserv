@@ -59,7 +59,7 @@ object Script {
         "stop" to emptyList(),
         "log" to emptyList()
     )
-    val VOICE_PARAMS = listOf("volume", "rate", "pitch", "lang", "voice")
+    val VOICE_PARAMS = listOf("volume", "rate", "pitch", "lang", "voice", "engine")
     val ZONE_PARAMS = listOf("rect", "rects", "exclude")
     val TASK_SETTINGS = listOf("title", "cron", "enabled", "late_ok", "timeout")
 

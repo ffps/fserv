@@ -152,6 +152,14 @@ class ScriptTest {
         assertTrue(Script.checkCommon("zone a rect=[0,0,1,1]\nzone a rect=[0,0,1,1]\n").first!!.contains("уже есть"))
     }
 
+    @Test fun voiceEngine() {
+        val p = Script.parseCommon("voice engine=piper rate=0.95 volume=70\n")
+        assertEquals("piper", p.root.getJSONObject("voice").getString("engine"))
+        assertNull(Script.checkCommon("voice engine=piper\n").first)
+        assertNull(Script.checkCommon("voice engine=system\n").first)
+        assertTrue(Script.checkCommon("voice engine=google\n").first!!.contains("engine"))
+    }
+
     @Test fun taskSetIsolatesErrors() {
         val ok = "task \"Хорошая\" cron=\"0 8 * * *\"\n  watch 5s zone=bed assign=m\n  say \"a\"\n"
         val l = TaskSet.parseSet(mapOf(

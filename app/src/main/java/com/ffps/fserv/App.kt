@@ -22,6 +22,7 @@ class App : Application() {
         PhotoStore.init(this)
         Voice.init(this)
         Stt.init(this)
+        Piper.init(this)
         TaskEngine.init(this)
         Telegram.init(this)
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")
