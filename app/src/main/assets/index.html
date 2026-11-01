@@ -24,6 +24,8 @@
   h2 { margin:0 0 14px; font-size:17px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-bottom:14px; }
   table.kv { width:auto; min-width:min(520px,100%); }
+  table.kv td { white-space:nowrap; }
+  .kvwrap { overflow-x:auto; }
   table.kv td:first-child { color:var(--dim); white-space:nowrap; padding-right:24px; }
   .card { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
   .card .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
@@ -103,7 +105,7 @@
 
 <section id="status" class="on">
   <h2>Состояние</h2>
-  <table class="kv"><tbody id="cards"></tbody></table>
+  <div class="kvwrap"><table class="kv"><tbody id="cards"></tbody></table></div>
   <details style="margin-top:14px">
     <summary>Ответ /api/info целиком</summary>
         <pre id="infoRaw"></pre>
@@ -177,8 +179,9 @@
 </section>
 
 <section id="sound">
+  <div class="row"><label>Громкость проверки, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
+  <div class="hint">Действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы): при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой. Не сохраняется. В задачах громкость задают параметром <code>volume=</code>.</div>
   <h2>Голос</h2>
-  <div class="row"><label>Громкость, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <div class="row">
     <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
     <button class="ib add" id="svSay" title="Сказать"></button>
@@ -188,7 +191,6 @@
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
   <p class="hint">Язык, голос, скорость и тон задаются строкой <code>voice</code> файла задач (вкладка «Задачи», общие настройки), например <code>voice lang=ru-RU rate=0.9 pitch=1 volume=80</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
   <h2 style="margin-top:22px">Звуки</h2>
-  <div class="row"><label>Громкость, % <input id="sdVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
@@ -196,7 +198,6 @@
   </div>
   <div class="msg" id="sdMsg"></div>
   <h2 style="margin-top:22px">Системные сигналы</h2>
-  <div class="row"><label>Громкость, % <input id="ssVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <table><thead><tr><th>Сигнал</th><th>Имя в задаче</th><th></th></tr></thead><tbody id="ssBody"></tbody></table>
   <p class="hint">Файлы mp3, wav, ogg, m4a, aac, flac до 30 МБ (всего до 200 МБ). В задачах используются по имени: <code>play alarm.mp3 volume=80 fade_in=5s fade_out=3s</code>; список имён <code>play [a.mp3,b.mp3]</code> выбирает случайный. Системные: <code>system:alarm</code>, <code>system:notification</code>, <code>system:ringtone</code>.</p>
 </section>
@@ -241,7 +242,7 @@
 
 <section id="camera">
   <h2>Камера</h2>
-  <table class="kv"><tbody id="camCards"></tbody></table>
+  <div class="kvwrap"><table class="kv"><tbody id="camCards"></tbody></table></div>
   <div class="row" style="margin-top:12px">
     <button class="ib add" id="camToggle" title="Включить камеру"></button>
     <label><input type="checkbox" id="camOverlay" checked> закрашивать изменения красным</label>
@@ -315,7 +316,7 @@
   <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
 
   <h2 style="margin-top:26px">Обновление</h2>
-  <table class="kv"><tbody id="upTable"></tbody></table>
+  <div class="kvwrap"><table class="kv"><tbody id="upTable"></tbody></table></div>
   <div class="row" style="margin-top:12px">
     <button class="btn sec" id="upCheck">Проверить</button>
     <button class="btn" id="upInstall" style="display:none">Скачать и установить</button>
@@ -896,11 +897,13 @@ function renderTasks() {
       '<button class="ib del" data-tk="del" data-id="' + esc(x.id) + '" title="Удалить">' + ICO.del + "</button></td></tr>";
   }).join("") : '<tr><td colspan="5" style="color:var(--dim)">задач нет: добавьте внизу</td></tr>';
 }
+let tkRunMsg = null, tkRunAt = 0; // задача, о запуске которой показано сообщение
 async function loadTasks() {
   try {
     const t = (await api("/api/tasks")).json;
     tkState = {}; t.tasks.forEach(x => tkState[x.id] = {running: x.running, queued: x.queued, next: x.next, enabled: x.enabled, cron: x.cron});
     renderTasks();
+    if (tkRunMsg && !(tkState[tkRunMsg] && (tkState[tkRunMsg].running || tkState[tkRunMsg].queued)) && Date.now() - tkRunAt > 1500) { say("#tkMsg", "Задача завершена", true); tkRunMsg = null; }
     if (tkOpen && tkOrig) {
       const runs = t.runs.filter(r => r.task === tkOrig), r = runs[0];
       const full = t.runs[0] && t.runs[0].task === tkOrig ? t.runs[0] : null;
@@ -920,7 +923,7 @@ document.addEventListener("click", e => {
   } else if (act === "run") {
     run("#tkMsg", async () => {
       if ((tkState[id] || {}).running) { const r = await post("/api/tasks/stop"); loadTasks(); return r.json.message; }
-      const r = await post("/api/tasks/run?id=" + encodeURIComponent(id)); setTimeout(loadTasks, 400); return r.json.message;
+      const r = await post("/api/tasks/run?id=" + encodeURIComponent(id)); tkRunMsg = id; tkRunAt = Date.now(); setTimeout(loadTasks, 400); return r.json.message;
     });
   } else if (act === "del") {
     if (!confirm("Удалить задачу «" + id + "»?")) return;
@@ -972,7 +975,7 @@ document.addEventListener("click", e => {
   if (bAudio) { bAudio.pause(); bAudio = null; }
   if (bName === n) { bName = null; say("#sdMsg", "остановлено", true); return; }
   bName = n; bAudio = new Audio("/api/sounds/file?name=" + encodeURIComponent(n));
-  bAudio.volume = Math.max(0, Math.min(1, Number((n.startsWith("system:") ? $("#ssVol") : $("#sdVol")).value) / 100 || 1));
+  bAudio.volume = Math.max(0, Math.min(1, Number($("#svVol").value) / 100 || 1));
   bAudio.onended = () => { bName = null; };
   bAudio.onerror = () => { bName = null; say("#sdMsg", "браузер не смог воспроизвести " + n, false); };
   bAudio.play().then(() => say("#sdMsg", "играет в браузере: " + n, true)).catch(err => { bName = null; say("#sdMsg", "не удалось воспроизвести: " + err.message, false); });
@@ -983,7 +986,7 @@ document.addEventListener("click", e => {
   run("#sdMsg", async () => {
     if (b.dataset.act === "del") { if (!confirm("Удалить " + n + "?")) return "отменено"; await post("/api/sounds/delete?name=" + encodeURIComponent(n)); await loadSoundFiles(); return "удалено"; }
     if (playing === n) { await post("/api/sounds/stop"); playing = null; loadSoundFiles(); return "остановлено"; }
-    await post("/api/sounds/play?name=" + encodeURIComponent(n) + "&volume=" + (n.startsWith("system:") ? $("#ssVol") : $("#sdVol")).value); playing = n; loadSoundFiles(); return "играет " + n;
+    await post("/api/sounds/play?name=" + encodeURIComponent(n) + "&volume=" + $("#svVol").value); playing = n; loadSoundFiles(); return "играет " + n;
   });
 });
 $("#sdUpload").onclick = () => run("#sdMsg", async () => {
