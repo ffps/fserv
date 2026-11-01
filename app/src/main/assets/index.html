@@ -200,12 +200,11 @@
     <button class="btn sec" id="pgUpload">Загрузить архив с компьютера</button>
   </div>
   <div class="row" style="margin-top:6px">
-    <label>Потоков <select id="pgThr"><option>4</option><option>2</option><option>1</option></select></label>
-    <span style="color:var(--dim)">Проверить этим голосом текст из поля выше</span>
+    <span style="color:var(--dim)">Сказать этим голосом</span>
     <button class="ib add" id="pgSay" title="Сказать голосом Piper"></button>
   </div>
   <div class="msg" id="pgMsg"></div>
-  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «Модели речи» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. В памяти голос держится 5 минут после последней фразы.</p>
+  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «Модели речи» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. Если в задачах речь идёт голосом Piper, голос постоянно держится в памяти (около 70 МБ), а все фразы без переменных заранее озвучиваются в кэш (до 30 МБ) и играют сразу; фразы с переменными, например {time}, синтезируются на лету и тоже попадают в кэш. Без таких задач голос выгружается через 5 минут простоя.</p>
   <h2 style="margin-top:22px">Распознавание речи</h2>
   <div class="kvwrap"><table class="kv"><tbody id="sttInfo"></tbody></table></div>
   <div class="row" style="margin-top:10px">
@@ -1010,7 +1009,7 @@ async function loadPiper() {
   try {
     const t = (await api("/api/piper")).json;
     const st = {none: "голос не скачан", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готов" + (t.voice ? ": " + t.voice : ""), error: "ошибка скачивания"}[t.state] || t.state;
-    $("#pgInfo").innerHTML = kvRow("Голос", st) + (t.error ? kvRow("Ошибка", t.error) : "");
+    $("#pgInfo").innerHTML = kvRow("Голос", st) + kvRow("Фразы в кэше", t.cacheFiles + " (" + t.cacheMb + " МБ)" + (t.pinned ? ", голос держится в памяти" : "")) + (t.error ? kvRow("Ошибка", t.error) : "");
     const busy = t.state === "downloading" || t.state === "unpacking";
     $("#pgDownload").disabled = busy;
     $("#pgUpload").disabled = busy;
@@ -1034,7 +1033,7 @@ $("#pgSay").onclick = () => {
   setPgBtn(true);
   run("#pgMsg", async () => {
     say("#pgMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
-    try { const r = await post("/api/say?engine=piper&piper_threads=" + $("#pgThr").value + "&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
+    try { const r = await post("/api/say?engine=piper&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
   });
 };
 let playing = null;

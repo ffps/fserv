@@ -152,7 +152,6 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 require(text.isNotEmpty()) { "пустой текст" }
                 val vol = q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100) ?: voiceCfg()?.takeIf { it.has("volume") }?.optInt("volume")
                 sayStop = false
-                q(s, "piper_threads")?.toIntOrNull()?.let { n -> if (n in 1..8 && n != Piper.threads) { Piper.threads = n; Piper.release() } }
                 // ?engine=piper|system — проверка конкретного голоса независимо от строки voice
                 val cfg = q(s, "engine")?.let { e -> JSONObject(voiceCfg()?.toString() ?: "{}").put("engine", e) } ?: voiceCfg()
                 val err = Voice.speak(text, vol, cfg) { sayStop }
@@ -171,7 +170,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val err = Piper.installFromFile(f)
                 if (err == null) ok("голос установлен") else fail(Response.Status.BAD_REQUEST, "архив не подошёл: $err")
             }
-            post && uri == "/api/piper/delete" -> { Piper.delete(); FLog.i("piper", "голос Piper удалён"); ok("голос удалён") }
+            post && uri == "/api/piper/delete" -> { Piper.delete(); FLog.i("piper", "голос Piper удалён"); TaskEngine.refreshStt(); ok("голос удалён") }
 
             get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx))
             post && uri == "/api/stt/download" -> {
