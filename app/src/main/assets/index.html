@@ -200,6 +200,7 @@
     <button class="btn sec" id="pgUpload">Загрузить архив с компьютера</button>
   </div>
   <div class="row" style="margin-top:6px">
+    <label>Потоков <select id="pgThr"><option>4</option><option>2</option><option>1</option></select></label>
     <span style="color:var(--dim)">Проверить этим голосом текст из поля выше</span>
     <button class="ib add" id="pgSay" title="Сказать голосом Piper"></button>
   </div>
@@ -1033,7 +1034,7 @@ $("#pgSay").onclick = () => {
   setPgBtn(true);
   run("#pgMsg", async () => {
     say("#pgMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
-    try { const r = await post("/api/say?engine=piper&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
+    try { const r = await post("/api/say?engine=piper&piper_threads=" + $("#pgThr").value + "&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
   });
 };
 let playing = null;

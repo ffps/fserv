@@ -27,7 +27,8 @@ import java.util.zip.ZipInputStream
  */
 object Piper {
     val VOICES = listOf("irina", "denis", "dmitri", "ruslan")
-    private const val THREADS = 4
+    /** Потоков синтеза; для проверки меняется параметром ?piper_threads= у /api/say. */
+    @Volatile var threads = 4
     private const val ATTEMPTS = 8
     private const val MIN_ARCHIVE = 20L * 1024 * 1024
     private const val IDLE_MS = 5 * 60_000L
@@ -244,13 +245,13 @@ object Piper {
             val cfg = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     vits = OfflineTtsVitsModelConfig(model = File(modelDir(), "model.onnx").absolutePath, tokens = File(modelDir(), "tokens.txt").absolutePath),
-                    numThreads = THREADS, debug = false, provider = "cpu"
+                    numThreads = threads, debug = false, provider = "cpu"
                 ),
                 maxNumSentences = 1
             )
             val t = OfflineTts(null, cfg)
             tts = t
-            FLog.i("piper", "голос $voice загружен за ${System.currentTimeMillis() - t0} мс (+${(android.os.Debug.getNativeHeapAllocatedSize() - mem0) / 1048576} МБ нативной памяти), частота ${t.sampleRate()} Гц, потоков $THREADS")
+            FLog.i("piper", "голос $voice загружен за ${System.currentTimeMillis() - t0} мс (+${(android.os.Debug.getNativeHeapAllocatedSize() - mem0) / 1048576} МБ нативной памяти), частота ${t.sampleRate()} Гц, потоков $threads, процесс ${if (android.os.Process.is64Bit()) "64" else "32"}-разрядный, ABI ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
             return t
         } catch (e: Throwable) {
             throw IllegalStateException("голос Piper не загрузился: ${e.message ?: e.javaClass.simpleName}")
@@ -263,8 +264,17 @@ object Piper {
      * Произносит [text] и ждёт конца речи. [speed] — скорость (1 = обычная). Синтез идёт кусками по предложениям: звук начинается,
      * не дожидаясь конца синтеза. Возвращает текст ошибки или null. Один синтез за раз.
      */
-    @Synchronized
     fun speak(text: String, speed: Float, cancel: () -> Boolean): String? {
+        // нативный синтез идёт в потоке с большим стеком: в обычном потоке (около 1 МБ) вычисления могли бы его переполнить
+        var res: String? = null
+        val th = Thread(null, { res = speakImpl(text, speed, cancel) }, "piper-synth", 64L * 1024 * 1024)
+        th.start()
+        th.join()
+        return res
+    }
+
+    @Synchronized
+    private fun speakImpl(text: String, speed: Float, cancel: () -> Boolean): String? {
         stopFlag = false
         val t = try { engine() } catch (e: IllegalStateException) { return e.message }
         val t0 = System.currentTimeMillis()

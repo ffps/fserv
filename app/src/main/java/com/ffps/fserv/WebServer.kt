@@ -152,6 +152,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 require(text.isNotEmpty()) { "пустой текст" }
                 val vol = q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100) ?: voiceCfg()?.takeIf { it.has("volume") }?.optInt("volume")
                 sayStop = false
+                q(s, "piper_threads")?.toIntOrNull()?.let { n -> if (n in 1..8 && n != Piper.threads) { Piper.threads = n; Piper.release() } }
                 // ?engine=piper|system — проверка конкретного голоса независимо от строки voice
                 val cfg = q(s, "engine")?.let { e -> JSONObject(voiceCfg()?.toString() ?: "{}").put("engine", e) } ?: voiceCfg()
                 val err = Voice.speak(text, vol, cfg) { sayStop }
