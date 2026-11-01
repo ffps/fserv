@@ -339,6 +339,10 @@ object Piper {
      * иначе синтезируется: звук начинается, не дожидаясь конца синтеза, а результат сохраняется в кэш. Возвращает текст ошибки или null.
      */
     fun speak(text: String, speed: Float, cancel: () -> Boolean): String? {
+        stopFlag = false
+        // готовая фраза играет сразу и не ждёт фоновой заготовки (она держит синтезатор, пока не допишет свою фразу)
+        val cf = cacheFile(text, speed)
+        if (cf.isFile && cf.length() > 8) return playCached(cf, text, cancel)
         liveReq.incrementAndGet()
         try {
             // нативный синтез идёт в потоке с большим стеком: в обычном потоке (около 1 МБ) вычисления могли бы его переполнить
@@ -354,8 +358,7 @@ object Piper {
     @Synchronized
     private fun speakImpl(text: String, speed: Float, cancel: () -> Boolean, play: Boolean): String? {
         if (play) {
-            stopFlag = false
-            val cf = cacheFile(text, speed)
+            val cf = cacheFile(text, speed) // пока ждали синтезатор, фраза могла попасть в кэш
             if (cf.isFile && cf.length() > 8) return playCached(cf, text, cancel)
         }
         val t = try { engine() } catch (e: IllegalStateException) { return e.message }
