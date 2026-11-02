@@ -176,6 +176,7 @@ object Piper {
             val label = name ?: Regex("""ru_RU-([a-z]+)-""").find(onnx.orEmpty())?.groupValues?.get(1) ?: onnx.orEmpty().removeSuffix(".onnx")
             File(out, "voice.txt").writeText(label)
             release()
+            gain = Float.MAX_VALUE
             cacheDir().deleteRecursively()
             modelDir().deleteRecursively()
             if (!out.renameTo(modelDir())) throw IOException("не удалось сохранить модель")
@@ -231,7 +232,7 @@ object Piper {
         cacheDir().deleteRecursively()
         modelDir().deleteRecursively()
         dlDir().deleteRecursively()
-        voice = ""; state = "none"; lastError = ""
+        voice = ""; state = "none"; lastError = ""; gain = Float.MAX_VALUE
     }
 
     // ---------------- синтез ----------------
@@ -269,7 +270,7 @@ object Piper {
     private fun cacheDir() = File(root, "cache")
 
     private fun cacheFile(text: String, speed: Float): File {
-        val h = java.security.MessageDigest.getInstance("SHA-1").digest("$voice|${"%.2f".format(java.util.Locale.US, speed)}|$text".toByteArray())
+        val h = java.security.MessageDigest.getInstance("SHA-1").digest("v2|$voice|${"%.2f".format(java.util.Locale.US, speed)}|$text".toByteArray())
         return File(cacheDir(), h.joinToString("") { "%02x".format(it) } + ".pcm")
     }
 
@@ -372,7 +373,7 @@ object Piper {
             val tPh = System.currentTimeMillis() - t0
             val rate = t.sampleRate()
             if (play) { val tr = newTrack(rate, AudioFormat.ENCODING_PCM_FLOAT); track = tr; tr.play() }
-            cbTrack = track; cbCancel = cancel; cbFrames = 0L; cbFirstMs = -1L; cbT0 = t0; cbPcm = java.io.ByteArrayOutputStream()
+            cbTrack = track; cbCancel = cancel; cbFrames = 0L; cbFirstMs = -1L; cbT0 = t0; cbPcm = java.io.ByteArrayOutputStream(); cbPeak = 0f
             val g = GenerationConfig(speed = speed, sid = 0, silenceScale = 0.2f, phonemeCodepoints = sentences)
             val tGen = System.currentTimeMillis()
             t.generateWithConfigAndCallback("", g, this::callback)
@@ -392,7 +393,7 @@ object Piper {
                     Thread.sleep(50)
                 }
             }
-            val msg = "${if (play) "фраза" else "в кэш"} ${text.length} симв.: речь ${speechMs / 1000.0} с, синтез ${genMs / 1000.0} с (${if (genMs > 0) "%.2f".format(speechMs.toDouble() / genMs) else "?"}× быстрее речи), до первого звука ${firstMs} мс (разбор текста $tPh мс)"
+            val msg = "${if (play) "фраза" else "в кэш"} ${text.length} симв.: речь ${speechMs / 1000.0} с, синтез ${genMs / 1000.0} с (${if (genMs > 0) "%.2f".format(speechMs.toDouble() / genMs) else "?"}× быстрее речи), до первого звука ${firstMs} мс (разбор текста $tPh мс), пик звука %.2f, усиление ×%.1f".format(cbPeak, if (gain == Float.MAX_VALUE) 1f else gain)
             if (play) FLog.i("piper", msg + "; " + mem()) else FLog.d("piper", msg)
             return null
         } catch (e: Throwable) {
@@ -413,11 +414,20 @@ object Piper {
     private var cbFirstMs = -1L
     private var cbT0 = 0L
     private var cbPcm: java.io.ByteArrayOutputStream? = null
+    private var cbPeak = 0f
+    /** Усиление голоса: у тихих моделей громкость выравнивается до пика около 0.85; только вверх и не больше ×10. Подбирается по предложениям и только уменьшается. */
+    @Volatile private var gain = Float.MAX_VALUE
 
     /** Вызывается из нативного кода с очередным куском звука; 0 прерывает синтез. */
     private fun callback(samples: FloatArray): Int {
         if ((cbTrack != null && stopFlag) || cbCancel()) return 0
         if (cbFirstMs < 0) cbFirstMs = System.currentTimeMillis() - cbT0
+        var pk = 0f
+        for (x in samples) { val a = Math.abs(x); if (a > pk) pk = a }
+        if (pk > cbPeak) cbPeak = pk
+        if (pk > 0.01f) gain = minOf(gain, (0.85f / pk).coerceIn(1f, 10f))
+        val g = if (gain == Float.MAX_VALUE) 1f else gain
+        if (g > 1.02f) for (i in samples.indices) samples[i] = (samples[i] * g).coerceIn(-1f, 1f)
         cbTrack?.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
         cbFrames += samples.size
         val b = ByteArray(samples.size * 2)
