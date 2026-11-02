@@ -240,4 +240,23 @@ class ScriptTest {
         expect(task("photo size=1280"), "size")
         expect(task("photo resolution=1280x720"), "у photo нет параметра «resolution»")
     }
+
+    @Test fun slideStep() {
+        assertNull(Script.validate(task("slide hello.svg")))
+        assertNull(Script.validate(task("slide [\"hello.svg\",\"hi.gif\"] for=5s fit=contain bg=auto brightness=90 fade_in=1s fade_out=2s tap=hide")))
+        assertNull(Script.validate(task("slide a.png bg=\"#d81b60\" fit=cover")))
+        assertNull(Script.validate(task("slide off")))
+        for (f in listOf("full", "contain", "cover", "width", "height", "none")) assertNull(Script.validate(task("slide a.png fit=$f")))
+        expect(task("slide a.png fit=zoom"), "fit")
+        expect(task("slide a.png bg=red"), "bg")
+        expect(task("slide a.png brightness=0"), "brightness")
+        expect(task("slide a.png brightness=101"), "brightness")
+        expect(task("slide a.png tap=show"), "tap")
+        expect(task("slide a.png for=0s"), "for")
+        expect(task("slide off for=5s"), "параметров")
+        expect(task("slide"), "slide")
+        expect(task("slide a.png hide=5s"), "у slide нет параметра")
+        val e = Script.validate(task("slide missing.png"), "x", emptySet(), { false })
+        assertNotNull(e); assertTrue(e!!.contains("Слайды"))
+    }
 }

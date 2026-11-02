@@ -146,6 +146,26 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 ok("воспроизведение запущено")
             }
             post && uri == "/api/sounds/stop" -> { Audio.stopPreview(); ok("остановлено") }
+            get && uri == "/api/slides" -> json(Response.Status.OK, obj("files" to Slides.list(), "totalBytes" to Slides.totalSize()))
+            get && uri == "/api/slides/file" -> {
+                val f = Slides.file(q(s, "name") ?: "")
+                if (!f.isFile) fail(Response.Status.NOT_FOUND, "файла нет")
+                else NanoHTTPD.newFixedLengthResponse(Response.Status.OK, Slides.mime(f.name), f.inputStream(), f.length()).also {
+                    it.addHeader("Cache-Control", "no-store")
+                    it.addHeader("X-Content-Type-Options", "nosniff")
+                    it.addHeader("Content-Security-Policy", "sandbox")
+                }
+            }
+            post && uri == "/api/slides" -> {
+                val name = Slides.checkName(q(s, "name"))
+                Slides.save(name, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
+                FLog.i("slides", "загружен слайд $name")
+                ok("загружено: $name")
+            }
+            post && uri == "/api/slides/delete" -> {
+                val name = Slides.checkName(q(s, "name"))
+                if (Slides.delete(name)) { FLog.i("slides", "Удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+            }
             get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()))
             post && uri == "/api/say" -> {
                 val text = body(s).trim()
@@ -522,6 +542,10 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/sounds/delete" to "удалить звук; ?name=",
         "POST /api/sounds/play" to "прослушать звук; ?name=alarm.mp3&volume=80 (или system:alarm)",
         "POST /api/sounds/stop" to "остановить прослушивание",
+        "GET /api/slides" to "загруженные слайды (картинки для шага slide)",
+        "GET /api/slides/file" to "отдать слайд для просмотра; ?name=hello.svg",
+        "POST /api/slides" to "загрузить слайд: тело файла, ?name=hello.gif (jpg, png, gif, webp, svg; до 5 МБ, всего до 30 МБ)",
+        "POST /api/slides/delete" to "удалить слайд; ?name=",
         "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
         "POST /api/say" to "произнести текст (тело); ?volume=80",
         "POST /api/say/stop" to "прервать речь",

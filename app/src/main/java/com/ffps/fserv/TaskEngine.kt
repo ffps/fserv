@@ -51,6 +51,8 @@ object TaskEngine {
         val deadline = System.currentTimeMillis() + deadlineMs
         @Volatile var cancelled = false
         val bg = ArrayList<Thread>()
+        /** Номера слайдов, показанных этим запуском: в конце запуска скрываются, если ещё на экране. */
+        val slideTokens = java.util.concurrent.CopyOnWriteArrayList<Int>()
         val slots = java.util.concurrent.ConcurrentHashMap<String, Slot>()
         /** Слот, в потоке которого сейчас выполняется код (null в основном ходе задачи). */
         val slotOf = ThreadLocal<Slot?>()
@@ -263,6 +265,7 @@ object TaskEngine {
     private fun cleanup(r: Run) {
         r.cancelled = true
         r.bg.forEach { try { it.join(2000) } catch (e: Exception) {} }
+        for (t in r.slideTokens) Slide.release(t)
         Voice.stop()
         Stt.touch()
         CameraEngine.setOverride(null)
@@ -325,13 +328,24 @@ object TaskEngine {
     private val MONTHS = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
     private val DAYS = listOf("воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота")
 
+    /** Слайды, показанные шагами текущего блока (в этом потоке): при выходе из блока скрываются, если ещё на экране. */
+    private val slideScope = ThreadLocal<ArrayList<Int>?>()
+
     private fun execSteps(r: Run, a: JSONArray, path: String) {
-        for (i in 0 until a.length()) {
-            check(r)
-            val p = if (path.isEmpty()) "${i + 1}" else "$path.${i + 1}"
-            val s = a.optJSONObject(i) ?: continue
-            if (r.slotOf.get() == null) r.info.step = p
-            exec(r, s, p)
+        val outer = slideScope.get()
+        val mine = ArrayList<Int>()
+        slideScope.set(mine)
+        try {
+            for (i in 0 until a.length()) {
+                check(r)
+                val p = if (path.isEmpty()) "${i + 1}" else "$path.${i + 1}"
+                val s = a.optJSONObject(i) ?: continue
+                if (r.slotOf.get() == null) r.info.step = p
+                exec(r, s, p)
+            }
+        } finally {
+            slideScope.set(outer)
+            for (t in mine) Slide.release(t)
         }
     }
 
@@ -352,6 +366,7 @@ object TaskEngine {
             }
             s.has("ask") -> ask(r, s, p)
             s.has("play") -> play(r, s, p)
+            s.has("slide") -> slide(r, s, p)
             s.has("photo") -> photo(r, s, p)
             s.has("background") -> {
                 val block = s.getJSONArray("background")
@@ -536,6 +551,30 @@ object TaskEngine {
                 return
             }
         }
+    }
+
+    /** Слайд на экране: slide файл [for= fit= bg= brightness= fade_in= fade_out= tap=] или slide off. Не блокирует: сценарий идёт дальше. */
+    private fun slide(r: Run, s: JSONObject, p: String) {
+        if (s.opt("slide") == "off") {
+            log(r, p, "slide off" + if (r.info.dry) " (в пробном запуске пропущено)" else "")
+            if (!r.info.dry) Slide.off()
+            return
+        }
+        val name = pickText(r, s.opt("slide"))
+        val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else null
+        val spec = Slide.Spec(
+            name, s.optString("fit", "full"), s.optString("bg", "auto"),
+            if (s.has("brightness")) s.optInt("brightness") else null,
+            if (s.has("fade_in")) Dur.parse(s.opt("fade_in"), "fade_in").sample(r.rnd) else 0L,
+            if (s.has("fade_out")) Dur.parse(s.opt("fade_out"), "fade_out").sample(r.rnd) else 0L,
+            s.optString("tap") == "hide"
+        )
+        log(r, p, "slide: $name" + (forMs?.let { ", скрыть через ${Dur.human(it)}" } ?: "") + if (r.info.dry) " (в пробном запуске не показывается)" else "")
+        if (r.info.dry) return
+        val token = Slide.show(spec, forMs)
+        if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); return }
+        slideScope.get()?.add(token)
+        r.slideTokens.add(token)
     }
 
     /** Фото с камеры в PhotoStore; камера включается на время шага. */

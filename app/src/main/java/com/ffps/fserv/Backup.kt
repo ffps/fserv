@@ -13,7 +13,7 @@ import java.util.zip.ZipOutputStream
  * Резервная копия настроек одним zip-файлом, восстановление из неё и сброс к исходному состоянию.
  *
  * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt; голос и зоны лежат в settings.json),
- * sounds/ (загруженные звуки), pages/ (заменённые страницы index.html и kiosk.html). Очереди, журналы и логи в копию не входят.
+ * sounds/ (загруженные звуки), slides/ (слайды), pages/ (заменённые страницы index.html и kiosk.html). Очереди, журналы и логи в копию не входят.
  * Восстановление сначала целиком проверяет архив и только потом что-либо удаляет.
  */
 object Backup {
@@ -47,6 +47,11 @@ object Backup {
                 Sounds.file(n).inputStream().use { it.copyTo(z) }
                 z.closeEntry()
             }
+            for (n in Slides.names()) {
+                z.putNextEntry(ZipEntry("slides/$n"))
+                Slides.file(n).inputStream().use { it.copyTo(z) }
+                z.closeEntry()
+            }
             for (p in PAGES) {
                 val f = File(File(ctx.filesDir, "web"), "$p.html")
                 if (f.isFile && f.length() > 0) z.put("pages/$p.html", f.readBytes())
@@ -67,6 +72,7 @@ object Backup {
             if (entries.isEmpty()) return "архив пустой"
             var total = 0L
             val sounds = HashSet<String>()
+            val slides = HashSet<String>()
             var settings: JSONObject? = null
             val tasks = LinkedHashMap<String, String>()
             for (e in entries) {
@@ -84,6 +90,12 @@ object Backup {
                         if (e.size !in 1..Sounds.MAX_FILE) return "звук «$name»: размер больше ${Sounds.MAX_FILE / 1048576} МБ"
                         sounds.add(name)
                     }
+                    n.startsWith("slides/") && n.count { it == '/' } == 1 -> {
+                        val name = n.removePrefix("slides/")
+                        try { Slides.checkName(name) } catch (x: IllegalArgumentException) { return "слайд «$name»: недопустимое имя" }
+                        if (e.size !in 1..Slides.MAX_FILE) return "слайд «$name»: размер больше ${Slides.MAX_FILE / 1048576} МБ"
+                        slides.add(name)
+                    }
                     n.startsWith("pages/") && PAGES.any { n == "pages/$it.html" } -> if (e.size > 1_000_000) return "$n: слишком большая страница"
                     else -> return "лишний файл в архиве: $n (это не копия fServe?)"
                 }
@@ -91,7 +103,8 @@ object Backup {
             if (settings == null) return "в архиве нет settings.json (это не копия fServe?)"
             if (total > Sounds.MAX_TOTAL + 10_000_000) return "архив слишком большой"
             if (sounds.sumOf { s -> zf.getEntry("sounds/$s").size } > Sounds.MAX_TOTAL) return "звуки вместе больше ${Sounds.MAX_TOTAL / 1048576} МБ"
-            TaskSet.validateSet(tasks, settings.optJSONObject("zones")) { name -> sounds.contains(name) }?.let { return it }
+            if (slides.sumOf { s -> zf.getEntry("slides/$s").size } > Slides.MAX_TOTAL) return "слайды вместе больше ${Slides.MAX_TOTAL / 1048576} МБ"
+            TaskSet.validateSet(tasks, settings.optJSONObject("zones"), { name -> slides.contains(name) }) { name -> sounds.contains(name) }?.let { return it }
         }
         return null
     }
@@ -99,6 +112,7 @@ object Backup {
     private fun wipe(ctx: Context) {
         TaskEngine.cancelCurrent()
         Sounds.clearAll()
+        Slides.clearAll()
         File(ctx.filesDir, "web").listFiles()?.forEach { it.delete() }
         File(ctx.filesDir, "update").deleteRecursively()
         Telegram.clear()
@@ -115,6 +129,7 @@ object Backup {
             for (e in zf.entries().asSequence().filter { !it.isDirectory }) {
                 when {
                     e.name.startsWith("sounds/") -> Sounds.save(e.name.removePrefix("sounds/"), zf.getInputStream(e), e.size)
+                    e.name.startsWith("slides/") -> Slides.save(e.name.removePrefix("slides/"), zf.getInputStream(e), e.size)
                     e.name.startsWith("pages/") -> {
                         val d = File(ctx.filesDir, "web").also { it.mkdirs() }
                         zf.getInputStream(e).use { i -> File(d, e.name.removePrefix("pages/")).outputStream().use { o -> i.copyTo(o) } }

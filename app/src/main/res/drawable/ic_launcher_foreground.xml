@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Белое кольцо по центру; размеры пересчитаны из icons/fserv.svg (120 -> 108), целиком в безопасной зоне -->
+<!-- Белое кольцо с двумя глазами по центру; размеры пересчитаны из icons/fserv.svg (120 -> 108, дополнительно ×0.825, чтобы кольцо целиком вошло в безопасную зону 66 dp) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M31.5,54a22.5,22.5 0 1,0 45,0a22.5,22.5 0 1,0 -45,0"
+        android:pathData="M24.3,54a29.7,26.4 0 1,0 59.4,0a29.7,26.4 0 1,0 -59.4,0"
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="9" />
+        android:strokeWidth="6.6" />
+    <path
+        android:pathData="M39.975,50.7a4.95,8.25 0 1,0 9.9,0a4.95,8.25 0 1,0 -9.9,0"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M58.125,50.7a4.95,8.25 0 1,0 9.9,0a4.95,8.25 0 1,0 -9.9,0"
+        android:fillColor="#FFFFFFFF" />
 </vector>

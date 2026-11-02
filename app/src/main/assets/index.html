@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fServe</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff9a1f'/%3E%3Cstop offset='1' stop-color='%23d81b60'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='26' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='60' r='25' fill='none' stroke='%23fff' stroke-width='10'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20120%20120'%3E%3Cdefs%3E%3ClinearGradient%20id='g'%20x1='0'%20y1='0'%20x2='1'%20y2='1'%3E%3Cstop%20offset='0'%20stop-color='%23ff9a1f'/%3E%3Cstop%20offset='1'%20stop-color='%23d81b60'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width='120'%20height='120'%20rx='26'%20fill='url%28%23g%29'/%3E%3Cellipse%20cx='60'%20cy='60'%20rx='36'%20ry='32'%20fill='none'%20stroke='%23FFFFFF'%20stroke-width='8'%20/%3E%3Cellipse%20cx='49'%20cy='56'%20rx='6'%20ry='10'%20fill='%23FFFFFF'%20/%3E%3Cellipse%20cx='71'%20cy='56'%20rx='6'%20ry='10'%20fill='%23FFFFFF'%20/%3E%3C/svg%3E">
 <style>
   :root { --bg:#f5f6fa; --panel:#ffffff; --line:#e2e5ee; --text:#1c2030; --dim:#69708a; --acc:#d81b60; --acc-d:#ad1457;
           --acc-soft:#fde7ef; --bad:#c62828; --good:#2e7d32; --code:#f1f3f9; }
@@ -87,7 +87,7 @@
 </head>
 <body>
 <header>
-  <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><circle cx="60" cy="60" r="25" fill="none" stroke="#fff" stroke-width="10"/></svg>
+  <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><ellipse cx="60" cy="60" rx="36" ry="32" fill="none" stroke="#FFFFFF" stroke-width="8" /><ellipse cx="49" cy="56" rx="6" ry="10" fill="#FFFFFF" /><ellipse cx="71" cy="56" rx="6" ry="10" fill="#FFFFFF" /></svg>
   <h1>fServe</h1><span class="ver" id="ver"></span>
   <span class="ver" id="beat"></span>
 </header>
@@ -97,6 +97,7 @@
   <a data-t="sound" href="#sound">Звук</a>
   <a data-t="camera" href="#camera">Камера</a>
   <a data-t="photos" href="#photos">Фото</a>
+  <a data-t="slides" href="#slides">Слайды</a>
   <a data-t="comm" href="#comm">Связь</a>
   <a data-t="logs" href="#logs">Журнал</a>
   <a data-t="system" href="#system">Система</a>
@@ -323,6 +324,17 @@
   <p class="hint">Непрерывный режим проверяет устойчивость долгой работы (кадры не должны пропадать, температура и число открытых файлов расти), циклы проверяют открытие и закрытие камеры, как будет делать будильник. Итог пишется в журнал. Во время теста держите устройство на зарядке.</p>
 </section>
 
+
+<section id="slides">
+  <h2>Слайды</h2>
+  <p class="hint">Картинки для шага <code>slide</code> (помощник на экране киоска): jpg, png, gif, webp, svg, в том числе анимированные. До 5 МБ на файл, до 30 МБ всего. Пример: <code>slide ["hello.svg"] for=5s fit=contain</code>; убрать: <code>slide off</code>.</p>
+  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Размер, КБ</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
+  <div class="row">
+    <input type="file" id="slFile" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*" multiple>
+    <button class="ib add" id="slUpload" title="Загрузить"></button>
+  </div>
+  <div id="slMsg" class="msg"></div>
+</section>
 
 <section id="photos">
   <h2>Фотографии</h2>
@@ -750,6 +762,7 @@ function onTab() {
   if (current === "comm") loadComm();
   if (current === "camera") { loadCamera(true); loadZones(); znShot(); }
   if (current === "photos") loadPhotos(null);
+  if (current === "slides") loadSlides();
 }
 
 // ---- состояние ----
@@ -1054,6 +1067,27 @@ $("#sdUpload").onclick = () => run("#sdMsg", async () => {
     const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(f.name + ": " + (j.error || ("HTTP " + r.status)));
   }
   $("#sdFile").value = ""; await loadSoundFiles(); return "загружено файлов: " + files.length;
+});
+// ---- слайды ----
+async function loadSlides() {
+  try {
+    const d = (await api("/api/slides")).json;
+    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + Math.round(f.size / 1024) + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4">слайдов нет</td></tr>';
+  } catch (e) { say("#slMsg", e.message, false); }
+}
+$("#slBody").onclick = e => {
+  const b = e.target.closest("button[data-sl]"); if (!b) return;
+  run("#slMsg", async () => { const n = b.dataset.sl; if (!confirm("Удалить " + n + "?")) return "отменено"; await post("/api/slides/delete?name=" + encodeURIComponent(n)); await loadSlides(); return "удалено"; });
+};
+$("#slUpload").onclick = () => run("#slMsg", async () => {
+  const files = $("#slFile").files; if (!files.length) throw new Error("выберите файлы");
+  let n = 0;
+  for (const f of files) {
+    say("#slMsg", "загружаю " + f.name + " (" + (++n) + " из " + files.length + ")…", true);
+    const r = await fetch("/api/slides?name=" + encodeURIComponent(f.name), {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: f});
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(f.name + ": " + (j.error || ("HTTP " + r.status)));
+  }
+  $("#slFile").value = ""; await loadSlides(); return "загружено файлов: " + files.length;
 });
 let svBusy = false;
 function setSvBtn(on) { svBusy = on; const b = $("#svSay"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Сказать"; }

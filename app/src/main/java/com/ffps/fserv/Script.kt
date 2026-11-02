@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "play", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "play", "slide", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
     private val RESERVED = mapOf("chat" to "chat (разговор с ИИ) появится на этапе 6")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
@@ -45,6 +45,7 @@ object Script {
         "say" to listOf("volume", "wait"),
         "ask" to listOf("assign", "kind", "listen", "retries", "again", "volume"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
+        "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
         "telegram" to listOf("files"),
         "photo" to listOf("assign", "size"),
         "delay" to emptyList(),
@@ -76,13 +77,13 @@ object Script {
     fun parse(text: String, id: String = "task"): Parsed = Parser(text, id).run()
 
     /** Полная проверка файла задачи [id]: разбор и схема. [zones] — имена зон из настроек (вкладка «Камера»). Текст ошибки начинается с «строка N: » либо null. */
-    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), fileExists: (String) -> Boolean = { true }): String? =
-        check(text, id, zones, fileExists).first
+    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): String? =
+        check(text, id, zones, slideExists, fileExists).first
 
     /** Как [validate], но возвращает ещё и номер строки ошибки (0, если ошибки нет или у неё нет строки). */
-    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
+    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
         val p = try { parse(text, id) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
-        val err = TaskSchema.validate(p.root, p.lines, fileExists, zones) ?: return null to 0
+        val err = TaskSchema.validate(p.root, p.lines, slideExists, fileExists, zones) ?: return null to 0
         val n = Regex("""^строка (\d+): """).find(err)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         return err to n
     }
@@ -247,6 +248,7 @@ object Script {
                     if (pv == null) fail(l.no, "play: нужно имя файла или системный звук, например play system:alarm")
                     s.put("play", unwrap(pv))
                 }
+                "slide" -> s.put("slide", unwrap(pv ?: fail(l.no, "slide: нужно имя файла со вкладки «Слайды» или off, например slide hello.svg for=5s")))
                 "delay" -> s.put("delay", unwrap(pv ?: fail(l.no, "delay: нужна длительность, например delay 10s")))
                 "photo" -> s.put("photo", true)
                 "stop_background" -> s.put("stop_background", true)

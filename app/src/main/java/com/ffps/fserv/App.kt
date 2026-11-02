@@ -19,6 +19,7 @@ class App : Application() {
         Net.init()
         CameraEngine.init(this)
         Sounds.init(this)
+        Slides.init(this)
         PhotoStore.init(this)
         Voice.init(this)
         Stt.init(this)

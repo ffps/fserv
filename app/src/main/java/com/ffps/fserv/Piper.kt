@@ -233,7 +233,7 @@ object Piper {
         voice = ""; state = "none"; lastError = ""; gain = Float.MAX_VALUE
     }
 
-    // ---------------- синтез ----------------
+    // ---------------- загрузка модели ----------------
 
     @Synchronized
     private fun engine(): OfflineTts {
@@ -253,7 +253,7 @@ object Piper {
             )
             val t = OfflineTts(null, cfg)
             tts = t
-            FLog.i("piper", "голос $voice загружен за ${System.currentTimeMillis() - t0} мс (+${(android.os.Debug.getNativeHeapAllocatedSize() - mem0) / 1048576} МБ нативной памяти), частота ${t.sampleRate()} Гц, потоков $THREADS, процесс ${if (android.os.Process.is64Bit()) "64" else "32"}-разрядный, ABI ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
+            FLog.i("piper", "голос $voice загружен за ${System.currentTimeMillis() - t0} мс (+${(android.os.Debug.getNativeHeapAllocatedSize() - mem0) / 1048576} МБ нативной памяти), частота ${t.sampleRate()} Гц, потоков $THREADS")
             return t
         } catch (e: Throwable) {
             throw IllegalStateException("голос Piper не загрузился: ${e.message ?: e.javaClass.simpleName}")
@@ -336,12 +336,7 @@ object Piper {
         if (!(cf.isFile && cf.length() > 44)) {
             liveReq.incrementAndGet()
             try {
-                // нативный синтез идёт в потоке с большим стеком: в обычном потоке (около 1 МБ) вычисления могли бы его переполнить
-                var res: String? = null
-                val th = Thread(null, { res = synth(text, speed, stop, true) }, "piper-synth", 64L * 1024 * 1024)
-                th.start()
-                th.join()
-                res?.let { return it }
+                synth(text, speed, stop, true)?.let { return it }
             } finally { liveReq.decrementAndGet() }
             if (stop()) return null
         }
@@ -372,7 +367,7 @@ object Piper {
             val aborted = cancel()
             if (!aborted && frames > 0) cachePut(cf, rate, cbPcm!!.toByteArray())
             val msg = "${if (live) "фраза" else "в кэш"} ${text.length} симв.: речь ${speechMs / 1000.0} с, синтез ${genMs / 1000.0} с (${if (genMs > 0) "%.2f".format(speechMs.toDouble() / genMs) else "?"}× быстрее речи, разбор текста $tPh мс), пик звука %.2f, усиление ×%.1f".format(cbPeak, if (gain == Float.MAX_VALUE) 1f else gain)
-            if (live) FLog.i("piper", msg + "; " + mem()) else FLog.d("piper", msg)
+            if (live) FLog.i("piper", msg) else FLog.d("piper", msg)
             cbPcm = null
             return null
         } catch (e: Throwable) {
@@ -412,13 +407,6 @@ object Piper {
 
     fun stop() { stopFlag = true }
 
-    /** Память для журнала: свободно в системе и занято нативной кучей приложения. */
-    private fun mem(): String {
-        val mi = android.app.ActivityManager.MemoryInfo()
-        (app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(mi)
-        return "свободно ${mi.availMem / 1048576} МБ, нативная куча ${android.os.Debug.getNativeHeapAllocatedSize() / 1048576} МБ"
-    }
-
     // ---------------- заготовка фраз и память ----------------
 
     /** true — голос держится в памяти постоянно (в задачах есть речь голосом Piper): загрузка модели занимает около 10 секунд на слабом планшете. */
@@ -434,7 +422,7 @@ object Piper {
         val gen = ++prepGen
         pinned = pin && ready()
         if (!pinned) { touch(); return }
-        Thread(null, { prepare(gen, phrases, speed) }, "piper-prep", 64L * 1024 * 1024).start()
+        Thread({ prepare(gen, phrases, speed) }, "piper-prep").start()
     }
 
     private fun prepare(gen: Int, phrases: List<String>, speed: Float) {

@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  body{display:flex;align-items:center;justify-content:center}
+  img{display:block;max-width:none;max-height:none;opacity:0}
+</style></head>
+<body>
+<img id="i" alt="">
+<script>
+// Слайд поверх киоска (шаг slide). Параметры в адресе: f — файл, fit — full|contain|cover|width|height|none, bg — auto или #rrggbb.
+var q = new URLSearchParams(location.search), fit = q.get("fit") || "full", bg = q.get("bg") || "auto";
+var im = document.getElementById("i");
+function setBg(c) { document.documentElement.style.background = c; document.body.style.background = c; }
+function apply() {
+  var s = im.style;
+  s.objectFit = "fill";
+  if (fit === "full") { s.width = "100vw"; s.height = "100vh"; }
+  else if (fit === "contain") { s.width = "100vw"; s.height = "100vh"; s.objectFit = "contain"; }
+  else if (fit === "cover") { s.width = "100vw"; s.height = "100vh"; s.objectFit = "cover"; }
+  else if (fit === "width") { s.width = "100vw"; s.height = "auto"; }
+  else if (fit === "height") { s.width = "auto"; s.height = "100vh"; }
+  else { s.width = "auto"; s.height = "auto"; }
+}
+// цвет полей: среднее по пикселям края картинки (первый кадр у анимации); прозрачные пиксели не учитываются
+function edgeColor() {
+  try {
+    var w = im.naturalWidth || 300, h = im.naturalHeight || 150, k = Math.min(1, 64 / Math.max(w, h));
+    var cw = Math.max(4, Math.round(w * k)), ch = Math.max(4, Math.round(h * k));
+    var cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+    var g = cv.getContext("2d"); g.drawImage(im, 0, 0, cw, ch);
+    var d = g.getImageData(0, 0, cw, ch).data, r = 0, gg = 0, b = 0, n = 0;
+    for (var y = 0; y < ch; y++) for (var x = 0; x < cw; x++) {
+      if (x > 1 && x < cw - 2 && y > 1 && y < ch - 2) continue;
+      var o = (y * cw + x) * 4;
+      if (d[o + 3] < 128) continue;
+      r += d[o]; gg += d[o + 1]; b += d[o + 2]; n++;
+    }
+    if (n) return "rgb(" + Math.round(r / n) + "," + Math.round(gg / n) + "," + Math.round(b / n) + ")";
+  } catch (e) {}
+  return "#000";
+}
+apply();
+im.onload = function () { setBg(bg === "auto" ? edgeColor() : bg); im.style.opacity = 1; };
+im.onerror = function () { setBg("#000"); };
+if (bg !== "auto") setBg(bg);
+im.src = "/f/" + encodeURIComponent(q.get("f") || "");
+</script>
+</body></html>

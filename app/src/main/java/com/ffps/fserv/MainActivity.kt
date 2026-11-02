@@ -9,6 +9,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.webkit.WebResourceResponse
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -31,6 +34,10 @@ enum class KioskState { VISIBLE, BACKGROUND, NONE }
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
+    private lateinit var root: FrameLayout
+    private var slideWeb: WebView? = null
+    private var slideSpec: Slide.Spec? = null
+    private var savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
     private val handler = Handler(Looper.getMainLooper())
     private val retry = Runnable { loadKiosk(false) }
     private var onAsset = false
@@ -58,29 +65,101 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            setOnTouchListener { _, ev ->
-                if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-                    downX = ev.x
-                    downY = ev.y
-                }
-                false
-            }
-            setOnLongClickListener {
-                if (downX < width * 0.25f && downY < height * 0.2f) {
-                    startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
-                    true
-                } else {
-                    false
-                }
-            }
         }
-        setContentView(web)
+        gestures(web)
+        root = FrameLayout(this).apply { addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+        setContentView(root)
 
         // Пока пароль не задан, сразу открываем окно настроек.
         if (!Settings.isConfigured) startActivity(Intent(this, SettingsActivity::class.java))
 
         showAsset()
         loadKiosk(false)
+    }
+
+    /** Скрытый вход в настройки (долгое нажатие в левом верхнем углу) и, если [onTap] задан, короткое касание. */
+    private fun gestures(w: WebView, onTap: (() -> Unit)? = null) {
+        var downAt = 0L
+        w.setOnTouchListener { _, ev ->
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                downX = ev.x
+                downY = ev.y
+                downAt = System.currentTimeMillis()
+            } else if (ev.actionMasked == MotionEvent.ACTION_UP && onTap != null && System.currentTimeMillis() - downAt < 400) {
+                onTap()
+            }
+            false
+        }
+        w.setOnLongClickListener {
+            if (downX < w.width * 0.25f && downY < w.height * 0.2f) {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    // ---------------- слайд поверх киоска (шаг slide) ----------------
+
+    private fun showSlideUi(spec: Slide.Spec) {
+        var w = slideWeb
+        if (w == null) {
+            savedBrightness = window.attributes.screenBrightness
+            w = WebView(this).apply {
+                setBackgroundColor(Color.BLACK)
+                settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                webViewClient = object : WebViewClient() {
+                    // всё, что нужно слайду, отдаётся из приложения: страница из ресурсов и файлы из slides/ (сети нет)
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                        val u = request?.url ?: return null
+                        val p = u.path ?: ""
+                        try {
+                            if (u.host == "slide.local" && p == "/slide.html") return WebResourceResponse("text/html", "utf-8", assets.open("slide.html"))
+                            if (u.host == "slide.local" && p.startsWith("/f/")) {
+                                val name = p.removePrefix("/f/")
+                                if (Slides.exists(name)) return WebResourceResponse(Slides.mime(name), null, Slides.file(name).inputStream())
+                            }
+                        } catch (e: Exception) {
+                            FLog.w("slide", "не отдан ${u}: ${e.message}")
+                        }
+                        return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
+
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        val sp = slideSpec ?: return
+                        if (sp.fadeInMs > 0) view?.animate()?.alpha(1f)?.setDuration(sp.fadeInMs)?.start() else view?.alpha = 1f
+                    }
+                }
+            }
+            slideWeb = w
+            root.addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        slideSpec = spec
+        gestures(w, if (spec.tapHide) ({ Slide.off() }) else null)
+        w.animate().cancel()
+        w.alpha = 0f
+        val lp = window.attributes
+        lp.screenBrightness = spec.brightness?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: savedBrightness
+        window.attributes = lp
+        w.loadUrl("https://slide.local/slide.html?f=" + java.net.URLEncoder.encode(spec.file, "UTF-8") + "&fit=" + spec.fit + "&bg=" + java.net.URLEncoder.encode(spec.bg, "UTF-8"))
+    }
+
+    private fun hideSlideUi() {
+        val w = slideWeb ?: return
+        val out = slideSpec?.fadeOutMs ?: 0L
+        slideWeb = null
+        // яркость возвращается сразу: затухание картинки её не касается
+        val lp = window.attributes
+        lp.screenBrightness = savedBrightness
+        window.attributes = lp
+        val finish = Runnable { try { root.removeView(w); w.destroy() } catch (e: Exception) {} }
+        w.animate().cancel()
+        if (out > 0) w.animate().alpha(0f).setDuration(out).withEndAction(finish).start() else finish.run()
     }
 
     override fun onResume() {
@@ -177,6 +256,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (current === this) current = null
         handler.removeCallbacksAndMessages(null)
+        slideWeb?.let { try { it.destroy() } catch (e: Exception) {} }
+        slideWeb = null
         web.destroy()
         super.onDestroy()
     }
@@ -240,6 +321,16 @@ class MainActivity : Activity() {
                 e.message ?: e.javaClass.simpleName
             }
         }
+
+        /** Показать слайд поверх киоска (из любого потока). false — киоск не на переднем плане, слайд не показан. */
+        fun showSlide(spec: Slide.Spec): Boolean {
+            val a = current ?: return false
+            if (!(resumed && focused)) return false
+            a.runOnUiThread { a.showSlideUi(spec) }
+            return true
+        }
+
+        fun hideSlide() { current?.let { a -> a.runOnUiThread { a.hideSlideUi() } } }
 
         fun reloadKiosk(): KioskState {
             val a = current ?: return KioskState.NONE

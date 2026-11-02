@@ -20,7 +20,7 @@ object TaskSchema {
     private const val MAX_FILES = 10
 
     private class Ctx(
-        val lines: IdentityHashMap<Any, Int>, val zones: Set<String>, val fileExists: (String) -> Boolean,
+        val lines: IdentityHashMap<Any, Int>, val zones: Set<String>, val fileExists: (String) -> Boolean, val slideExists: (String) -> Boolean,
         val taskVars: Set<String>, val photoVars: Set<String>
     ) {
         var steps = 0
@@ -28,7 +28,7 @@ object TaskSchema {
         fun err(node: Any?, msg: String): String = "строка ${lines[node] ?: 0}: $msg"
     }
 
-    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
+    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
         fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
         val zones = HashSet<String>(extraZones)
         val tasks = root.optJSONArray("tasks") ?: JSONArray()
@@ -37,7 +37,7 @@ object TaskSchema {
             val vars = HashSet<String>()
             val photos = HashSet<String>()
             collectVars(t.opt("steps"), vars, photos)
-            task(t, Ctx(lines, zones, fileExists, vars, photos))?.let { return it }
+            task(t, Ctx(lines, zones, fileExists, slideExists, vars, photos))?.let { return it }
         }
         return null
     }
@@ -130,6 +130,8 @@ object TaskSchema {
         }
         return null
     }
+
+    val SLIDE_FITS = listOf("full", "contain", "cover", "width", "height", "none")
 
     /** Паузы в речи: {pause:5s}, {pause:500ms}, {pause:2s..5s}; каждая не длиннее 2 минут. */
     val PAUSE_RE = Regex("""\{pause:([^}]*)\}""")
@@ -242,6 +244,34 @@ object TaskSchema {
                 }
                 if (s.has("wait") && s.opt("wait") !is Boolean) return e("wait: wait=true или wait=false")
                 if (s.opt("loop") == true && !s.has("for") && s.optBoolean("wait", true) && !c.inBg) return e("loop требует for=… либо wait=false (иначе звук не остановится; в фоне его гасит stop_background или конец задачи)")
+            }
+            "slide" -> {
+                if (v == "off") {
+                    if (s.keys().asSequence().any { it != "slide" }) return e("slide off: параметров у него нет")
+                } else {
+                    val names = when (v) {
+                        is String -> listOf(v)
+                        is JSONArray -> (0 until v.length()).map { v.opt(it) as? String ?: return e("slide: в списке должны быть имена файлов") }
+                        else -> return e("slide: имя файла, список имён в скобках или off, например slide [a.svg,b.gif]")
+                    }
+                    if (names.isEmpty()) return e("slide: список пуст")
+                    for (n in names) if (!c.slideExists(n)) return e("slide: файла «$n» нет (загрузите его на вкладке «Слайды»)")
+                    if (s.has("for")) {
+                        val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
+                        if (d.minMs <= 0) return e("slide: for — длительность больше нуля, например for=5s")
+                    }
+                    if (s.has("fit") && s.opt("fit") !in SLIDE_FITS) return e("slide: fit — ${SLIDE_FITS.joinToString(", ")}")
+                    if (s.has("bg")) {
+                        val b = s.opt("bg")
+                        if (!(b == "auto" || (b is String && Regex("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})").matches(b)))) return e("slide: bg — auto или цвет в кавычках, например bg=\"#d81b60\"")
+                    }
+                    if (s.has("brightness") && !(s.opt("brightness") is Number && s.optInt("brightness", -1) in 1..100)) return e("slide: brightness — число от 1 до 100 (яркость экрана, %)")
+                    for (k in listOf("fade_in", "fade_out")) if (s.has(k)) {
+                        val d = try { Dur.parse(s.opt(k), k) } catch (ex: IllegalArgumentException) { return e(ex.message ?: k) }
+                        if (d.maxMs > 10_000) return e("slide: $k — не больше 10s")
+                    }
+                    if (s.has("tap") && s.opt("tap") != "hide") return e("slide: tap — hide (скрыть слайд касанием)")
+                }
             }
             "watch" -> return watch(s, v as JSONObject, c)
             "if" -> {
