@@ -45,17 +45,21 @@ object TaskStore {
     @Synchronized
     fun taskText(id: String): String? = if (ID_RE.matches(id) && file(id).isFile) file(id).readText() else null
 
-    /** Слайд → id задач, в чьих шагах slide он назван. Простой текстовый поиск по строкам slide: достаточно, чтобы не дать удалить нужный файл. */
-    fun slideUsers(): Map<String, List<String>> {
-        val names = Slides.names()
+    /** Слайд → id задач, в чьих шагах slide он назван. Простой текстовый поиск по строкам шага: достаточно, чтобы не дать удалить нужный файл. */
+    fun slideUsers(): Map<String, List<String>> = fileUsers("slide", Slides.names())
+
+    /** Звук → id задач, в чьих шагах play он назван. */
+    fun soundUsers(): Map<String, List<String>> = fileUsers("play", Sounds.names())
+
+    private fun fileUsers(step: String, names: List<String>): Map<String, List<String>> {
         val res = HashMap<String, MutableList<String>>()
         for ((file, text) in files()) {
             val id = file.removeSuffix(".txt")
             for (raw in text.lines()) {
                 val l = raw.trim()
-                if (!l.startsWith("slide ")) continue
+                if (!l.startsWith("$step ")) continue
                 for (n in names) {
-                    if (Regex("(^|[\\s\\[\",])" + Regex.escape(n) + "($|[\\s\\]\",])").containsMatchIn(l.removePrefix("slide "))) {
+                    if (Regex("(^|[\\s\\[\",])" + Regex.escape(n) + "($|[\\s\\]\",])").containsMatchIn(l.removePrefix("$step "))) {
                         val u = res.getOrPut(n) { ArrayList() }
                         if (id !in u) u.add(id)
                     }

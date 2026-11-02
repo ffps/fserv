@@ -184,7 +184,7 @@ object TaskEngine {
             if (fire < 0 || Settings.lastFired("task:$id") >= fire) continue
             Settings.setLastFired("task:$id", fire)
             if (current?.info?.id == id || queue.any { it.taskId == id }) {
-                FLog.w("task", "Запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
+                FLog.w("task", "запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
                 continue
             }
             queue.add(Req(id, "cron", false, emptyMap(), fire * 60000, lateMs + GRACE_MS))
@@ -214,7 +214,7 @@ object TaskEngine {
         val root = config()
         val task = root?.let { findTask(it, req.taskId) }
         if (root == null || task == null) {
-            FLog.w("task", "Задача «${req.taskId}» не запущена: её нет в конфиге")
+            FLog.w("task", "задача «${req.taskId}» не запущена: её нет в конфиге")
             return
         }
         val title = task.optString("title").ifEmpty { req.taskId }
@@ -224,7 +224,7 @@ object TaskEngine {
             info.endedAt = System.currentTimeMillis(); info.status = "skipped"
             info.message = "опоздание ${Dur.human(late)} больше допустимого (late_ok)"
             record(info)
-            FLog.w("task", "Запуск «$title» пропущен: ${info.message}")
+            FLog.w("task", "запуск «$title» пропущен: ${info.message}")
             return
         }
         val timeout = try { if (task.has("timeout")) Dur.parse(task.opt("timeout"), "timeout").sample(Random()) else 60 * 60_000L } catch (e: IllegalArgumentException) { 60 * 60_000L }
@@ -234,7 +234,7 @@ object TaskEngine {
         record(info)
         val srcText = if (req.source == "cron") "по расписанию" else "вручную"
         log(run, "", "запуск $srcText${if (req.dry) " (пробный: без звука, камеры и Telegram)" else ""}, timeout ${Dur.human(timeout)}")
-        FLog.i("task", "Задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
+        FLog.i("task", "задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
         try {
             execSteps(run, task.optJSONArray("steps") ?: JSONArray(), "")
             info.status = "ok"

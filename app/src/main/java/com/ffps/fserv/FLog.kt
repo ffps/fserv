@@ -34,12 +34,16 @@ object FLog {
     fun w(tag: String, msg: String, t: Throwable? = null) = write("WARN", tag, msg, t)
     fun e(tag: String, msg: String, t: Throwable? = null) = write("ERROR", tag, msg, t)
 
+    /** Единый вид записей: русское сообщение начинается с маленькой буквы («Telegram», «CLOSE_…» и прочее латинское не трогаем). */
+    private fun lowerFirst(m: String): String =
+        if (m.length > 1 && m[0] in 'А'..'Я' && m[1] in 'а'..'я') m[0].lowercaseChar() + m.substring(1) else m
+
     fun levelIndex(level: String): Int = LEVELS.indexOf(level.uppercase(Locale.US)).let { if (it < 0) 0 else it }
 
     @Synchronized
     private fun write(level: String, tag: String, msg: String, t: Throwable?) {
         if (levelIndex(level) < levelIndex(minLevel)) return
-        var text = msg
+        var text = lowerFirst(msg)
         if (t != null) text += "\n" + Log.getStackTraceString(t)
         for (s in secrets) text = text.replace(s, "***")
         val prio = when (level) {

@@ -217,7 +217,7 @@
   <div class="msg" id="sttTMsg"></div>
   <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «STT/TTS»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
-  <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
+  <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
     <button class="btn" id="sdUpload">Загрузить</button>
@@ -327,7 +327,7 @@
 <section id="slides">
   <h2>Слайды</h2>
   <p class="hint">Картинки для шага <code>slide</code> (помощник на экране киоска): jpg, png, gif, webp, svg, в том числе анимированные. До 5 МБ на файл, до 30 МБ всего. Пример: <code>slide ["hello.svg"] for=5s fit=contain</code>; убрать: <code>slide off</code>.</p>
-  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Размер, КБ</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
+  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Разрешение, px</th><th>Размер, КБ</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="slFile" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*" multiple>
     <button class="btn" id="slUpload">Загрузить</button>
@@ -1031,8 +1031,8 @@ async function loadSoundFiles() {
     playing = d.playing || null; renderSys();
     clearTimeout(sdTimer);
     if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
-    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td style=\"white-space:nowrap\">" +
-      '<button class="ib" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? ICO.stop : ICO.play) + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4" style="color:var(--dim)">файлов нет</td></tr>';
+    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td>" + (f.usedBy && f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + "</td><td style=\"white-space:nowrap\">" +
+      '<button class="ib" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? ICO.stop : ICO.play) + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del"' + (f.usedBy && f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="5" style="color:var(--dim)">файлов нет</td></tr>';
   } catch (e) { say("#sdMsg", e.message, false); }
 }
 let bAudio = null, bName = null;
@@ -1071,7 +1071,7 @@ $("#sdUpload").onclick = () => run("#sdMsg", async () => {
 async function loadSlides() {
   try {
     const d = (await api("/api/slides")).json;
-    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + Math.round(f.size / 1024) + '</td><td>' + (f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '"' + (f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="5">слайдов нет</td></tr>';
+    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + (f.width && f.height ? f.width + "×" + f.height : "?") + '</td><td>' + Math.round(f.size / 1024) + '</td><td>' + (f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '"' + (f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="6">слайдов нет</td></tr>';
   } catch (e) { say("#slMsg", e.message, false); }
 }
 $("#slBody").onclick = e => {

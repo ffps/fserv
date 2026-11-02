@@ -82,7 +82,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/outbox" -> json(Response.Status.OK, Telegram.itemsJson())
             post && uri == "/api/outbox/clear" -> {
                 val n = Telegram.clear()
-                FLog.i("telegram", "Очередь отправки очищена вручную ($n сообщ.)")
+                FLog.i("telegram", "очередь отправки очищена вручную ($n сообщ.)")
                 ok("удалено сообщений: $n")
             }
             post && uri == "/api/proxy/test" -> proxyTest(q(s, "name"))
@@ -112,7 +112,12 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/stop" ->
                 if (TaskEngine.cancelCurrent()) ok("остановка запрошена") else fail(Response.Status.CONFLICT, "сейчас ничего не выполняется")
 
-            get && uri == "/api/sounds" -> json(Response.Status.OK, obj("files" to Sounds.list(), "totalBytes" to Sounds.totalSize(), "playing" to Audio.previewing()))
+            get && uri == "/api/sounds" -> {
+                val users = TaskStore.soundUsers()
+                val files = Sounds.list()
+                for (i in 0 until files.length()) files.getJSONObject(i).let { f -> f.put("usedBy", org.json.JSONArray(users[f.getString("name")] ?: emptyList<String>())) }
+                json(Response.Status.OK, obj("files" to files, "totalBytes" to Sounds.totalSize(), "playing" to Audio.previewing()))
+            }
             get && uri == "/api/sounds/file" -> {
                 val name = q(s, "name") ?: ""
                 if (name.startsWith("system:")) {
@@ -137,7 +142,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             }
             post && uri == "/api/sounds/delete" -> {
                 val name = Sounds.checkName(q(s, "name"))
-                if (Sounds.delete(name)) { FLog.i("sounds", "Удалён звук «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+                val used = TaskStore.soundUsers()[name]
+                if (used != null) fail(Response.Status.CONFLICT, "звук используется в задачах: ${used.joinToString(", ")}; сначала уберите его из сценария")
+                else if (Sounds.delete(name)) { FLog.i("sounds", "удалён звук «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
             }
             post && uri == "/api/sounds/play" -> {
                 val name = q(s, "name") ?: ""
@@ -171,7 +178,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val name = Slides.checkName(q(s, "name"))
                 val used = TaskStore.slideUsers()[name]
                 if (used != null) fail(Response.Status.CONFLICT, "слайд используется в задачах: ${used.joinToString(", ")}; сначала уберите его из сценария")
-                else if (Slides.delete(name)) { FLog.i("slides", "Удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+                else if (Slides.delete(name)) { FLog.i("slides", "удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
             }
             get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()))
             post && uri == "/api/say" -> {
@@ -228,9 +235,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
             post && uri == "/api/camera/start" -> {
                 if (!CameraEngine.hasPermission(ctx)) fail(Response.Status.CONFLICT, "нет разрешения на камеру: на устройстве нажмите Allow camera в окне настроек")
-                else { CameraEngine.start("manual"); FLog.i("camera", "Камера включена вручную"); ok("камера запускается") }
+                else { CameraEngine.start("manual"); FLog.i("camera", "камера включена вручную"); ok("камера запускается") }
             }
-            post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); FLog.i("camera", "Камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
+            post && uri == "/api/camera/stop" -> { CameraEngine.stop("manual"); FLog.i("camera", "камера выключена вручную"); ok("камера выключена (если её не держит что-то ещё)") }
             get && uri == "/api/camera/history" -> json(Response.Status.OK, CameraEngine.historyJson(q(s, "limit")?.toIntOrNull()?.coerceIn(1, 600) ?: 120))
             get && uri == "/api/camera/snapshot" -> {
                 val jpg = CameraEngine.snapshotJpeg(q(s, "overlay") == "1", q(s, "size")?.toIntOrNull() ?: 320)
@@ -270,9 +277,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
-                if (err == null) { TaskEngine.refreshStt(); FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
+                if (err == null) { TaskEngine.refreshStt(); FLog.i("config", "удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
-            post && uri == "/api/config/history/clear" -> { TaskStore.clearHistory(); FLog.i("config", "История версий задач очищена"); ok("история очищена") }
+            post && uri == "/api/config/history/clear" -> { TaskStore.clearHistory(); FLog.i("config", "история версий задач очищена"); ok("история очищена") }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
             post && uri == "/api/config/restore" -> restoreConfig(q(s, "name") ?: "")
 
@@ -318,7 +325,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             }
             post && uri == "/api/photos/take" -> try {
                 val path = PhotoStore.shoot(ctx, "web-photo", "web")
-                FLog.i("photo", "Снимок из веб-интерфейса: $path")
+                FLog.i("photo", "снимок из веб-интерфейса: $path")
                 json(Response.Status.OK, obj("ok" to true, "message" to "снято: $path", "day" to path.substringBeforeLast('/').substringAfterLast('/'), "name" to path.substringAfterLast('/')))
             } catch (e: IllegalStateException) {
                 fail(Response.Status.CONFLICT, e.message ?: "не удалось снять")

@@ -1,6 +1,7 @@
 package com.ffps.fserv
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import org.json.JSONArray
 import java.io.File
 import java.io.InputStream
@@ -33,8 +34,28 @@ object Slides {
 
     fun list(): JSONArray {
         val files = dir.listFiles { f -> f.isFile && NAME.matches(f.name) }?.sortedBy { it.name.lowercase() } ?: emptyList()
-        return arr(files.map { obj("name" to it.name, "size" to it.length()) })
+        return arr(files.map { f -> val d = dimensions(f); obj("name" to f.name, "size" to f.length(), "width" to d?.first, "height" to d?.second) })
     }
+
+    /** Размер картинки в пикселях (для svg: из width/height или viewBox); null, если определить не удалось. */
+    fun dimensions(f: File): Pair<Int, Int>? = try {
+        if (f.extension.equals("svg", true)) {
+            val head = f.inputStream().use { i -> val b = ByteArray(8192); val n = i.read(b); String(b, 0, maxOf(n, 0), Charsets.UTF_8) }
+            val tag = Regex("<svg\\b[^>]*>", RegexOption.IGNORE_CASE).find(head)?.value ?: ""
+            fun attr(n: String) = Regex("\\s$n\\s*=\\s*[\"']\\s*([0-9.]+)\\s*(px)?\\s*[\"']", RegexOption.IGNORE_CASE).find(tag)?.groupValues?.get(1)?.toDoubleOrNull()
+            val w = attr("width"); val h = attr("height")
+            val vb = Regex("viewBox\\s*=\\s*[\"']\\s*[-0-9.]+[ ,]+[-0-9.]+[ ,]+([0-9.]+)[ ,]+([0-9.]+)", RegexOption.IGNORE_CASE).find(tag)
+            when {
+                w != null && h != null -> w.toInt() to h.toInt()
+                vb != null -> vb.groupValues[1].toDouble().toInt() to vb.groupValues[2].toDouble().toInt()
+                else -> null
+            }
+        } else {
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.absolutePath, o)
+            if (o.outWidth > 0 && o.outHeight > 0) o.outWidth to o.outHeight else null
+        }
+    } catch (e: Exception) { null }
 
     fun totalSize(): Long = dir.listFiles()?.sumOf { it.length() } ?: 0L
 

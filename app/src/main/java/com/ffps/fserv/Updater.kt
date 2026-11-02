@@ -98,7 +98,7 @@ object Updater {
             val l = check()
             if (l.optLong("versionCode") > BuildConfig.VERSION_CODE && Settings.getStr("notifiedVersion") != l.optString("versionName")) {
                 Settings.putStr("notifiedVersion", l.optString("versionName"))
-                FLog.i("update", "Доступно обновление ${l.optString("versionName")}")
+                FLog.i("update", "доступно обновление ${l.optString("versionName")}")
                 Telegram.enqueue("fServe: доступно обновление ${l.optString("versionName")} (установлена ${BuildConfig.VERSION_NAME}). Установить можно из веб-интерфейса, вкладка «Обновления».")
             }
         } catch (e: Exception) {
