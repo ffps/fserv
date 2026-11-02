@@ -14,8 +14,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Голос: системный синтезатор речи Android (TextToSpeech). Хороший автономный женский голос появится позже;
- * этот слой остаётся запасным. Язык, голос, скорость и тон берутся из настроек приложения (вкладка «Звук»).
+ * Голос: системный синтезатор речи Android (TextToSpeech). Какой именно движок и голос звучат, определяет система
+ * (настройка «Синтез речи» устройства); язык, голос, скорость и тон берутся из настроек приложения (вкладка «Звук»).
  */
 object Voice {
     private lateinit var app: Context
@@ -88,15 +88,9 @@ object Voice {
      * речи и обрывается по [cancel]). Возвращает текст ошибки или null.
      */
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
-        val wantPiper = cfg?.optString("engine") == "piper"
-        if (wantPiper && !Piper.ready()) FLog.w("voice", "voice engine=piper, но голос Piper не скачан (вкладка «Звук»): говорю системным голосом")
-        val usePiper = wantPiper && Piper.ready()
-        var t: TextToSpeech? = null
-        if (!usePiper) {
-            ensure()?.let { return it }
-            t = tts ?: return "синтезатор не готов"
-            apply(t, cfg)?.let { return it }
-        }
+        ensure()?.let { return it }
+        val t = tts ?: return "синтезатор не готов"
+        apply(t, cfg)?.let { return it }
         if (volumePct != null) Audio.setVolume(app, volumePct)
         val max = try { TextToSpeech.getMaxSpeechInputLength() } catch (e: Throwable) { 3900 }
         val rnd = java.util.Random()
@@ -131,20 +125,6 @@ object Voice {
             }
             if (rest.isNotEmpty()) chunks.add(rest)
             for (part in chunks) {
-                if (usePiper) {
-                    if (cancel()) return null
-                    val err = Piper.speak(part, (cfg?.optDouble("rate", 1.0) ?: 1.0).toFloat(), cancel)
-                    if (err != null) {
-                        // сбой нейроголоса не должен оставлять человека без речи: эта фраза уходит системному голосу
-                        FLog.w("voice", "$err; говорю системным голосом")
-                        ensure()?.let { return it }
-                        val st = tts ?: return "синтезатор не готов"
-                        apply(st, cfg)?.let { return it }
-                        return speakSystem(st, part, cancel)
-                    }
-                    continue
-                }
-                val t = t!!
                 val id: String
                 synchronized(lock) { id = "u${++counter}" }
                 val latch = CountDownLatch(1)
@@ -164,23 +144,7 @@ object Voice {
         return null
     }
 
-    /** Запасной путь: одна фраза системным голосом. */
-    private fun speakSystem(t: TextToSpeech, part: String, cancel: () -> Boolean): String? {
-        val id: String
-        synchronized(lock) { id = "u${++counter}" }
-        val latch = CountDownLatch(1)
-        waiting[id] = latch
-        val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC) }
-        if (t.speak(part, TextToSpeech.QUEUE_FLUSH, params, id) != TextToSpeech.SUCCESS) { waiting.remove(id); return "синтезатор отказался говорить" }
-        val end = System.currentTimeMillis() + 5 * 60_000L
-        while (!latch.await(100, TimeUnit.MILLISECONDS)) {
-            if (cancel() || System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return null }
-        }
-        return null
-    }
-
     fun stop() {
-        Piper.stop()
         try { tts?.stop() } catch (e: Exception) {}
     }
 
@@ -193,7 +157,7 @@ object Voice {
         val voices = try {
             t.voices?.filter { it.locale.language == Locale.forLanguageTag(lang).language }
                 ?.sortedBy { it.name }?.take(60)?.map {
-                    obj("name" to it.name, "locale" to it.locale.toLanguageTag(), "quality" to it.quality, "network" to it.isNetworkConnectionRequired)
+                    obj("name" to it.name, "locale" to it.locale.toLanguageTag(), "quality" to it.quality, "latency" to it.latency, "network" to it.isNetworkConnectionRequired, "notInstalled" to (it.features?.contains("notInstalled") == true))
                 } ?: emptyList()
         } catch (e: Throwable) { emptyList() }
         return obj(

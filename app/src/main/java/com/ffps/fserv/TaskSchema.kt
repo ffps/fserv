@@ -48,7 +48,6 @@ object TaskSchema {
         if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "rate — число от 0.3 до 3 (1 = обычная скорость)"
         if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "pitch — число от 0.3 до 2 (1 = обычный тон)"
         if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "lang — например ru-RU"
-        if (o.has("engine") && o.optString("engine") !in listOf("system", "piper")) return "engine — system (голос Android) или piper (нейроголос, скачивается на вкладке «Звук»)"
         return null
     }
 

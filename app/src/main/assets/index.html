@@ -167,38 +167,24 @@
   <h2 style="margin-top:22px">Общие настройки</h2>
   <div class="f">
     <label for="vsVol">Громкость по умолчанию, %</label><input id="vsVol" type="number" min="0" max="100" placeholder="не задана">
-    <label for="vsEngine">Голосовой движок</label><select id="vsEngine"><option value="">голос Android</option><option value="piper">нейроголос Piper</option></select>
-    <label for="vsLang" class="va">Язык голоса</label><input id="vsLang" class="va" placeholder="ru-RU">
-    <label for="vsVoice" class="va">Голос</label><select id="vsVoice" class="va"><option value="">по умолчанию</option></select>
+    <label for="vsLang">Язык голоса</label><input id="vsLang" placeholder="ru-RU">
+    <label for="vsVoice">Голос</label><select id="vsVoice"><option value="">по умолчанию</option></select>
     <label for="vsRate">Скорость речи (1 = обычная)</label><input id="vsRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
-    <label for="vsPitch" class="va">Тон голоса (1 = обычный)</label><input id="vsPitch" class="va" type="number" step="0.05" min="0.3" max="2" placeholder="1">
+    <label for="vsPitch">Тон голоса (1 = обычный)</label><input id="vsPitch" type="number" step="0.05" min="0.3" max="2" placeholder="1">
     <label for="svVol">Громкость проверки, %</label><input id="svVol" type="number" min="0" max="100" value="80">
   </div>
   <div class="row" style="margin-top:12px"><button class="btn" id="vsSave">Сохранить</button></div>
   <div class="msg" id="vsMsg"></div>
-  <p class="hint">Действуют на все задачи (шаги say и ask). У шага можно задать свою громкость параметром <code>volume=</code>. Язык, голос и тон относятся к голосу Android; для нейроголоса Piper их нет, поэтому строки скрываются.<br>«Громкость проверки» не относится к задачам и не сохраняется: она действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы); при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой.</p>
+  <p class="hint">Действуют на все задачи (шаги say и ask). У шага можно задать свою громкость параметром <code>volume=</code>.<br>«Громкость проверки» не относится к задачам и не сохраняется: она действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы); при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой.</p>
   <h2 style="margin-top:22px">Голос</h2>
   <div class="row">
     <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
-    <button class="ib add" id="svSay" title="Сказать"></button>
+    <button class="ib add" id="svSay" title="Сказать голосом из общих настроек"></button>
   </div>
   <div class="msg" id="svMsg"></div>
   <p class="hint" id="svInfo"></p>
-  <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
-  <p class="hint">Кнопка ▶ произносит текст выбранным в «Общих настройках» голосовым движком. Список голосов Android зависит от установленного на устройстве синтезатора речи.</p>
-  <h2 style="margin-top:22px">Голос Piper (нейроголос)</h2>
-  <div class="kvwrap"><table class="kv"><tbody id="pgInfo"></tbody></table></div>
-  <div class="row" style="margin-top:10px">
-    <label>Голос <select id="pgVoice"><option value="irina">Ирина (женский)</option><option value="denis">Денис (мужской)</option><option value="dmitri">Дмитрий (мужской)</option><option value="ruslan">Руслан (мужской)</option></select></label>
-    <button class="btn" id="pgDownload">Скачать голос</button>
-    <button class="ib del" id="pgDelete" title="Удалить голос Piper"></button>
-  </div>
-  <div class="row" style="margin-top:6px">
-    <input type="file" id="pgFile" accept=".bz2,.zip,.tar.bz2">
-    <button class="btn sec" id="pgUpload">Загрузить файл</button>
-  </div>
-  <div class="msg" id="pvMsg"></div>
-  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «STT/TTS» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. Если в задачах речь идёт голосом Piper, голос постоянно держится в памяти (около 70 МБ), а все фразы без переменных заранее озвучиваются в кэш (до 30 МБ) и играют сразу; фразы с переменными, например {time}, синтезируются на лету и тоже попадают в кэш. Без таких задач голос выгружается через 5 минут простоя.</p>
+  <table><thead><tr><th>Голос</th><th>Источник</th><th>Качество</th><th>Задержка</th><th></th></tr></thead><tbody id="svVoices"></tbody></table>
+  <p class="hint">Говорит системный синтезатор речи Android; какой именно (Google, RHVoice и другие), выбирается в настройках устройства: Язык и ввод, Синтез речи. Название голоса, источник, качество и задержку сообщает сам синтезатор. «Нужен интернет» значит, что голос синтезируется онлайн; без сети синтезатор может заговорить другим голосом или медленнее. Кнопка ▶ в строке произносит текст выше этим голосом; выбрать голос для задач можно в «Общих настройках».</p>
   <h2 style="margin-top:22px">Распознавание речи</h2>
   <div class="kvwrap"><table class="kv"><tbody id="sttInfo"></tbody></table></div>
   <div class="row" style="margin-top:10px">
@@ -217,7 +203,7 @@
   <div class="msg" id="sttTMsg"></div>
   <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «STT/TTS»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
-  <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
+  <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Задачи</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="sdFile" accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,audio/*" multiple>
     <button class="btn" id="sdUpload">Загрузить</button>
@@ -297,13 +283,15 @@
     <label>Зона <select id="znSel"></select></label>
     <button class="ib add" id="znAdd" title="Добавить зону"></button>
     <button class="ib del" id="znDel" title="Удалить зону"></button>
-    <label>Рисовать <select id="znMode"><option value="rects">область</option><option value="exclude">вырез</option></select></label>
-    <button class="btn sec sm" id="znRectDel">Удалить выбранный прямоугольник</button>
-    <button class="btn sec sm" id="znShot">Обновить кадр</button>
   </div>
   <div id="znWrap" style="position:relative;width:300px;max-width:100%;aspect-ratio:3/4;margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#222;touch-action:none">
     <img id="znImg" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;display:none">
     <canvas id="znCv" style="position:absolute;left:0;top:0;width:100%;height:100%;cursor:crosshair"></canvas>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <label>Рисовать <select id="znMode"><option value="rects">область</option><option value="exclude">вырез</option></select></label>
+    <button class="ib" id="znRectDel" title="Удалить выбранный прямоугольник"></button>
+    <button class="ib" id="znShot" title="Обновить кадр"></button>
   </div>
   <div class="row" style="margin-top:10px"><button class="btn" id="znSave">Сохранить зоны</button></div>
   <div class="msg" id="znMsg"></div>
@@ -326,13 +314,13 @@
 
 <section id="slides">
   <h2>Слайды</h2>
-  <p class="hint">Картинки для шага <code>slide</code> (помощник на экране киоска): jpg, png, gif, webp, svg, в том числе анимированные. До 5 МБ на файл, до 30 МБ всего. Пример: <code>slide ["hello.svg"] for=5s fit=contain</code>; убрать: <code>slide off</code>.</p>
-  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Разрешение, px</th><th>Размер, КБ</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
+  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Разрешение, px</th><th>Размер, КБ</th><th>Задачи</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <input type="file" id="slFile" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*" multiple>
     <button class="btn" id="slUpload">Загрузить</button>
   </div>
   <div id="slMsg" class="msg"></div>
+  <p class="hint">Картинки для шага <code>slide</code> (помощник на экране киоска): jpg, png, gif, webp, svg, в том числе анимированные. До 5 МБ на файл, до 30 МБ всего. Пример: <code>slide ["hello.svg"] for=5s fit=contain</code>; убрать: <code>slide off</code>.</p>
 </section>
 
 <section id="photos">
@@ -476,7 +464,7 @@ track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
 track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
-track("vsSave", ["vsVol", "vsEngine", "vsLang", "vsVoice", "vsRate", "vsPitch"]);
+track("vsSave", ["vsVol", "vsLang", "vsVoice", "vsRate", "vsPitch"]);
 track("znSave", [], () => znDirty());
 track("pgSave", ["pgText"]);
 track("tkSave", [], () => tkOpen && (tkDirty() || tkOrig === ""));
@@ -516,9 +504,11 @@ const ICO = {
   edit: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>'),
   del: svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  refresh: svg('<path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/>'),
+  rectDel: svg('<rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/><path d="M9 10l6 4M15 10l-6 4"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "pgDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -939,15 +929,26 @@ setInterval(() => { if (current === "config") loadTasks(); }, 1500);
 window.addEventListener("beforeunload", e => { if (tkOpen && (tkDirty() || tkOrig === "")) { e.preventDefault(); e.returnValue = ""; } });
 
 // ---- звук: голос и файлы ----
+const Q_TXT = {100: "очень низкое", 200: "низкое", 300: "обычное", 400: "высокое", 500: "очень высокое"};
+const L_TXT = {100: "очень низкая", 200: "низкая", 300: "обычная", 400: "высокая", 500: "очень высокая"};
+function voiceLabel(x) {
+  let lang = x.locale;
+  try { lang = new Intl.DisplayNames(["ru"], {type: "language"}).of(x.locale) || x.locale; } catch (e) {}
+  lang = lang.charAt(0).toUpperCase() + lang.slice(1);
+  const m = /-x-([a-z0-9]+)(?:-(?:local|network|embedded))?$/i.exec(x.name);
+  return lang + " · " + (m ? "вариант " + m[1] : x.name);
+}
+function voiceSource(x) { return x.notInstalled ? "не установлен" : x.network ? "нужен интернет" : "автономный"; }
+let voiceList = [];
 async function loadSound() {
   try {
     const v = (await api("/api/voice")).json;
     $("#svInfo").textContent = v.ready ? "Синтезатор: " + (v.engine || "?") + "; язык " + v.lang + (v.languageAvailable ? " доступен" : " НЕ доступен: установите голос в настройках устройства (Язык и ввод, Синтез речи)") : "Синтезатор не готов: " + v.error;
-    $("#svVoices").textContent = v.voices && v.voices.length ? v.voices.map(x => x.name + "  (" + x.locale + (x.network ? ", нужен интернет" : ", автономный") + ")").join("\n") : "нет данных";
+    voiceList = v.voices || [];
+    $("#svVoices").innerHTML = voiceList.length ? voiceList.map(x => '<tr><td title="' + esc(x.name) + '">' + esc(voiceLabel(x)) + '</td><td>' + esc(voiceSource(x)) + '</td><td>' + esc(Q_TXT[x.quality] || "?") + '</td><td>' + esc(L_TXT[x.latency] || "?") + '</td><td><button class="ib" data-vt="' + esc(x.name) + '" title="Проверить этим голосом">' + ICO.play + '</button></td></tr>').join("") : '<tr><td colspan="5" style="color:var(--dim)">нет данных</td></tr>';
   } catch (e) { $("#svInfo").textContent = e.message; }
   loadVoiceCfg();
   loadStt();
-  loadPiper();
   loadSoundFiles();
 }
 let sttTimer = null, sttBusy = false;
@@ -984,41 +985,6 @@ $("#sttTest").onclick = () => {
     finally { clearInterval(ph); setSttBtn(false); }
   });
 };
-let pgTimer = null, pgBusy = false;
-async function loadPiper() {
-  try {
-    const t = (await api("/api/piper")).json;
-    const st = {none: "голос не скачан", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готов" + (t.voice ? ": " + t.voice : ""), error: "ошибка скачивания"}[t.state] || t.state;
-    $("#pgInfo").innerHTML = kvRowHtml("Голос", esc(st) + (t.state === "ready" ? ' <button class="ib add" id="pgSay" title="' + (pgBusy ? "Остановить" : "Сказать этим голосом") + '">' + (pgBusy ? ICO.stop : ICO.play) + "</button>" : "")) +
-      kvRowHtml("Фразы в кэше", esc(t.cacheFiles + " (" + fmtBytes(t.cacheBytes) + ")" + (t.pinned ? ", голос держится в памяти" : "")) + (t.cacheFiles ? ' <button class="ib del" id="pgCacheClear" title="Очистить кэш">' + ICO.del + "</button>" : "")) + (t.error ? kvRow("Ошибка", t.error) : "");
-    const busy = t.state === "downloading" || t.state === "unpacking";
-    $("#pgDownload").disabled = busy;
-    $("#pgUpload").disabled = busy;
-    $("#pgDelete").disabled = t.state !== "ready";
-    if (busy && !pgTimer) pgTimer = setInterval(() => { if (current === "sound") loadPiper(); }, 1500);
-    if (!busy && pgTimer) { clearInterval(pgTimer); pgTimer = null; }
-  } catch (e) { $("#pgInfo").innerHTML = kvRow("Ошибка", e.message); }
-}
-$("#pgDownload").onclick = () => run("#pvMsg", async () => { const r = await post("/api/piper/download?voice=" + $("#pgVoice").value); loadPiper(); return r.json.message; });
-$("#pgUpload").onclick = () => run("#pvMsg", async () => {
-  const f = $("#pgFile").files[0]; if (!f) throw new Error("выберите файл голоса (.tar.bz2 или .zip)");
-  say("#pvMsg", "загружаю " + f.name + " (" + Math.round(f.size / 1048576) + " МБ) и распаковываю, это может занять минуту…", true);
-  const r = await fetch("/api/piper/upload", {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: f});
-  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
-  $("#pgFile").value = ""; loadPiper(); return j.message || "голос установлен";
-});
-$("#pgDelete").onclick = () => { if (confirm("Удалить голос Piper?")) run("#pvMsg", async () => { const r = await post("/api/piper/delete"); loadPiper(); return r.json.message; }); };
-function setPgBtn(on) { pgBusy = on; loadPiper(); }
-document.addEventListener("click", e => {
-  if (e.target.closest("#pgCacheClear")) { run("#pvMsg", async () => { const r = await post("/api/piper/cache/clear"); loadPiper(); return r.json.message; }); return; }
-  if (!e.target.closest("#pgSay")) return;
-  if (pgBusy) { post("/api/say/stop").catch(() => {}); return; }
-  setPgBtn(true);
-  run("#pvMsg", async () => {
-    say("#pvMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
-    try { const r = await post("/api/say?engine=piper&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
-  });
-});
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {
@@ -1031,7 +997,7 @@ async function loadSoundFiles() {
     playing = d.playing || null; renderSys();
     clearTimeout(sdTimer);
     if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
-    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td>" + (f.usedBy && f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + "</td><td style=\"white-space:nowrap\">" +
+    $("#sdBody").innerHTML = d.files.length ? d.files.map(f => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + esc(f.name) + "\" title=\"прослушать здесь, в браузере\">" + esc(f.name) + "</a></td><td>" + Math.round(f.size / 1024) + "</td><td>" + (f.durationMs ? Math.round(f.durationMs / 1000) : "?") + "</td><td>" + taskLinks(f.usedBy) + "</td><td style=\"white-space:nowrap\">" +
       '<button class="ib" data-sd="' + esc(f.name) + '" data-act="play" title="' + (playing === f.name ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === f.name ? ICO.stop : ICO.play) + '</button> <button class="ib del" data-sd="' + esc(f.name) + '" data-act="del"' + (f.usedBy && f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="5" style="color:var(--dim)">файлов нет</td></tr>';
   } catch (e) { say("#sdMsg", e.message, false); }
 }
@@ -1067,11 +1033,23 @@ $("#sdUpload").onclick = () => run("#sdMsg", async () => {
   }
   $("#sdFile").value = ""; await loadSoundFiles(); return "загружено файлов: " + files.length;
 });
+// ---- ссылки на задачи (колонка «Задачи» у слайдов и звуков) ----
+function taskLinks(ids) { return ids && ids.length ? ids.map(id => '<a href="#config" data-goto="' + esc(id) + '">' + esc(id) + '</a>').join(", ") : "—"; }
+async function gotoTask(id) {
+  if (tkOpen && tkOrig !== id && !confirmDiscard()) return;
+  showTab("config");
+  try { await loadGlobal(); } catch (e) {}
+  const t = (cfgObj.tasks || []).find(x => x.id === id);
+  if (t && !(tkOpen && tkOrig === id)) { showTask(t.text, t.id); loadTasks(); }
+  $("#tkEditor").scrollIntoView({block: "nearest"});
+}
+document.addEventListener("click", e => { const a = e.target.closest("a[data-goto]"); if (!a) return; e.preventDefault(); gotoTask(a.dataset.goto); });
+
 // ---- слайды ----
 async function loadSlides() {
   try {
     const d = (await api("/api/slides")).json;
-    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + (f.width && f.height ? f.width + "×" + f.height : "?") + '</td><td>' + Math.round(f.size / 1024) + '</td><td>' + (f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '"' + (f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="6">слайдов нет</td></tr>';
+    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + (f.width && f.height ? f.width + "×" + f.height : "?") + '</td><td>' + Math.round(f.size / 1024) + '</td><td>' + taskLinks(f.usedBy) + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '"' + (f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="6">слайдов нет</td></tr>';
   } catch (e) { say("#slMsg", e.message, false); }
 }
 $("#slBody").onclick = e => {
@@ -1089,6 +1067,12 @@ $("#slUpload").onclick = () => run("#slMsg", async () => {
   $("#slFile").value = ""; await loadSlides(); return "загружено файлов: " + files.length;
 });
 let svBusy = false;
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-vt]"); if (!b) return;
+  if (svBusy) { post("/api/say/stop").catch(() => {}); return; }
+  setSvBtn(true);
+  run("#svMsg", async () => { say("#svMsg", "говорю…", true); try { const r = await post("/api/say?volume=" + $("#svVol").value + "&voice=" + encodeURIComponent(b.dataset.vt), $("#svText").value); return r.json.message; } finally { setSvBtn(false); } });
+});
 function setSvBtn(on) { svBusy = on; const b = $("#svSay"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Сказать"; }
 $("#svSay").onclick = () => {
   if (svBusy) { post("/api/say/stop").catch(() => {}); return; }
@@ -1097,32 +1081,29 @@ $("#svSay").onclick = () => {
 };
 
 // ---- голос: общие настройки (вкладка «Звук») ----
-function vsVisibility() { const piper = $("#vsEngine").value === "piper"; document.querySelectorAll("#sound .va").forEach(e => { e.style.display = piper ? "none" : ""; }); }
-$("#vsEngine").onchange = vsVisibility;
 async function loadVoiceCfg() {
   try {
     if (DIRTY.vsSave && DIRTY.vsSave.base !== undefined && val(DIRTY.vsSave.ids) !== DIRTY.vsSave.base) return; // не затираем несохранённое
     const v = (await api("/api/settings")).json.voice || {};
-    $("#vsVol").value = v.volume ?? ""; $("#vsEngine").value = v.engine === "piper" ? "piper" : ""; $("#vsLang").value = v.lang || "";
+    $("#vsVol").value = v.volume ?? ""; $("#vsLang").value = v.lang || "";
     $("#vsRate").value = v.rate ?? ""; $("#vsPitch").value = v.pitch ?? "";
     try {
       const vi = (await api("/api/voice")).json;
-      const names = (vi.voices || []).map(x => x.name); if (v.voice && !names.includes(v.voice)) names.unshift(v.voice);
-      $("#vsVoice").innerHTML = '<option value="">по умолчанию</option>' + names.map(n => "<option>" + esc(n) + "</option>").join("");
+      const vs = (vi.voices || []).slice(); if (v.voice && !vs.some(x => x.name === v.voice)) vs.unshift({name: v.voice, locale: "?"});
+      $("#vsVoice").innerHTML = '<option value="">по умолчанию</option>' + vs.map(x => '<option value="' + esc(x.name) + '">' + esc(x.locale === "?" ? x.name + " (нет в списке)" : voiceLabel(x) + " (" + voiceSource(x) + ")") + "</option>").join("");
     } catch (e) {}
-    $("#vsVoice").value = v.voice || ""; vsVisibility(); rebase("vsSave");
+    $("#vsVoice").value = v.voice || ""; rebase("vsSave");
   } catch (e) { say("#vsMsg", e.message, false); }
 }
 $("#vsSave").onclick = () => run("#vsMsg", async () => {
   const v = {};
   if ($("#vsVol").value !== "") v.volume = Number($("#vsVol").value);
-  if ($("#vsEngine").value) v.engine = $("#vsEngine").value;
   if ($("#vsLang").value.trim()) v.lang = $("#vsLang").value.trim();
   if ($("#vsVoice").value) v.voice = $("#vsVoice").value;
   if ($("#vsRate").value !== "") v.rate = Number($("#vsRate").value);
   if ($("#vsPitch").value !== "") v.pitch = Number($("#vsPitch").value);
   await post("/api/settings", JSON.stringify({voice: v}));
-  loadVoiceCfg(); loadPiper(); return "сохранено";
+  loadVoiceCfg(); return "сохранено";
 }, "vsSave");
 
 // ---- зоны детектора движения (вкладка «Камера») ----

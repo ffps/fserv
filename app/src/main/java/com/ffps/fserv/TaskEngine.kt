@@ -84,39 +84,14 @@ object TaskEngine {
         }
     }
 
-    /** Фразы say/ask без переменных (их можно озвучить заранее) и число шагов речи вообще. Кусочки между {pause:…} — отдельные фразы, как их отдаёт Voice. */
-    private fun speechPhrases(node: Any?, out: MutableSet<String>, count: IntArray) {
-        fun add(v: Any?) {
-            val texts = if (v is JSONArray) (0 until v.length()).map { v.optString(it) } else listOf(v?.toString() ?: "")
-            for (t in texts) for (chunk in t.split(TaskSchema.PAUSE_RE)) {
-                val c = chunk.trim()
-                if (c.isNotEmpty() && c.length <= 3000 && !Regex("""\{[A-Za-z_][A-Za-z0-9_]*\}""").containsMatchIn(c)) out.add(c)
-            }
-        }
-        when (node) {
-            is JSONArray -> for (i in 0 until node.length()) speechPhrases(node.opt(i), out, count)
-            is JSONObject -> {
-                if (node.has("say")) { count[0]++; add(node.opt("say")) }
-                if (node.has("ask")) { count[0]++; add(node.opt("ask")); add(if (node.has("again")) node.opt("again") else "Повторите, пожалуйста.") }
-                for (k in listOf("then", "else", "do", "background", "steps")) speechPhrases(node.opt(k), out, count)
-            }
-        }
-    }
-
     /** Если в задачах есть ask, держит модель распознавания речи в памяти; иначе позволяет выгрузить. Вызывать при старте и после правки задач. */
     fun refreshStt() {
         try {
             val kinds = HashSet<String>()
             askKinds(TaskStore.load().root.optJSONArray("tasks"), kinds)
             Stt.pin(kinds)
-            val root = TaskStore.load().root
-            val v = root.optJSONObject("voice")
-            val phrases = LinkedHashSet<String>(); val count = IntArray(1)
-            val piper = v?.optString("engine") == "piper"
-            if (piper) speechPhrases(root.optJSONArray("tasks"), phrases, count)
-            Piper.configure(piper && count[0] > 0, phrases.toList(), (v?.optDouble("rate", 1.0) ?: 1.0).toFloat())
         } catch (e: Exception) {
-            FLog.w("task", "подготовка речи и голоса не удалась: ${e.message}")
+            FLog.w("task", "подготовка распознавания речи не удалась: ${e.message}")
         }
     }
 

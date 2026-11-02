@@ -109,9 +109,9 @@ object Settings {
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
-    /** Настройки голоса для задач (вкладка «Звук»): volume, engine, lang, voice, rate, pitch; отсутствующий ключ = значение по умолчанию. */
+    /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch; отсутствующий ключ = значение по умолчанию. */
     @Synchronized
-    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString())
+    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString()).also { it.remove("engine") } // engine — остаток нейроголоса (до 0.15.0), игнорируется
 
     /** Зоны детектора движения (вкладка «Камера»): имя → {rect | rects, exclude}. */
     @Synchronized

@@ -142,9 +142,8 @@ class ScriptTest {
 
     @Test fun voiceAndZoneSettings() {
         assertNull(TaskSchema.checkVoice(voiceJson))
-        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"piper","rate":0.95,"volume":70}""")))
-        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"system"}""")))
-        assertTrue(TaskSchema.checkVoice(JSONObject("""{"engine":"google"}"""))!!.contains("engine"))
+        assertNull(TaskSchema.checkVoice(JSONObject("""{"rate":0.95,"volume":70}""")))
+        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"piper"}"""))) // остаток старых копий (нейроголос убран в 0.15.0), игнорируется
         assertTrue(TaskSchema.checkVoice(JSONObject("""{"volume":300}"""))!!.contains("volume"))
         assertNull(TaskSchema.checkZone(zonesJson.getJSONObject("bed")))
         assertTrue(TaskSchema.checkZone(JSONObject("""{"rect":[0.5,0.5,0.2,0.2]}"""))!!.contains("x1 < x2"))

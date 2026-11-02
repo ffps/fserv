@@ -186,26 +186,14 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 require(text.isNotEmpty()) { "пустой текст" }
                 val vol = q(s, "volume")?.toIntOrNull()?.coerceIn(0, 100) ?: voiceCfg()?.takeIf { it.has("volume") }?.optInt("volume")
                 sayStop = false
-                // ?engine=piper|system — проверка конкретного голоса независимо от строки voice
-                val cfg = q(s, "engine")?.let { e -> JSONObject(voiceCfg()?.toString() ?: "{}").put("engine", e) } ?: voiceCfg()
+                // ?voice=имя — проверка конкретного голоса Android независимо от настройки
+                val cfg = q(s, "voice")?.takeIf { it.isNotEmpty() }?.let { v -> JSONObject(voiceCfg()?.toString() ?: "{}").put("voice", v) } ?: voiceCfg()
                 val err = Voice.speak(text, vol, cfg) { sayStop }
                 if (err == null) ok(if (sayStop) "остановлено" else "произнесено") else fail(Response.Status.INTERNAL_ERROR, err)
             }
 
             post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
 
-            get && uri == "/api/piper" -> json(Response.Status.OK, Piper.status())
-            post && uri == "/api/piper/download" -> {
-                val err = Piper.downloadAsync(q(s, "voice") ?: "irina")
-                if (err == null) ok("скачивание запущено") else fail(Response.Status.CONFLICT, err)
-            }
-            post && uri == "/api/piper/upload" -> {
-                val f = Piper.receive(ctx, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
-                val err = Piper.installFromFile(f)
-                if (err == null) ok("голос установлен") else fail(Response.Status.BAD_REQUEST, "архив не подошёл: $err")
-            }
-            post && uri == "/api/piper/cache/clear" -> { Piper.clearCache(); FLog.i("piper", "кэш фраз очищен"); TaskEngine.refreshStt(); ok("кэш очищен, фразы озвучатся заново") }
-            post && uri == "/api/piper/delete" -> { Piper.delete(); FLog.i("piper", "голос Piper удалён"); TaskEngine.refreshStt(); ok("голос удалён") }
 
             get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx))
             post && uri == "/api/stt/download" -> {
@@ -561,13 +549,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/slides" to "загрузить слайд: тело файла, ?name=hello.gif (jpg, png, gif, webp, svg; до 5 МБ, всего до 30 МБ)",
         "POST /api/slides/delete" to "удалить слайд; ?name=",
         "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
-        "POST /api/say" to "произнести текст (тело); ?volume=80",
+        "POST /api/say" to "произнести текст (тело); ?volume=80; ?voice=имя — проверить конкретный голос Android",
         "POST /api/say/stop" to "прервать речь",
-        "GET /api/piper" to "голос Piper: состояние модели и ход скачивания",
-        "POST /api/piper/download" to "скачать голос Piper: ?voice=irina|denis|dmitri|ruslan (около 65 МБ)",
-        "POST /api/piper/upload" to "установить голос из архива с компьютера (тело запроса — vits-piper-ru_RU-….tar.bz2 или zip)",
-        "POST /api/piper/cache/clear" to "очистить кэш готовых фраз Piper",
-        "POST /api/piper/delete" to "удалить голос Piper",
         "GET /api/stt" to "распознавание речи: состояние модели, разрешение микрофона, ход скачивания",
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
         "POST /api/stt/upload" to "установить модель из zip, загруженного с компьютера (тело запроса — файл vosk-model-small-ru-0.22.zip)",
