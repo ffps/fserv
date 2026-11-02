@@ -102,7 +102,7 @@ object TaskStore {
     @Synchronized
     fun saveTask(originalId: String, newId: String, text: String): String? {
         checkId(newId)?.let { return it }
-        if (newId == COMMON || newId.startsWith("_")) return "id не может начинаться с _"
+        if (newId.startsWith("_")) return "id не может начинаться с _"
         if (text.isBlank()) return "текст задачи пуст"
         if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
         if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
