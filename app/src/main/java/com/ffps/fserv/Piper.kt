@@ -2,9 +2,6 @@ package com.ffps.fserv
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
 import com.github.csukuangfj.piper.phonemize.piperPhonemizeInitialize
 import com.github.csukuangfj.piper.phonemize.piperPhonemizeText
 import com.k2fsa.sherpa.onnx.GenerationConfig
@@ -52,6 +49,7 @@ object Piper {
         app = ctx.applicationContext
         root = File(ctx.filesDir, "piper")
         File(root, "unpack").deleteRecursively()
+        File(root, "cache").listFiles { f -> f.name.endsWith(".pcm") }?.forEach { it.delete() } // кэш прежнего формата
         refreshState()
     }
 
@@ -270,64 +268,53 @@ object Piper {
     private fun cacheDir() = File(root, "cache")
 
     private fun cacheFile(text: String, speed: Float): File {
-        val h = java.security.MessageDigest.getInstance("SHA-1").digest("v2|$voice|${"%.2f".format(java.util.Locale.US, speed)}|$text".toByteArray())
-        return File(cacheDir(), h.joinToString("") { "%02x".format(it) } + ".pcm")
+        val h = java.security.MessageDigest.getInstance("SHA-1").digest("v3|$voice|${"%.2f".format(java.util.Locale.US, speed)}|$text".toByteArray())
+        return File(cacheDir(), h.joinToString("") { "%02x".format(it) } + ".wav")
     }
 
-    /** Готовая фраза: 4 байта частоты и 16-битный звук. Кэш не больше [CACHE_MAX]: лишнее (давно не звучавшее) удаляется. */
+    /** Готовая фраза хранится как обычный WAV (16 бит, моно) и играет тем же MediaPlayer, что и звуки задач. Кэш не больше [CACHE_MAX]. */
     private fun cachePut(f: File, rate: Int, pcm: ByteArray) {
         try {
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
-            java.io.DataOutputStream(tmp.outputStream().buffered()).use { it.writeInt(rate); it.write(pcm) }
+            val h = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            h.put("RIFF".toByteArray()).putInt(36 + pcm.size).put("WAVE".toByteArray()).put("fmt ".toByteArray())
+                .putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
+                .put("data".toByteArray()).putInt(pcm.size)
+            tmp.outputStream().buffered().use { it.write(h.array()); it.write(pcm) }
             if (!tmp.renameTo(f)) tmp.delete()
-            val all = cacheDir().listFiles { x -> x.name.endsWith(".pcm") }?.sortedBy { it.lastModified() } ?: return
+            val all = cacheDir().listFiles { x -> x.name.endsWith(".wav") }?.sortedBy { it.lastModified() } ?: return
             var sum = all.sumOf { it.length() }
             for (old in all) { if (sum <= CACHE_MAX) break; sum -= old.length(); old.delete() }
         } catch (e: Exception) { FLog.w("piper", "кэш фразы не записан: ${e.message}") }
     }
 
-    private fun newTrack(rate: Int, enc: Int): AudioTrack {
-        val minBuf = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, enc)
-        return AudioTrack(
-            AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).setUsage(AudioAttributes.USAGE_MEDIA).build(),
-            AudioFormat.Builder().setEncoding(enc).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build(),
-            maxOf(minBuf, rate * 4), AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE
-        )
-    }
-
-    /** Играет готовую фразу из кэша: модель для этого не нужна. */
-    private fun playCached(f: File, text: String, cancel: () -> Boolean): String? {
-        var track: AudioTrack? = null
+    /** Играет WAV через MediaPlayer (как play в задачах: этот путь проверен на устройстве). Возвращается по окончании или по [cancel]. */
+    private fun playFile(f: File, cancel: () -> Boolean): String? {
+        val mp = android.media.MediaPlayer()
         try {
             phase = "speaking"
             f.setLastModified(System.currentTimeMillis())
-            java.io.DataInputStream(f.inputStream().buffered()).use { inp ->
-                val rate = inp.readInt()
-                val tr = newTrack(rate, AudioFormat.ENCODING_PCM_16BIT)
-                track = tr
-                tr.play()
-                val buf = ByteArray(16384)
-                var frames = 0L
-                while (!stopFlag && !cancel()) {
-                    val n = inp.read(buf)
-                    if (n <= 0) break
-                    val sh = ShortArray(n / 2)
-                    java.nio.ByteBuffer.wrap(buf, 0, n - n % 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(sh)
-                    tr.write(sh, 0, sh.size, AudioTrack.WRITE_BLOCKING)
-                    frames += sh.size
-                }
-                val end = System.currentTimeMillis() + frames * 1000 / rate + 3000
-                while (!stopFlag && !cancel() && tr.playbackHeadPosition < frames && System.currentTimeMillis() < end) Thread.sleep(50)
-                FLog.d("piper", "фраза из кэша (${text.length} симв., ${frames * 1000 / rate / 1000.0} с)")
+            mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            mp.setDataSource(f.absolutePath)
+            mp.prepare()
+            val total = mp.duration.toLong().coerceAtLeast(500)
+            var completed = false
+            mp.setOnCompletionListener { completed = true }
+            mp.setVolume(1f, 1f)
+            mp.start()
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            while (!completed && android.os.SystemClock.elapsedRealtime() - t0 < total + 3000) {
+                if (cancel()) break
+                Thread.sleep(30)
             }
             return null
         } catch (e: Throwable) {
-            return "голос Piper (кэш): ${e.message ?: e.javaClass.simpleName}"
+            return "воспроизведение голоса Piper: ${e.javaClass.simpleName}: ${e.message}"
         } finally {
             phase = ""
-            try { track?.stop() } catch (e: Exception) {}
-            try { track?.release() } catch (e: Exception) {}
+            try { mp.stop() } catch (e: Exception) {}
+            try { mp.release() } catch (e: Exception) {}
         }
     }
 
@@ -337,102 +324,83 @@ object Piper {
 
     /**
      * Произносит [text] и ждёт конца речи. [speed] — скорость (1 = обычная). Готовая фраза берётся из кэша (быстро и без модели),
-     * иначе синтезируется: звук начинается, не дожидаясь конца синтеза, а результат сохраняется в кэш. Возвращает текст ошибки или null.
+     * иначе синтезируется целиком в кэш и играет. Возвращает текст ошибки или null.
      */
     fun speak(text: String, speed: Float, cancel: () -> Boolean): String? {
         stopFlag = false
-        // готовая фраза играет сразу и не ждёт фоновой заготовки (она держит синтезатор, пока не допишет свою фразу)
+        val stop = { stopFlag || cancel() }
         val cf = cacheFile(text, speed)
-        if (cf.isFile && cf.length() > 8) return playCached(cf, text, cancel)
-        liveReq.incrementAndGet()
-        try {
-            // нативный синтез идёт в потоке с большим стеком: в обычном потоке (около 1 МБ) вычисления могли бы его переполнить
-            var res: String? = null
-            val th = Thread(null, { res = speakImpl(text, speed, cancel, true) }, "piper-synth", 64L * 1024 * 1024)
-            th.start()
-            th.join()
-            return res
-        } finally { liveReq.decrementAndGet() }
+        if (!(cf.isFile && cf.length() > 44)) {
+            liveReq.incrementAndGet()
+            try {
+                // нативный синтез идёт в потоке с большим стеком: в обычном потоке (около 1 МБ) вычисления могли бы его переполнить
+                var res: String? = null
+                val th = Thread(null, { res = synth(text, speed, stop, true) }, "piper-synth", 64L * 1024 * 1024)
+                th.start()
+                th.join()
+                res?.let { return it }
+            } finally { liveReq.decrementAndGet() }
+            if (stop()) return null
+        }
+        return if (cf.isFile && cf.length() > 44) playFile(cf, stop) else "голос Piper: фраза не получена"
     }
 
-    /** [play] = false: фраза только готовится в кэш (без звука). */
+    /** Синтезирует [text] целиком и кладёт в кэш (ничего не играет). [live] — для журнала: речь, которую ждут. */
     @Synchronized
-    private fun speakImpl(text: String, speed: Float, cancel: () -> Boolean, play: Boolean): String? {
-        if (play) {
-            val cf = cacheFile(text, speed) // пока ждали синтезатор, фраза могла попасть в кэш
-            if (cf.isFile && cf.length() > 8) return playCached(cf, text, cancel)
-        }
+    private fun synth(text: String, speed: Float, cancel: () -> Boolean, live: Boolean): String? {
+        val cf = cacheFile(text, speed)
+        if (cf.isFile && cf.length() > 44) return null // пока ждали синтезатор, фраза уже попала в кэш
         val t = try { engine() } catch (e: IllegalStateException) { return e.message }
         val t0 = System.currentTimeMillis()
-        var track: AudioTrack? = null
         try {
-            if (play) phase = "speaking"
+            if (live) phase = "speaking"
             val lang = t.lang().ifEmpty { "ru" }
             val ph = piperPhonemizeText(text, lang) ?: return "не удалось разобрать текст для голоса Piper"
             val sentences = try { Array(ph.numSentences) { i -> ph.getPhonemes(i) } } finally { ph.close() }
             val tPh = System.currentTimeMillis() - t0
             val rate = t.sampleRate()
-            if (play) { val tr = newTrack(rate, AudioFormat.ENCODING_PCM_FLOAT); track = tr; tr.play() }
-            cbTrack = track; cbCancel = cancel; cbFrames = 0L; cbFirstMs = -1L; cbT0 = t0; cbPcm = java.io.ByteArrayOutputStream(); cbPeak = 0f
+            cbCancel = cancel; cbFrames = 0L; cbPcm = java.io.ByteArrayOutputStream(); cbPeak = 0f
             val g = GenerationConfig(speed = speed, sid = 0, silenceScale = 0.2f, phonemeCodepoints = sentences)
             val tGen = System.currentTimeMillis()
             t.generateWithConfigAndCallback("", g, this::callback)
             val genMs = System.currentTimeMillis() - tGen
             val frames = cbFrames
-            val firstMs = cbFirstMs
             val speechMs = frames * 1000 / rate
-            val aborted = (play && stopFlag) || cancel()
-            if (!aborted && frames > 0) cachePut(cacheFile(text, speed), rate, cbPcm!!.toByteArray())
-            cbPcm = null; cbTrack = null
-            if (play) {
-                // дожидаемся, пока доиграет записанное в буфер
-                val tr = track!!
-                val end = System.currentTimeMillis() + speechMs + 3000
-                while (!aborted && tr.playbackHeadPosition < frames && System.currentTimeMillis() < end) {
-                    if (stopFlag || cancel()) break
-                    Thread.sleep(50)
-                }
-            }
-            val msg = "${if (play) "фраза" else "в кэш"} ${text.length} симв.: речь ${speechMs / 1000.0} с, синтез ${genMs / 1000.0} с (${if (genMs > 0) "%.2f".format(speechMs.toDouble() / genMs) else "?"}× быстрее речи), до первого звука ${firstMs} мс (разбор текста $tPh мс), пик звука %.2f, усиление ×%.1f".format(cbPeak, if (gain == Float.MAX_VALUE) 1f else gain)
-            if (play) FLog.i("piper", msg + "; " + mem()) else FLog.d("piper", msg)
+            val aborted = cancel()
+            if (!aborted && frames > 0) cachePut(cf, rate, cbPcm!!.toByteArray())
+            val msg = "${if (live) "фраза" else "в кэш"} ${text.length} симв.: речь ${speechMs / 1000.0} с, синтез ${genMs / 1000.0} с (${if (genMs > 0) "%.2f".format(speechMs.toDouble() / genMs) else "?"}× быстрее речи, разбор текста $tPh мс), пик звука %.2f, усиление ×%.1f".format(cbPeak, if (gain == Float.MAX_VALUE) 1f else gain)
+            if (live) FLog.i("piper", msg + "; " + mem()) else FLog.d("piper", msg)
+            cbPcm = null
             return null
         } catch (e: Throwable) {
             return "голос Piper: ${e.message ?: e.javaClass.simpleName}"
         } finally {
-            if (play) phase = ""
-            try { track?.stop() } catch (e: Exception) {}
-            try { track?.release() } catch (e: Exception) {}
+            if (live) phase = ""
             touch()
         }
     }
 
     // Состояние текущего синтеза для callback. Нативный код sherpa-onnx ищет у обратного вызова метод invoke([F)Ljava/lang/Integer;,
     // которого нет у лямбды Kotlin (она компилируется без типизированного invoke): с лямбдой процесс падал. Нужна ссылка на метод, как в примере sherpa-onnx.
-    private var cbTrack: AudioTrack? = null
     private var cbCancel: () -> Boolean = { false }
     private var cbFrames = 0L
-    private var cbFirstMs = -1L
-    private var cbT0 = 0L
     private var cbPcm: java.io.ByteArrayOutputStream? = null
     private var cbPeak = 0f
     /** Усиление голоса: у тихих моделей громкость выравнивается до пика около 0.85; только вверх и не больше ×10. Подбирается по предложениям и только уменьшается. */
     @Volatile private var gain = Float.MAX_VALUE
 
-    /** Вызывается из нативного кода с очередным куском звука; 0 прерывает синтез. */
+    /** Вызывается из нативного кода с очередным куском звука (предложением); 0 прерывает синтез. */
     private fun callback(samples: FloatArray): Int {
-        if ((cbTrack != null && stopFlag) || cbCancel()) return 0
-        if (cbFirstMs < 0) cbFirstMs = System.currentTimeMillis() - cbT0
+        if (cbCancel()) return 0
         var pk = 0f
         for (x in samples) { val a = Math.abs(x); if (a > pk) pk = a }
         if (pk > cbPeak) cbPeak = pk
         if (pk > 0.01f) gain = minOf(gain, (0.85f / pk).coerceIn(1f, 10f))
-        val g = if (gain == Float.MAX_VALUE) 1f else gain
-        if (g > 1.02f) for (i in samples.indices) samples[i] = (samples[i] * g).coerceIn(-1f, 1f)
-        cbTrack?.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+        val gn = if (gain == Float.MAX_VALUE) 1f else gain
         cbFrames += samples.size
         val b = ByteArray(samples.size * 2)
         for (i in samples.indices) {
-            val v = (samples[i] * 32767f).toInt().coerceIn(-32768, 32767)
+            val v = (samples[i] * gn * 32767f).toInt().coerceIn(-32768, 32767)
             b[2 * i] = v.toByte(); b[2 * i + 1] = (v shr 8).toByte()
         }
         cbPcm?.write(b)
@@ -479,7 +447,7 @@ object Piper {
                 while (gen == prepGen && tries++ < 20) {
                     while (liveReq.get() > 0 && gen == prepGen) Thread.sleep(300)
                     if (gen != prepGen) return
-                    err = speakImpl(ph, speed, { gen != prepGen || liveReq.get() > 0 }, false)
+                    err = synth(ph, speed, { gen != prepGen || liveReq.get() > 0 }, false)
                     if (err != null || cacheFile(ph, speed).isFile) break // иначе прервала живая речь: повторим
                 }
                 if (err != null) { FLog.w("piper", "фраза не озвучена в кэш: $err"); return }
