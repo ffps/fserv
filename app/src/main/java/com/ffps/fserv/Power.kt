@@ -21,7 +21,7 @@ object Power {
             val dpm = ctx.getSystemService(DevicePolicyManager::class.java)
             if (dpm != null && dpm.isDeviceOwnerApp(ctx.packageName)) return "device-owner"
         } catch (e: Exception) {
-            FLog.w("power", "device owner check failed", e)
+            FLog.w("power", "не удалось проверить, является ли приложение владельцем устройства", e)
         }
         if (SU_PATHS.any { File(it).exists() }) return "root"
         return null
@@ -35,14 +35,14 @@ object Power {
                 dpm.reboot(ComponentName(ctx, AdminReceiver::class.java))
                 null
             } catch (e: Exception) {
-                FLog.e("power", "dpm.reboot failed", e)
+                FLog.e("power", "перезагрузка через владельца устройства не удалась", e)
                 "не удалось перезагрузить через Device Owner: ${e.message}"
             }
             "root" -> try {
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
                 null
             } catch (e: Exception) {
-                FLog.e("power", "su reboot failed", e)
+                FLog.e("power", "перезагрузка через su не удалась", e)
                 "не удалось выполнить su -c reboot: ${e.message}"
             }
             else -> "нет прав на перезагрузку: нужен Device Owner " +

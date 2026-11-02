@@ -28,7 +28,7 @@ object Util {
                 }
             }
         } catch (e: Exception) {
-            FLog.w("util", "ips failed", e)
+            FLog.w("util", "не удалось получить адреса устройства", e)
         }
         return res
     }

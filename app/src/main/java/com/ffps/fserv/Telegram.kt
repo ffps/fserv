@@ -174,8 +174,7 @@ object Telegram {
             synchronized(lock) { items.remove(m); saveLocked() }
             lastError = ""
             lastSentAt = System.currentTimeMillis()
-            FLog.i("telegram", "отправлено (попыток ${m.attempts + 1})")
-            if (m.attempts > 0) FLog.i("telegram", "Сообщение доставлено после ${m.attempts} неудачных попыток")
+            FLog.i("telegram", "отправлено" + if (m.attempts > 0) " после ${m.attempts} неудачных попыток" else "")
         } catch (e: TgError) {
             fail(m, e.message ?: "ошибка", e.code, e.retryAfterSec)
         } catch (e: java.io.IOException) {
@@ -231,7 +230,7 @@ object Telegram {
         synchronized(lock) {
             if (m.rejected >= 10) {
                 items.remove(m)
-                FLog.i("telegram", "Telegram отверг сообщение 10 раз подряд, оно удалено: $msg")
+                FLog.w("telegram", "Telegram отверг сообщение 10 раз подряд, оно удалено: $msg")
             }
             saveLocked()
         }

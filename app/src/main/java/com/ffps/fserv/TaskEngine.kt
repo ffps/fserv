@@ -116,7 +116,7 @@ object TaskEngine {
             if (piper) speechPhrases(root.optJSONArray("tasks"), phrases, count)
             Piper.configure(piper && count[0] > 0, phrases.toList(), (v?.optDouble("rate", 1.0) ?: 1.0).toFloat())
         } catch (e: Exception) {
-            FLog.w("task", "refreshStt: ${e.message}")
+            FLog.w("task", "подготовка речи и голоса не удалась: ${e.message}")
         }
     }
 
@@ -572,7 +572,7 @@ object TaskEngine {
         log(r, p, "slide: $name" + (forMs?.let { ", скрыть через ${Dur.human(it)}" } ?: "") + if (r.info.dry) " (в пробном запуске не показывается)" else "")
         if (r.info.dry) return
         val token = Slide.show(spec, forMs)
-        if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); return }
+        if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); FLog.i("task", "«${r.title()}»: слайд не показан, киоск не на переднем плане"); return }
         slideScope.get()?.add(token)
         r.slideTokens.add(token)
     }

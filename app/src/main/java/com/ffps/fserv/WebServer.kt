@@ -34,7 +34,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         } catch (e: IllegalArgumentException) {
             fail(Response.Status.BAD_REQUEST, e.message ?: "неверный запрос")
         } catch (e: Exception) {
-            FLog.e("web", "${session.method} ${session.uri} failed", e)
+            FLog.e("web", "запрос ${session.method} ${session.uri} завершился ошибкой", e)
             fail(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName)
         }
     }
@@ -146,7 +146,12 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 ok("воспроизведение запущено")
             }
             post && uri == "/api/sounds/stop" -> { Audio.stopPreview(); ok("остановлено") }
-            get && uri == "/api/slides" -> json(Response.Status.OK, obj("files" to Slides.list(), "totalBytes" to Slides.totalSize()))
+            get && uri == "/api/slides" -> {
+                val users = TaskStore.slideUsers()
+                val files = Slides.list()
+                for (i in 0 until files.length()) files.getJSONObject(i).let { f -> f.put("usedBy", org.json.JSONArray(users[f.getString("name")] ?: emptyList<String>())) }
+                json(Response.Status.OK, obj("files" to files, "totalBytes" to Slides.totalSize()))
+            }
             get && uri == "/api/slides/file" -> {
                 val f = Slides.file(q(s, "name") ?: "")
                 if (!f.isFile) fail(Response.Status.NOT_FOUND, "файла нет")
@@ -164,7 +169,9 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             }
             post && uri == "/api/slides/delete" -> {
                 val name = Slides.checkName(q(s, "name"))
-                if (Slides.delete(name)) { FLog.i("slides", "Удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
+                val used = TaskStore.slideUsers()[name]
+                if (used != null) fail(Response.Status.CONFLICT, "слайд используется в задачах: ${used.joinToString(", ")}; сначала уберите его из сценария")
+                else if (Slides.delete(name)) { FLog.i("slides", "Удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
             }
             get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()))
             post && uri == "/api/say" -> {

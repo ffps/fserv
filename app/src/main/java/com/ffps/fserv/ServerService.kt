@@ -106,7 +106,7 @@ class ServerService : Service() {
     private fun fail(message: String) {
         state = State.FAIL
         error = message
-        FLog.w("service", "Fail: $message")
+        FLog.w("service", "служба не запустилась: $message")
         updateNotification()
     }
 

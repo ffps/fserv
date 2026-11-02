@@ -85,7 +85,7 @@ object Updater {
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName
             lastCheck = System.currentTimeMillis()
-            FLog.e("update", "проверка не удалась: $lastError")
+            FLog.w("update", "проверка не удалась: $lastError")
             throw e
         } finally {
             state = "idle"

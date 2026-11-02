@@ -34,7 +34,7 @@ class Scheduler(private val ctx: Context) {
         try {
             tick()
         } catch (e: Throwable) {
-            FLog.e("sched", "tick failed", e)
+            FLog.e("sched", "сбой проверки расписания", e)
         }
     }
 

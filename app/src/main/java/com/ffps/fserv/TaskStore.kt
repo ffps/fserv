@@ -45,6 +45,26 @@ object TaskStore {
     @Synchronized
     fun taskText(id: String): String? = if (ID_RE.matches(id) && file(id).isFile) file(id).readText() else null
 
+    /** Слайд → id задач, в чьих шагах slide он назван. Простой текстовый поиск по строкам slide: достаточно, чтобы не дать удалить нужный файл. */
+    fun slideUsers(): Map<String, List<String>> {
+        val names = Slides.names()
+        val res = HashMap<String, MutableList<String>>()
+        for ((file, text) in files()) {
+            val id = file.removeSuffix(".txt")
+            for (raw in text.lines()) {
+                val l = raw.trim()
+                if (!l.startsWith("slide ")) continue
+                for (n in names) {
+                    if (Regex("(^|[\\s\\[\",])" + Regex.escape(n) + "($|[\\s\\]\",])").containsMatchIn(l.removePrefix("slide "))) {
+                        val u = res.getOrPut(n) { ArrayList() }
+                        if (id !in u) u.add(id)
+                    }
+                }
+            }
+        }
+        return res
+    }
+
     /** Все файлы набора как имя файла → текст (для копии и истории). */
     @Synchronized
     fun files(): Map<String, String> =

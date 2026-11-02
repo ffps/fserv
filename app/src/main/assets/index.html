@@ -164,8 +164,6 @@
 </section>
 
 <section id="sound">
-  <div class="row"><label>Громкость проверки, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
-  <div class="hint">Действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы): при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой. Не сохраняется. В задачах громкость задают параметром <code>volume=</code>.</div>
   <h2 style="margin-top:22px">Общие настройки</h2>
   <div class="f">
     <label for="vsVol">Громкость по умолчанию, %</label><input id="vsVol" type="number" min="0" max="100" placeholder="не задана">
@@ -174,10 +172,11 @@
     <label for="vsVoice" class="va">Голос</label><select id="vsVoice" class="va"><option value="">по умолчанию</option></select>
     <label for="vsRate">Скорость речи (1 = обычная)</label><input id="vsRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
     <label for="vsPitch" class="va">Тон голоса (1 = обычный)</label><input id="vsPitch" class="va" type="number" step="0.05" min="0.3" max="2" placeholder="1">
+    <label for="svVol">Громкость проверки, %</label><input id="svVol" type="number" min="0" max="100" value="80">
   </div>
   <div class="row" style="margin-top:12px"><button class="btn" id="vsSave">Сохранить</button></div>
   <div class="msg" id="vsMsg"></div>
-  <p class="hint">Действуют на все задачи (шаги say и ask). У шага можно задать свою громкость параметром <code>volume=</code>. Язык, голос и тон относятся к голосу Android; для нейроголоса Piper их нет, поэтому строки скрываются.</p>
+  <p class="hint">Действуют на все задачи (шаги say и ask). У шага можно задать свою громкость параметром <code>volume=</code>. Язык, голос и тон относятся к голосу Android; для нейроголоса Piper их нет, поэтому строки скрываются.<br>«Громкость проверки» не относится к задачам и не сохраняется: она действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы); при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой.</p>
   <h2 style="margin-top:22px">Голос</h2>
   <div class="row">
     <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
@@ -328,10 +327,10 @@
 <section id="slides">
   <h2>Слайды</h2>
   <p class="hint">Картинки для шага <code>slide</code> (помощник на экране киоска): jpg, png, gif, webp, svg, в том числе анимированные. До 5 МБ на файл, до 30 МБ всего. Пример: <code>slide ["hello.svg"] for=5s fit=contain</code>; убрать: <code>slide off</code>.</p>
-  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Размер, КБ</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
-  <div class="row">
+  <table><thead><tr><th>Просмотр</th><th>Файл</th><th>Размер, КБ</th><th>Используется в задачах</th><th></th></tr></thead><tbody id="slBody"></tbody></table>
+  <div class="row" style="margin-top:10px">
     <input type="file" id="slFile" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*" multiple>
-    <button class="ib add" id="slUpload" title="Загрузить"></button>
+    <button class="btn" id="slUpload">Загрузить</button>
   </div>
   <div id="slMsg" class="msg"></div>
 </section>
@@ -1072,7 +1071,7 @@ $("#sdUpload").onclick = () => run("#sdMsg", async () => {
 async function loadSlides() {
   try {
     const d = (await api("/api/slides")).json;
-    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + Math.round(f.size / 1024) + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '" title="Удалить">' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="4">слайдов нет</td></tr>';
+    $("#slBody").innerHTML = d.files.length ? d.files.map(f => '<tr><td><img src="/api/slides/file?name=' + encodeURIComponent(f.name) + '" alt="" style="max-width:96px;max-height:72px;background:#8884"></td><td>' + esc(f.name) + '</td><td>' + Math.round(f.size / 1024) + '</td><td>' + (f.usedBy.length ? esc(f.usedBy.join(", ")) : "—") + '</td><td><button class="ib del" data-sl="' + esc(f.name) + '"' + (f.usedBy.length ? ' disabled title="Используется в задачах — удалить нельзя"' : ' title="Удалить"') + '>' + ICO.del + '</button></td></tr>').join("") : '<tr><td colspan="5">слайдов нет</td></tr>';
   } catch (e) { say("#slMsg", e.message, false); }
 }
 $("#slBody").onclick = e => {
