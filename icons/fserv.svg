@@ -5,15 +5,8 @@
       <stop offset="1" stop-color="#d81b60"/>
     </linearGradient>
   </defs>
-
   <rect width="120" height="120" rx="26" fill="url(#g2)"/>
-
-  <circle
-    cx="60"
-    cy="60"
-    r="25"
-    fill="none"
-    stroke="#FFFFFF"
-    stroke-width="10"
-  />
+  <ellipse cx="60" cy="60" rx="36" ry="32" fill="none" stroke="#FFFFFF" stroke-width="8" />
+  <ellipse cx="49" cy="56" rx="6" ry="10" fill="#FFFFFF" />
+  <ellipse cx="71" cy="56" rx="6" ry="10" fill="#FFFFFF" />
 </svg>
