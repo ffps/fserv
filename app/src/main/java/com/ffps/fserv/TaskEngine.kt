@@ -182,7 +182,7 @@ object TaskEngine {
             if (fire < 0 || Settings.lastFired("task:$id") >= fire) continue
             Settings.setLastFired("task:$id", fire)
             if (current?.info?.id == id || queue.any { it.taskId == id }) {
-                FLog.i("task", "Запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
+                FLog.w("task", "Запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
                 continue
             }
             queue.add(Req(id, "cron", false, emptyMap(), fire * 60000, lateMs + GRACE_MS))
@@ -212,7 +212,7 @@ object TaskEngine {
         val root = config()
         val task = root?.let { findTask(it, req.taskId) }
         if (root == null || task == null) {
-            FLog.i("task", "Задача «${req.taskId}» не запущена: её нет в конфиге")
+            FLog.w("task", "Задача «${req.taskId}» не запущена: её нет в конфиге")
             return
         }
         val title = task.optString("title").ifEmpty { req.taskId }
@@ -222,7 +222,7 @@ object TaskEngine {
             info.endedAt = System.currentTimeMillis(); info.status = "skipped"
             info.message = "опоздание ${Dur.human(late)} больше допустимого (late_ok)"
             record(info)
-            FLog.i("task", "Запуск «$title» пропущен: ${info.message}")
+            FLog.w("task", "Запуск «$title» пропущен: ${info.message}")
             return
         }
         val timeout = try { if (task.has("timeout")) Dur.parse(task.opt("timeout"), "timeout").sample(Random()) else 60 * 60_000L } catch (e: IllegalArgumentException) { 60 * 60_000L }
@@ -253,7 +253,8 @@ object TaskEngine {
             current = null
         }
         log(run, "", "итог: ${info.status}${if (info.message.isNotEmpty()) ", " + info.message else ""}")
-        FLog.i("task", "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}")
+        val endMsg = "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}"
+        if (info.status == "error" || info.status == "timeout") FLog.e("task", endMsg) else FLog.i("task", endMsg)
         if (!req.dry && req.source == "cron" && (info.status == "error" || info.status == "timeout")) {
             Telegram.enqueue("fServe: задача «$title» не выполнена: ${info.message}")
         }
@@ -499,7 +500,7 @@ object TaskEngine {
         val kind = s.optString("kind", "yesno")
         val listenMs = if (s.has("listen")) Dur.parse(s.opt("listen"), "listen").sample(r.rnd) else 15_000L
         val retries = s.optInt("retries", 1)
-        val again = if (s.has("again")) s.optString("again") else "Повторите, пожалуйста."
+        val again: Any? = if (s.has("again")) s.opt("again") else "Повторите, пожалуйста."
         log(r, p, "ask: $text → $name ($kind, ждать ${Dur.human(listenMs)}, переспросов до $retries)")
         if (r.info.dry) {
             val v = r.assume[name]
@@ -513,7 +514,7 @@ object TaskEngine {
         Stt.prepareAsync(kind) // модель и распознаватель готовятся, пока звучит вопрос: слушание начнётся сразу после него
         var attempt = 0
         while (true) {
-            val phrase = if (attempt == 0) text else fill(r, again)
+            val phrase = if (attempt == 0) text else fill(r, pickText(r, again))
             Voice.speak(phrase, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
             check(r)
             sleep(r, 150) // эхо синтезатора не должно попасть в микрофон
@@ -653,7 +654,7 @@ object TaskEngine {
         val runs = JSONArray()
         synchronized(recent) { recent.forEachIndexed { n, r -> runs.put(runJson(r, n == 0)) } }
         return obj(
-            "configOk" to (TaskStore.load().commonError == null), "tasks" to tasks,
+            "configOk" to true, "tasks" to tasks,
             "running" to current?.let { runJson(it.info, false) },
             "queue" to arr(queue.map { it.taskId + if (it.dry) " (пробный)" else "" }),
             "runs" to runs

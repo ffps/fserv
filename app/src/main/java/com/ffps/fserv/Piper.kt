@@ -68,7 +68,7 @@ object Piper {
         "state" to state, "ready" to ready(), "voice" to voice.ifEmpty { null }, "voices" to arr(VOICES),
         "percent" to (if (total > 0) (done * 100 / total).toInt() else null), "doneMb" to done / 1048576, "totalMb" to (if (total > 0) total / 1048576 else null),
         "error" to lastError.ifEmpty { null }, "phase" to phase,
-        "cacheFiles" to (cacheDir().listFiles()?.size ?: 0), "cacheMb" to (cacheDir().listFiles()?.sumOf { it.length() } ?: 0L) / 1048576, "pinned" to pinned
+        "cacheFiles" to (cacheDir().listFiles { f -> f.name.endsWith(".wav") }?.size ?: 0), "cacheBytes" to (cacheDir().listFiles()?.sumOf { it.length() } ?: 0L), "pinned" to pinned
     )
 
     // ---------------- установка модели ----------------
@@ -318,6 +318,9 @@ object Piper {
         }
     }
 
+    /** Удаляет все готовые фразы; заготовка запускается заново при следующей правке задач или голоса. */
+    fun clearCache() { cacheDir().listFiles()?.forEach { it.delete() } }
+
     // ---------------- синтез ----------------
 
     private val liveReq = java.util.concurrent.atomic.AtomicInteger()
@@ -436,7 +439,7 @@ object Piper {
 
     private fun prepare(gen: Int, phrases: List<String>, speed: Float) {
         try {
-            try { engine() } catch (e: IllegalStateException) { FLog.w("piper", e.message ?: "голос не загрузился"); return }
+            try { engine() } catch (e: IllegalStateException) { FLog.e("piper", e.message ?: "голос не загрузился"); return }
             val t0 = System.currentTimeMillis()
             var made = 0
             for (ph in phrases) {

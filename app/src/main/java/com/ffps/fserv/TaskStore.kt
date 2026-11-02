@@ -9,15 +9,13 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Хранилище задач: каталог tasks/ с файлом на каждую задачу (tasks/<id>.txt, id — имя файла, в тексте его нет)
- * и общим файлом tasks/_common.txt со строками voice и zone. Язык описан в [Script] и script.md.
+ * Хранилище задач: каталог tasks/ с файлом на каждую задачу (tasks/<id>.txt, id — имя файла, в тексте его нет).
+ * Голос и зоны детектора движения хранятся в настройках приложения ([Settings]). Язык описан в [Script] и script.md.
  * Ошибка в одном файле отключает только его задачу: остальные работают. Перед каждым изменением набор файлов целиком
- * копируется в историю (последние 20 версий, каталоги tasks-history/tasks-ДАТА-ВРЕМЯ).
+ * копируется в историю (последние 3 версии, каталоги tasks-history/tasks-ДАТА-ВРЕМЯ).
  */
 object TaskStore {
-    private const val KEEP = 20
-    private const val COMMON = TaskSet.COMMON
-    const val DEFAULT_COMMON = "# Общие настройки: голос (voice) и зоны детектора движения (zone). Язык описан в script.md.\n"
+    private const val KEEP = 3
     val ID_RE = TaskSet.ID_RE
     private val HIST_RE = Regex("tasks-[0-9]{8}-[0-9]{6}(-[0-9]+)?")
 
@@ -32,6 +30,7 @@ object TaskStore {
         dir = File(ctx.filesDir, "tasks").also { it.mkdirs() }
         histDir = File(ctx.filesDir, "tasks-history").also { it.mkdirs() }
         File(ctx.filesDir, "tasks.txt").delete() // файл прежнего формата
+        File(dir, "_common.txt").delete()        // общий файл прежнего формата: голос и зоны теперь в настройках приложения
     }
 
     private fun file(id: String) = File(dir, "$id.txt")
@@ -46,9 +45,6 @@ object TaskStore {
     @Synchronized
     fun taskText(id: String): String? = if (ID_RE.matches(id) && file(id).isFile) file(id).readText() else null
 
-    @Synchronized
-    fun commonText(): String = file(COMMON).takeIf { it.isFile }?.readText() ?: ""
-
     /** Все файлы набора как имя файла → текст (для копии и истории). */
     @Synchronized
     fun files(): Map<String, String> =
@@ -59,7 +55,7 @@ object TaskStore {
     fun load(): TaskSet.Loaded {
         // кэш живёт до изменения файлов и не дольше 5 секунд: проверка ссылается на звуки, которые тоже меняются
         cache?.let { if (cacheGen == gen && System.currentTimeMillis() - cacheAt < 5000) return it }
-        val l = TaskSet.parseSet(files(), { Sounds.exists(it) })
+        val l = TaskSet.parseSet(files(), Settings.voice(), Settings.zones()) { Sounds.exists(it) }
         cache = l; cacheGen = gen; cacheAt = System.currentTimeMillis()
         return l
     }
@@ -75,7 +71,7 @@ object TaskStore {
         for (id in ids()) {
             tasks.put(obj("id" to id, "title" to (byId[id]?.optString("title") ?: titleGuess(taskText(id) ?: "")), "text" to (taskText(id) ?: ""), "error" to l.errors[id]))
         }
-        return obj("tasks" to tasks, "global" to commonText(), "globalError" to l.commonError)
+        return obj("tasks" to tasks)
     }
 
     /** Название для списка, если задача не читается: из заголовка `task "Название"`/`title=`. */
@@ -88,6 +84,10 @@ object TaskStore {
     // ---------------- запись ----------------
 
     private fun touch() { gen++ }
+
+    /** Настройки приложения (голос, зоны) изменились: разбор задач нужно повторить. */
+    @Synchronized
+    fun invalidate() { gen++ }
 
     private fun writeAtomic(f: File, text: String) {
         val tmp = File(f.parentFile, f.name + ".tmp")
@@ -106,7 +106,7 @@ object TaskStore {
         if (text.isBlank()) return "текст задачи пуст"
         if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
         if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
-        val zones = load().root.optJSONObject("zones")?.keys()?.asSequence()?.toSet() ?: emptySet()
+        val zones = Settings.zones().keys().asSequence().toSet()
         Script.validate(text, newId, zones) { Sounds.exists(it) }?.let { return it }
         if (originalId == newId && file(newId).readText() == text) return null
         archive()
@@ -121,18 +121,6 @@ object TaskStore {
         if (!ID_RE.matches(id) || !file(id).isFile) return "задачи «$id» нет"
         archive()
         file(id).delete()
-        touch()
-        return null
-    }
-
-    /** Заменяет общий файл (voice и zone); пустой текст оставляет только комментарий. */
-    @Synchronized
-    fun saveCommon(text: String): String? {
-        if (text.isNotBlank()) Script.checkCommon(text).first?.let { return it }
-        val t = if (text.isBlank()) DEFAULT_COMMON else text
-        if (commonText() == t) return null
-        archive()
-        writeAtomic(file(COMMON), t)
         touch()
         return null
     }
@@ -167,10 +155,14 @@ object TaskStore {
         val all = histDir.listFiles { x -> x.isDirectory && HIST_RE.matches(x.name) }?.sortedByDescending { it.name } ?: return res
         for (d in all) {
             val fs = d.listFiles() ?: emptyArray()
-            res.put(obj("name" to d.name, "size" to fs.sumOf { it.length() }, "tasks" to fs.count { it.name != "$COMMON.txt" }, "time" to Util.iso(d.lastModified())))
+            res.put(obj("name" to d.name, "size" to fs.sumOf { it.length() }, "tasks" to fs.size, "time" to Util.iso(d.lastModified())))
         }
         return res
     }
+
+    /** Удаляет всю историю версий. */
+    @Synchronized
+    fun clearHistory() { histDir.listFiles()?.forEach { it.deleteRecursively() } }
 
     /** null = восстановлено; иначе ошибка. Текущий набор при этом сам попадает в историю. */
     @Synchronized

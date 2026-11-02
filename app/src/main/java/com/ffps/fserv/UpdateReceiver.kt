@@ -44,7 +44,7 @@ class UpdateReceiver : BroadcastReceiver() {
             else -> {
                 Updater.lastError = "установка не удалась (код $status): $msg"
                 Updater.state = "idle"
-                FLog.w("update", Updater.lastError)
+                FLog.e("update", Updater.lastError)
             }
         }
     }

@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 /**
  * Резервная копия настроек одним zip-файлом, восстановление из неё и сброс к исходному состоянию.
  *
- * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt, и общий tasks/_common.txt),
+ * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt; голос и зоны лежат в settings.json),
  * sounds/ (загруженные звуки), pages/ (заменённые страницы index.html и kiosk.html). Очереди, журналы и логи в копию не входят.
  * Восстановление сначала целиком проверяет архив и только потом что-либо удаляет.
  */
@@ -91,7 +91,7 @@ object Backup {
             if (settings == null) return "в архиве нет settings.json (это не копия fServe?)"
             if (total > Sounds.MAX_TOTAL + 10_000_000) return "архив слишком большой"
             if (sounds.sumOf { s -> zf.getEntry("sounds/$s").size } > Sounds.MAX_TOTAL) return "звуки вместе больше ${Sounds.MAX_TOTAL / 1048576} МБ"
-            TaskSet.validateSet(tasks) { name -> sounds.contains(name) }?.let { return it }
+            TaskSet.validateSet(tasks, settings.optJSONObject("zones")) { name -> sounds.contains(name) }?.let { return it }
         }
         return null
     }
@@ -123,6 +123,7 @@ object Backup {
             }
             TaskStore.replaceAll(tasks)
             Settings.replaceAll(settings)
+            TaskStore.invalidate()
         }
     }
 
@@ -131,6 +132,7 @@ object Backup {
         wipe(ctx)
         TaskStore.replaceAll(null)
         Settings.resetUser()
+        TaskStore.invalidate()
         File(ctx.filesDir, "backup-seq.txt").delete()
     }
 

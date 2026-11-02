@@ -170,6 +170,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val err = Piper.installFromFile(f)
                 if (err == null) ok("голос установлен") else fail(Response.Status.BAD_REQUEST, "архив не подошёл: $err")
             }
+            post && uri == "/api/piper/cache/clear" -> { Piper.clearCache(); FLog.i("piper", "кэш фраз очищен"); TaskEngine.refreshStt(); ok("кэш очищен, фразы озвучатся заново") }
             post && uri == "/api/piper/delete" -> { Piper.delete(); FLog.i("piper", "голос Piper удалён"); TaskEngine.refreshStt(); ok("голос удалён") }
 
             get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx))
@@ -238,17 +239,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val t = TaskStore.taskText(q(s, "id") ?: "")
                 if (t == null) fail(Response.Status.NOT_FOUND, "задачи нет") else text(Response.Status.OK, "text/plain", t)
             }
-            get && uri == "/api/config/global" -> text(Response.Status.OK, "text/plain", TaskStore.commonText())
             post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", q(s, "new") ?: "", body(s))
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
                 if (err == null) { TaskEngine.refreshStt(); FLog.i("config", "Удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
-            post && uri == "/api/config/global" -> {
-                val err = TaskStore.saveCommon(body(s))
-                if (err == null) { FLog.i("config", "Изменены общие настройки задач (голос, зоны)"); ok("сохранено") } else fail(Response.Status.BAD_REQUEST, err)
-            }
+            post && uri == "/api/config/history/clear" -> { TaskStore.clearHistory(); FLog.i("config", "История версий задач очищена"); ok("история очищена") }
             get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
             post && uri == "/api/config/restore" -> restoreConfig(q(s, "name") ?: "")
 
@@ -420,7 +417,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 "deviceUptimeSeconds" to SystemClock.elapsedRealtime() / 1000
             ),
             "battery" to Util.battery(ctx),
-            "storage" to obj("freeMegabytes" to ctx.filesDir.usableSpace / 1048576),
+            "storage" to obj("freeMegabytes" to ctx.filesDir.usableSpace / 1048576, "totalMegabytes" to ctx.filesDir.totalSpace / 1048576),
             "server" to obj(
                 "port" to Settings.webPort,
                 "startedAt" to Util.iso(ServerService.serverStartedAt),
@@ -467,7 +464,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return if (bad == 0) ok(text) else fail(Response.Status.INTERNAL_ERROR, text)
     }
 
-    private fun voiceCfg(): JSONObject? = try { TaskStore.load().root.optJSONObject("voice") } catch (e: Exception) { null }
+    private fun voiceCfg(): JSONObject? = try { Settings.voice() } catch (e: Exception) { null }
 
     private fun screenInfo(): JSONObject {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -495,12 +492,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/logs" to "технический лог; ?lines=300&level=INFO",
         "GET /api/logs/download" to "весь лог файлом",
         "POST /api/logs/clear" to "очистить лог",
-        "GET /api/config/tasks" to "для редактора: задачи (id, название, текст, ошибка) и общий файл voice/zone",
+        "GET /api/config/tasks" to "для редактора: задачи (id, название, текст, ошибка)",
         "GET /api/tasks/text" to "текст одной задачи; ?id=",
-        "GET /api/config/global" to "общий файл: строки voice и zone",
         "POST /api/tasks/save" to "сохранить задачу (тело: её текст); ?id=прежний_id (пусто для новой)&new=id (имя файла tasks/<id>.txt; другой id переименовывает)",
         "POST /api/tasks/delete" to "удалить задачу; ?id=",
-        "POST /api/config/global" to "заменить общий файл (тело: строки voice и zone)",
+        "POST /api/config/history/clear" to "удалить всю историю версий задач",
         "GET /api/config/history" to "сохранённые версии набора задач",
         "POST /api/config/restore" to "восстановить версию набора задач; ?name=…",
         "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
@@ -532,6 +528,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/piper" to "голос Piper: состояние модели и ход скачивания",
         "POST /api/piper/download" to "скачать голос Piper: ?voice=irina|denis|dmitri|ruslan (около 65 МБ)",
         "POST /api/piper/upload" to "установить голос из архива с компьютера (тело запроса — vits-piper-ru_RU-….tar.bz2 или zip)",
+        "POST /api/piper/cache/clear" to "очистить кэш готовых фраз Piper",
         "POST /api/piper/delete" to "удалить голос Piper",
         "GET /api/stt" to "распознавание речи: состояние модели, разрешение микрофона, ход скачивания",
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
@@ -578,6 +575,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
         if (patch.has("camera")) applyCameraKeep()
+        if (patch.has("voice") || patch.has("zones")) { TaskStore.invalidate(); TaskEngine.refreshStt() }
         if (r.restartRequired) {
             // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
             Thread {

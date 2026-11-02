@@ -95,9 +95,9 @@
   <a data-t="status" href="#status" class="on">Состояние</a>
   <a data-t="config" href="#config">Задачи</a>
   <a data-t="sound" href="#sound">Звук</a>
-  <a data-t="comm" href="#comm">Связь</a>
   <a data-t="camera" href="#camera">Камера</a>
   <a data-t="photos" href="#photos">Фото</a>
+  <a data-t="comm" href="#comm">Связь</a>
   <a data-t="logs" href="#logs">Журнал</a>
   <a data-t="system" href="#system">Система</a>
 </nav>
@@ -128,24 +128,7 @@
 </section>
 
 <section id="config">
-  <h2>Общие настройки задач</h2>
-  <div class="f">
-    <label for="gVol">Громкость по умолчанию, %</label><input id="gVol" type="number" min="0" max="100" placeholder="не задана">
-    <label for="gEngine">Чем говорить</label><select id="gEngine"><option value="">голос Android (по умолчанию)</option><option value="piper">нейроголос Piper (скачивается на вкладке «Звук»)</option></select>
-    <label for="gLang">Язык голоса</label><input id="gLang" placeholder="ru-RU">
-    <label for="gVoice">Голос</label><select id="gVoice"><option value="">по умолчанию</option></select>
-    <label for="gRate">Скорость речи (1 = обычная)</label><input id="gRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
-    <label for="gPitch">Тон голоса (1 = обычный)</label><input id="gPitch" type="number" step="0.05" min="0.3" max="2" placeholder="1">
-  </div>
-  <p class="hint">Язык, голос и тон относятся к голосу Android; нейроголос Piper их не использует (скорость и громкость работают у обоих).</p>
-  <details style="margin-top:10px"><summary>Зоны детектора движения (строки zone)</summary>
-    <textarea id="gZones" rows="6" spellcheck="false" placeholder="zone bed rect=[0.1,0.2,0.9,0.9] exclude=[[0,0,0.2,0.2]]"></textarea>
-    <p class="hint">Одна зона на строке: <code>zone имя rect=[x1,y1,x2,y2]</code> (доли кадра от 0 до 1), можно <code>rects=[[…],[…]]</code> и <code>exclude=[[…]]</code>. Зона подключается в шаге watch параметром <code>zone=bed</code>.</p>
-  </details>
-  <div class="row" style="margin-top:12px"><button class="btn" id="gSave">Сохранить общие настройки</button></div>
-  <div class="msg" id="gMsg"></div>
-
-  <h2 style="margin-top:26px">Задачи</h2>
+  <h2>Задачи</h2>
   <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th><th></th></tr></thead><tbody id="tkBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <button class="ib add" id="tkAdd" title="Добавить задачу"></button>
@@ -172,15 +155,28 @@
     <div class="row" style="margin-top:8px">
       <label>Версии <select id="cfgHist"></select></label>
       <button class="btn sec" id="cfgRestore">Восстановить выбранную</button>
+      <button class="ib del" id="cfgClear" title="Очистить историю версий"></button>
     </div>
     <div class="msg" id="cfgMsg"></div>
-    <p class="hint">Перед каждым изменением (сохранение или удаление задачи, общие настройки) весь набор файлов задач копируется в историю, последние 20 версий. При восстановлении текущий набор тоже попадает в историю.</p>
+    <p class="hint">Перед каждым изменением (сохранение или удаление задачи) весь набор файлов задач копируется в историю, хранятся последние 3 версии. При восстановлении текущий набор тоже попадает в историю.</p>
   </details>
 </section>
 
 <section id="sound">
   <div class="row"><label>Громкость проверки, % <input id="svVol" type="number" min="0" max="100" value="80" style="width:70px"></label></div>
   <div class="hint">Действует только на кнопки ▶ на этой вкладке (голос, звуки, сигналы): при проверке громкость мультимедиа на устройстве меняется до этого значения и потом остаётся такой. Не сохраняется. В задачах громкость задают параметром <code>volume=</code>.</div>
+  <h2 style="margin-top:22px">Общие настройки</h2>
+  <div class="f">
+    <label for="vsVol">Громкость по умолчанию, %</label><input id="vsVol" type="number" min="0" max="100" placeholder="не задана">
+    <label for="vsEngine">Голосовой движок</label><select id="vsEngine"><option value="">голос Android</option><option value="piper">нейроголос Piper</option></select>
+    <label for="vsLang" class="va">Язык голоса</label><input id="vsLang" class="va" placeholder="ru-RU">
+    <label for="vsVoice" class="va">Голос</label><select id="vsVoice" class="va"><option value="">по умолчанию</option></select>
+    <label for="vsRate">Скорость речи (1 = обычная)</label><input id="vsRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
+    <label for="vsPitch" class="va">Тон голоса (1 = обычный)</label><input id="vsPitch" class="va" type="number" step="0.05" min="0.3" max="2" placeholder="1">
+  </div>
+  <div class="row" style="margin-top:12px"><button class="btn" id="vsSave">Сохранить</button></div>
+  <div class="msg" id="vsMsg"></div>
+  <p class="hint">Действуют на все задачи (шаги say и ask). У шага можно задать свою громкость параметром <code>volume=</code>. Язык, голос и тон относятся к голосу Android; для нейроголоса Piper их нет, поэтому строки скрываются.</p>
   <h2 style="margin-top:22px">Голос</h2>
   <div class="row">
     <input id="svText" placeholder="Текст для проверки голоса (паузы: {pause:2s})" style="flex:1;min-width:260px" value="Доброе утро! {pause:1s} Пора вставать.">
@@ -189,7 +185,7 @@
   <div class="msg" id="svMsg"></div>
   <p class="hint" id="svInfo"></p>
   <details><summary>Доступные голоса</summary><pre id="svVoices">—</pre></details>
-  <p class="hint">Язык, голос, скорость и тон задаются строкой <code>voice</code> файла задач (вкладка «Задачи», общие настройки), например <code>voice lang=ru-RU rate=0.9 pitch=1 volume=80</code>. Это системный синтезатор устройства; отдельный качественный голос появится позже.</p>
+  <p class="hint">Кнопка ▶ произносит текст выбранным в «Общих настройках» голосовым движком. Список голосов Android зависит от установленного на устройстве синтезатора речи.</p>
   <h2 style="margin-top:22px">Голос Piper (нейроголос)</h2>
   <div class="kvwrap"><table class="kv"><tbody id="pgInfo"></tbody></table></div>
   <div class="row" style="margin-top:10px">
@@ -199,14 +195,10 @@
   </div>
   <div class="row" style="margin-top:6px">
     <input type="file" id="pgFile" accept=".bz2,.zip,.tar.bz2">
-    <button class="btn sec" id="pgUpload">Загрузить архив с компьютера</button>
+    <button class="btn sec" id="pgUpload">Загрузить файл</button>
   </div>
-  <div class="row" style="margin-top:6px">
-    <span style="color:var(--dim)">Сказать этим голосом</span>
-    <button class="ib add" id="pgSay" title="Сказать голосом Piper"></button>
-  </div>
-  <div class="msg" id="pgMsg"></div>
-  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «Модели речи» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. Если в задачах речь идёт голосом Piper, голос постоянно держится в памяти (около 70 МБ), а все фразы без переменных заранее озвучиваются в кэш (до 30 МБ) и играют сразу; фразы с переменными, например {time}, синтезируются на лету и тоже попадают в кэш. Без таких задач голос выгружается через 5 минут простоя.</p>
+  <div class="msg" id="pvMsg"></div>
+  <p class="hint">Качественный офлайн-голос (Piper через sherpa-onnx, русские модели). Модель весит около 65 МБ, скачивается один раз и хранится на устройстве; прокси берётся из галочки «STT/TTS» на вкладке «Связь». Можно скачать архив <code>vits-piper-ru_RU-irina-medium.tar.bz2</code> (или denis, dmitri, ruslan) со страницы <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">sherpa-onnx tts-models</a> и загрузить его кнопкой выше. Включается строкой <code>voice engine=piper</code> в общих настройках задач; если голоса нет или он сбоит, говорит системный голос. Скорость синтеза на этом устройстве пишется в журнал (источник <code>piper</code>): «× быстрее речи» меньше 1 означает паузы между предложениями. Если в задачах речь идёт голосом Piper, голос постоянно держится в памяти (около 70 МБ), а все фразы без переменных заранее озвучиваются в кэш (до 30 МБ) и играют сразу; фразы с переменными, например {time}, синтезируются на лету и тоже попадают в кэш. Без таких задач голос выгружается через 5 минут простоя.</p>
   <h2 style="margin-top:22px">Распознавание речи</h2>
   <div class="kvwrap"><table class="kv"><tbody id="sttInfo"></tbody></table></div>
   <div class="row" style="margin-top:10px">
@@ -215,7 +207,7 @@
   </div>
   <div class="row" style="margin-top:6px">
     <input type="file" id="sttFile" accept=".zip,application/zip">
-    <button class="btn sec" id="sttUpload">Загрузить zip с компьютера</button>
+    <button class="btn sec" id="sttUpload">Загрузить файл</button>
   </div>
   <div class="msg" id="sttMsg"></div>
   <div class="row" style="margin-top:6px">
@@ -223,7 +215,7 @@
     <button class="ib add" id="sttTest" title="Слушать 10 секунд"></button>
   </div>
   <div class="msg" id="sttTMsg"></div>
-  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «Модель распознавания речи»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
+  <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «STT/TTS»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -268,8 +260,8 @@
   <div class="pxu">
     <label><input type="checkbox" id="pxTg"> Telegram</label><button class="btn sec sm" data-pt="telegram">Проверить</button><span class="msg" id="pt_telegram"></span>
     <label><input type="checkbox" id="pxLlm"> LLM</label><button class="btn sec sm" data-pt="llm">Проверить</button><span class="msg" id="pt_llm"></span>
-    <label><input type="checkbox" id="pxUp"> GitHub (обновления)</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
-    <label><input type="checkbox" id="pxStt"> Модели речи (распознавание и голос Piper)</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
+    <label title="Загрузка обновлений приложения"><input type="checkbox" id="pxUp"> GitHub</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
+    <label title="Загрузка моделей речи и нейроголоса"><input type="checkbox" id="pxStt"> STT/TTS</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
@@ -300,6 +292,22 @@
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="cmSave">Сохранить</button></div>
   <div class="msg" id="cmMsg"></div>
+  <h2 style="margin-top:22px">Зоны детектора движения</h2>
+  <div class="row">
+    <label>Зона <select id="znSel"></select></label>
+    <button class="ib add" id="znAdd" title="Добавить зону"></button>
+    <button class="ib del" id="znDel" title="Удалить зону"></button>
+    <label>Рисовать <select id="znMode"><option value="rects">область</option><option value="exclude">вырез</option></select></label>
+    <button class="btn sec sm" id="znRectDel">Удалить выбранный прямоугольник</button>
+    <button class="btn sec sm" id="znShot">Обновить кадр</button>
+  </div>
+  <div id="znWrap" style="position:relative;width:300px;max-width:100%;aspect-ratio:3/4;margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#222;touch-action:none">
+    <img id="znImg" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;display:none">
+    <canvas id="znCv" style="position:absolute;left:0;top:0;width:100%;height:100%;cursor:crosshair"></canvas>
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="znSave">Сохранить зоны</button></div>
+  <div class="msg" id="znMsg"></div>
+  <p class="hint">Зона ограничивает область кадра, в которой детектор ищет движение. Выберите или добавьте зону, обведите мышью (пальцем) одну или несколько областей, а то, что нужно не учитывать (например, телевизор), обведите режимом «вырез». Кадр берётся с работающей камеры: включите её кнопкой выше и нажмите «Обновить кадр». Зона подключается в шаге <code>watch</code> параметром <code>zone=имя</code>. Нажатие на прямоугольник выбирает его.</p>
   <h2 style="margin-top:22px">Стресс-тест</h2>
   <div class="row">
     <label>Режим <select id="ctMode"><option value="continuous">непрерывно N минут</option><option value="cycles">циклы открыть-кадр-закрыть</option></select></label>
@@ -457,7 +465,8 @@ track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
 track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
-track("gSave", ["gVol", "gEngine", "gLang", "gVoice", "gRate", "gPitch", "gZones"]);
+track("vsSave", ["vsVol", "vsEngine", "vsLang", "vsVoice", "vsRate", "vsPitch"]);
+track("znSave", [], () => znDirty());
 track("pgSave", ["pgText"]);
 track("tkSave", [], () => tkOpen && (tkDirty() || tkOrig === ""));
 
@@ -498,7 +507,7 @@ const ICO = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest" || b.id === "pgSay") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "pgDelete") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "pgDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -699,6 +708,8 @@ setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
 let upTimer = null, upVer = null, upBusy = false;
 const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
 function kvRow(k, v) { return "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>"; }
+function kvRowHtml(k, html) { return "<tr><td>" + esc(k) + "</td><td>" + html + "</td></tr>"; }
+function fmtBytes(b) { return b < 1024 ? b + " Б" : b < 1048576 ? Math.round(b / 1024) + " КБ" : (b / 1048576).toFixed(1) + " МБ"; }
 async function loadUpdate() {
   try {
     const u = (await api("/api/update")).json, st = (await api("/api/settings")).json;
@@ -726,7 +737,7 @@ async function loadUpdate() {
     else say("#upMsg", e.message, false);
   }
 }
-$("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName : "обновлений нет"; });
+$("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName + ", " + r.json.latest.apk + (r.json.latest.sizeBytes ? ", " + (r.json.latest.sizeBytes / 1048576).toFixed(1) + " МБ" : "") : "обновлений нет"; });
 $("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
 $("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({updateRepo: $("#upRepo").value.trim(), updateCheckCron: $("#upCron").value.trim()})); return "сохранено"; }, "upSave");
 
@@ -737,7 +748,7 @@ function onTab() {
   if (current === "sound") loadSound();
   if (current === "system") { loadSettings(); loadUpdate(); loadPage(); loadPower(); }
   if (current === "comm") loadComm();
-  if (current === "camera") loadCamera(true);
+  if (current === "camera") { loadCamera(true); loadZones(); znShot(); }
   if (current === "photos") loadPhotos(null);
 }
 
@@ -760,7 +771,7 @@ async function loadStatus() {
       kvRow("Батарея", (b.percent == null ? "?" : b.percent + "%") + (b.charging ? ", заряжается" : ", не заряжается") + (b.temperatureC != null ? ", " + b.temperatureC + " °C" : "")) +
       kvRow("Устройство", i.device.manufacturer + " " + i.device.model + ", Android " + i.device.android) +
       kvRow("Адрес", i.device.ips.length ? i.device.ips.join(", ") : "нет сети") +
-      kvRow("Свободно", i.storage.freeMegabytes + " МБ") +
+      kvRow("Диск", "свободно " + i.storage.freeMegabytes + " из " + i.storage.totalMegabytes + " МБ") +
       kvRow("Журнал", i.logs.level + ", " + Math.round(i.logs.sizeBytes / 1024) + " КБ") +
       kvRow("Перезагрузка устройства", i.power.rebootMethod || "недоступна") +
       kvRow("Cron перезапуска / перезагрузки", (i.power.appRestartCron || "—") + " / " + (i.power.rebootCron || "—"));
@@ -779,6 +790,8 @@ async function loadLogs() {
 }
 $("#logRefresh").onclick = loadLogs;
 $("#logLevel").onchange = loadLogs;
+// уровень в списке по умолчанию такой же, как уровень записи журнала (вкладка «Система»)
+api("/api/settings").then(r => { $("#logLevel").value = r.json.logLevel; }).catch(() => {});
 $("#logClear").onclick = () => { if (confirm("Очистить журнал?")) run("#logMsg", async () => { await post("/api/logs/clear"); loadLogs(); return "журнал очищен"; }); };
 
 
@@ -789,10 +802,11 @@ async function loadHist() {
     $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + ", задач " + x.tasks + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
   } catch (e) {}
 }
+$("#cfgClear").onclick = () => { if (confirm("Удалить всю историю версий задач?")) run("#cfgMsg", async () => { await post("/api/config/history/clear"); loadHist(); return "история очищена"; }); };
 $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); closeEditor(); await loadGlobal(); loadTasks(); loadHist(); return "восстановлено"; }); };
 
 
-// ---- задачи: общие настройки, список, редактор одной задачи ----
+// ---- задачи: список, редактор одной задачи ----
 const EXAMPLE_TASK = `task "Подъём" cron="0 9 * * *" timeout=40m
 
   repeat 6 until=moved
@@ -810,65 +824,15 @@ const EXAMPLE_TASK = `task "Подъём" cron="0 9 * * *" timeout=40m
   else
     telegram "К {time} движения нет, <u>не вставала</u>"
 `;
-let cfgObj = {tasks: [], global: "", globalError: null};   // последнее, что прочитано с сервера
+let cfgObj = {tasks: []};   // последнее, что прочитано с сервера
 let tkOrig = "";               // id редактируемой задачи на сервере ("" = новая, ещё не сохранена)
 let tkOpen = false;            // открыт ли редактор
 let tkShown = "";              // текст, с которого начато редактирование (для проверки изменений)
 let tkIdShown = "";            // id, с которым начато редактирование
 let tkState = {};              // id -> {running, queued, next, enabled, cron}
 
-// общие строки: voice разбирается в поля формы, остальное (zone) идёт в текстовое поле зон
-function parseGlobal(text) {
-  const voice = {}, zones = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    if (/^voice(\s|$)/.test(line)) {
-      for (const m of line.matchAll(/(\w+)=("(?:[^"\\]|\\.)*"|[^\s#]+)/g)) {
-        let v = m[2]; if (v[0] === '"') { try { v = JSON.parse(v); } catch (e) {} }
-        voice[m[1]] = v;
-      }
-    } else zones.push(line);
-  }
-  return {voice, zones: zones.join("\n")};
-}
-const qv = v => /^[A-Za-z0-9_.:-]+$/.test(v) ? v : JSON.stringify(v);
-function buildGlobal() {
-  const p = [];
-  if ($("#gVol").value !== "") p.push("volume=" + Number($("#gVol").value));
-  if ($("#gEngine").value) p.push("engine=" + $("#gEngine").value);
-  if ($("#gLang").value.trim()) p.push("lang=" + qv($("#gLang").value.trim()));
-  if ($("#gVoice").value) p.push("voice=" + JSON.stringify($("#gVoice").value));
-  if ($("#gRate").value !== "") p.push("rate=" + Number($("#gRate").value));
-  if ($("#gPitch").value !== "") p.push("pitch=" + Number($("#gPitch").value));
-  const lines = []; if (p.length) lines.push("voice " + p.join(" "));
-  const z = $("#gZones").value.replace(/\s+$/, ""); if (z.trim()) lines.push(z);
-  return {text: lines.join("\n"), hasVoice: p.length > 0};
-}
-
-async function loadGlobal() {
-  cfgObj = (await api("/api/config/tasks")).json;
-  if (cfgObj.globalError) say("#gMsg", "Общие настройки не читаются: " + cfgObj.globalError + ". Исправьте их ниже и сохраните.", false);
-  const g = parseGlobal(cfgObj.global || ""), v = g.voice;
-  $("#gVol").value = v.volume ?? ""; $("#gEngine").value = v.engine === "piper" ? "piper" : ""; $("#gLang").value = v.lang || ""; $("#gRate").value = v.rate ?? ""; $("#gPitch").value = v.pitch ?? "";
-  $("#gZones").value = g.zones;
-  try {
-    const vi = (await api("/api/voice")).json;
-    const names = (vi.voices || []).map(x => x.name); if (v.voice && !names.includes(v.voice)) names.unshift(v.voice);
-    $("#gVoice").innerHTML = '<option value="">по умолчанию</option>' + names.map(n => "<option>" + esc(n) + "</option>").join("");
-  } catch (e) {}
-  $("#gVoice").value = v.voice || ""; rebase("gSave");
-}
-$("#gSave").onclick = () => run("#gMsg", async () => {
-  const g = buildGlobal();
-  try { await post("/api/config/global", g.text); }
-  catch (e) {
-    // номера строк в ответе относятся к тексту «voice + зоны»: переводим их в строки поля зон
-    const m = /^строка (\d+): (.*)$/s.exec(e.message);
-    if (m) { const n = Number(m[1]) - (g.hasVoice ? 1 : 0); throw new Error(n < 1 ? "голос: " + m[2] : "зоны, строка " + n + ": " + m[2]); }
-    throw e;
-  }
-  await loadGlobal(); return "сохранено";
-}, "gSave");
+// список задач с сервера (общих настроек задач больше нет: голос — вкладка «Звук», зоны — вкладка «Камера»)
+async function loadGlobal() { cfgObj = (await api("/api/config/tasks")).json; }
 
 function showTask(text, orig, id) {
   tkOrig = orig; tkOpen = true; tkShown = text; tkIdShown = id || orig; $("#tkId").value = tkIdShown;
@@ -969,6 +933,7 @@ async function loadSound() {
     $("#svInfo").textContent = v.ready ? "Синтезатор: " + (v.engine || "?") + "; язык " + v.lang + (v.languageAvailable ? " доступен" : " НЕ доступен: установите голос в настройках устройства (Язык и ввод, Синтез речи)") : "Синтезатор не готов: " + v.error;
     $("#svVoices").textContent = v.voices && v.voices.length ? v.voices.map(x => x.name + "  (" + x.locale + (x.network ? ", нужен интернет" : ", автономный") + ")").join("\n") : "нет данных";
   } catch (e) { $("#svInfo").textContent = e.message; }
+  loadVoiceCfg();
   loadStt();
   loadPiper();
   loadSoundFiles();
@@ -1012,7 +977,8 @@ async function loadPiper() {
   try {
     const t = (await api("/api/piper")).json;
     const st = {none: "голос не скачан", downloading: "скачивается" + (t.percent != null ? ": " + t.percent + "% (" + t.doneMb + " из " + t.totalMb + " МБ)" : "…"), unpacking: "распаковывается…", ready: "готов" + (t.voice ? ": " + t.voice : ""), error: "ошибка скачивания"}[t.state] || t.state;
-    $("#pgInfo").innerHTML = kvRow("Голос", st) + kvRow("Фразы в кэше", t.cacheFiles + " (" + t.cacheMb + " МБ)" + (t.pinned ? ", голос держится в памяти" : "")) + (t.error ? kvRow("Ошибка", t.error) : "");
+    $("#pgInfo").innerHTML = kvRowHtml("Голос", esc(st) + (t.state === "ready" ? ' <button class="ib add" id="pgSay" title="' + (pgBusy ? "Остановить" : "Сказать этим голосом") + '">' + (pgBusy ? ICO.stop : ICO.play) + "</button>" : "")) +
+      kvRowHtml("Фразы в кэше", esc(t.cacheFiles + " (" + fmtBytes(t.cacheBytes) + ")" + (t.pinned ? ", голос держится в памяти" : "")) + (t.cacheFiles ? ' <button class="ib del" id="pgCacheClear" title="Очистить кэш">' + ICO.del + "</button>" : "")) + (t.error ? kvRow("Ошибка", t.error) : "");
     const busy = t.state === "downloading" || t.state === "unpacking";
     $("#pgDownload").disabled = busy;
     $("#pgUpload").disabled = busy;
@@ -1021,24 +987,26 @@ async function loadPiper() {
     if (!busy && pgTimer) { clearInterval(pgTimer); pgTimer = null; }
   } catch (e) { $("#pgInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
-$("#pgDownload").onclick = () => run("#pgMsg", async () => { const r = await post("/api/piper/download?voice=" + $("#pgVoice").value); loadPiper(); return r.json.message; });
-$("#pgUpload").onclick = () => run("#pgMsg", async () => {
+$("#pgDownload").onclick = () => run("#pvMsg", async () => { const r = await post("/api/piper/download?voice=" + $("#pgVoice").value); loadPiper(); return r.json.message; });
+$("#pgUpload").onclick = () => run("#pvMsg", async () => {
   const f = $("#pgFile").files[0]; if (!f) throw new Error("выберите файл голоса (.tar.bz2 или .zip)");
-  say("#pgMsg", "загружаю " + f.name + " (" + Math.round(f.size / 1048576) + " МБ) и распаковываю, это может занять минуту…", true);
+  say("#pvMsg", "загружаю " + f.name + " (" + Math.round(f.size / 1048576) + " МБ) и распаковываю, это может занять минуту…", true);
   const r = await fetch("/api/piper/upload", {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: f});
   const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
   $("#pgFile").value = ""; loadPiper(); return j.message || "голос установлен";
 });
-$("#pgDelete").onclick = () => { if (confirm("Удалить голос Piper?")) run("#pgMsg", async () => { const r = await post("/api/piper/delete"); loadPiper(); return r.json.message; }); };
-function setPgBtn(on) { pgBusy = on; const b = $("#pgSay"); b.innerHTML = on ? ICO.stop : ICO.play; b.title = on ? "Остановить" : "Сказать голосом Piper"; }
-$("#pgSay").onclick = () => {
+$("#pgDelete").onclick = () => { if (confirm("Удалить голос Piper?")) run("#pvMsg", async () => { const r = await post("/api/piper/delete"); loadPiper(); return r.json.message; }); };
+function setPgBtn(on) { pgBusy = on; loadPiper(); }
+document.addEventListener("click", e => {
+  if (e.target.closest("#pgCacheClear")) { run("#pvMsg", async () => { const r = await post("/api/piper/cache/clear"); loadPiper(); return r.json.message; }); return; }
+  if (!e.target.closest("#pgSay")) return;
   if (pgBusy) { post("/api/say/stop").catch(() => {}); return; }
   setPgBtn(true);
-  run("#pgMsg", async () => {
-    say("#pgMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
+  run("#pvMsg", async () => {
+    say("#pvMsg", "говорю (первый раз модель загружается в память, это несколько секунд)…", true);
     try { const r = await post("/api/say?engine=piper&volume=" + $("#svVol").value, $("#svText").value); return r.json.message + ": скорость синтеза в журнале"; } finally { setPgBtn(false); }
   });
-};
+});
 let playing = null;
 const SYS = [["system:alarm", "Будильник"], ["system:notification", "Уведомление"], ["system:ringtone", "Рингтон"]];
 function renderSys() {
@@ -1095,6 +1063,123 @@ $("#svSay").onclick = () => {
   run("#svMsg", async () => { say("#svMsg", "говорю…", true); try { const r = await post("/api/say?volume=" + $("#svVol").value, $("#svText").value); return r.json.message; } finally { setSvBtn(false); } });
 };
 
+// ---- голос: общие настройки (вкладка «Звук») ----
+function vsVisibility() { const piper = $("#vsEngine").value === "piper"; document.querySelectorAll("#sound .va").forEach(e => { e.style.display = piper ? "none" : ""; }); }
+$("#vsEngine").onchange = vsVisibility;
+async function loadVoiceCfg() {
+  try {
+    if (DIRTY.vsSave && DIRTY.vsSave.base !== undefined && val(DIRTY.vsSave.ids) !== DIRTY.vsSave.base) return; // не затираем несохранённое
+    const v = (await api("/api/settings")).json.voice || {};
+    $("#vsVol").value = v.volume ?? ""; $("#vsEngine").value = v.engine === "piper" ? "piper" : ""; $("#vsLang").value = v.lang || "";
+    $("#vsRate").value = v.rate ?? ""; $("#vsPitch").value = v.pitch ?? "";
+    try {
+      const vi = (await api("/api/voice")).json;
+      const names = (vi.voices || []).map(x => x.name); if (v.voice && !names.includes(v.voice)) names.unshift(v.voice);
+      $("#vsVoice").innerHTML = '<option value="">по умолчанию</option>' + names.map(n => "<option>" + esc(n) + "</option>").join("");
+    } catch (e) {}
+    $("#vsVoice").value = v.voice || ""; vsVisibility(); rebase("vsSave");
+  } catch (e) { say("#vsMsg", e.message, false); }
+}
+$("#vsSave").onclick = () => run("#vsMsg", async () => {
+  const v = {};
+  if ($("#vsVol").value !== "") v.volume = Number($("#vsVol").value);
+  if ($("#vsEngine").value) v.engine = $("#vsEngine").value;
+  if ($("#vsLang").value.trim()) v.lang = $("#vsLang").value.trim();
+  if ($("#vsVoice").value) v.voice = $("#vsVoice").value;
+  if ($("#vsRate").value !== "") v.rate = Number($("#vsRate").value);
+  if ($("#vsPitch").value !== "") v.pitch = Number($("#vsPitch").value);
+  await post("/api/settings", JSON.stringify({voice: v}));
+  loadVoiceCfg(); loadPiper(); return "сохранено";
+}, "vsSave");
+
+// ---- зоны детектора движения (вкладка «Камера») ----
+let zn = {}, znBase = "{}", znCur = "", znSelRect = null, znDrag = null;
+const znStr = () => JSON.stringify(zn);
+function znDirty() { return znStr() !== znBase; }
+function znSyncSel() {
+  const names = Object.keys(zn);
+  $("#znSel").innerHTML = names.map(n => "<option>" + esc(n) + "</option>").join("") || "<option value=''>зон нет</option>";
+  if (!names.includes(znCur)) znCur = names[0] || "";
+  $("#znSel").value = znCur; $("#znDel").disabled = !znCur; $("#znRectDel").disabled = !znSelRect;
+}
+async function loadZones() {
+  try {
+    if (znDirty()) return;
+    const z = (await api("/api/settings")).json.zones || {};
+    zn = {};
+    for (const n of Object.keys(z)) {
+      const o = z[n];
+      zn[n] = {rects: (o.rects || (o.rect ? [o.rect] : [])).map(r => r.slice()), exclude: (o.exclude || []).map(r => r.slice())};
+    }
+    znBase = znStr(); znSelRect = null; znSyncSel(); znDraw();
+  } catch (e) { say("#znMsg", e.message, false); }
+}
+function znShot() {
+  const img = $("#znImg");
+  img.onload = () => { img.style.display = ""; if (img.naturalWidth > 1) $("#znWrap").style.aspectRatio = img.naturalWidth + " / " + img.naturalHeight; znDraw(); };
+  img.onerror = () => { img.style.display = "none"; say("#znMsg", "кадра нет: включите камеру кнопкой выше и нажмите «Обновить кадр»", false); };
+  img.src = "/api/camera/snapshot?overlay=0&size=480&t=" + Date.now();
+}
+function znDraw() {
+  const cv = $("#znCv"), w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+  if (cv.width !== w) cv.width = w; if (cv.height !== h) cv.height = h;
+  const g = cv.getContext("2d"); g.clearRect(0, 0, w, h);
+  const z = zn[znCur]; if (!z) return;
+  const box = (r, fill, stroke, sel) => { g.fillStyle = fill; g.strokeStyle = stroke; g.lineWidth = sel ? 3 : 1.5; g.setLineDash(sel ? [6, 4] : []); g.fillRect(r[0] * w, r[1] * h, (r[2] - r[0]) * w, (r[3] - r[1]) * h); g.strokeRect(r[0] * w, r[1] * h, (r[2] - r[0]) * w, (r[3] - r[1]) * h); };
+  z.rects.forEach((r, i) => box(r, "rgba(46,125,50,0.30)", "#2e7d32", znSelRect && znSelRect.kind === "rects" && znSelRect.i === i));
+  z.exclude.forEach((r, i) => box(r, "rgba(216,27,96,0.30)", "#d81b60", znSelRect && znSelRect.kind === "exclude" && znSelRect.i === i));
+  if (znDrag) box(znDrag.r, "rgba(255,255,255,0.15)", "#fff", true);
+}
+function znPos(e) { const b = $("#znCv").getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), Math.min(1, Math.max(0, (e.clientY - b.top) / b.height))]; }
+function znHit(p) {
+  const z = zn[znCur]; if (!z) return null;
+  for (const kind of ["exclude", "rects"]) for (let i = z[kind].length - 1; i >= 0; i--) { const r = z[kind][i]; if (p[0] >= r[0] && p[0] <= r[2] && p[1] >= r[1] && p[1] <= r[3]) return {kind, i}; }
+  return null;
+}
+$("#znCv").onpointerdown = e => {
+  if (!zn[znCur]) { say("#znMsg", "сначала добавьте зону кнопкой «+»", false); return; }
+  e.preventDefault(); $("#znCv").setPointerCapture(e.pointerId);
+  const p = znPos(e); znDrag = {s: p, r: [p[0], p[1], p[0], p[1]], moved: false};
+};
+$("#znCv").onpointermove = e => {
+  if (!znDrag) return;
+  const p = znPos(e); znDrag.r = [Math.min(znDrag.s[0], p[0]), Math.min(znDrag.s[1], p[1]), Math.max(znDrag.s[0], p[0]), Math.max(znDrag.s[1], p[1])];
+  if (znDrag.r[2] - znDrag.r[0] > 0.02 && znDrag.r[3] - znDrag.r[1] > 0.02) znDrag.moved = true;
+  znDraw();
+};
+$("#znCv").onpointerup = e => {
+  if (!znDrag) return;
+  const d = znDrag; znDrag = null;
+  if (d.moved) {
+    const r = d.r.map(x => Math.round(x * 1000) / 1000), kind = $("#znMode").value;
+    zn[znCur][kind].push(r); znSelRect = {kind, i: zn[znCur][kind].length - 1};
+  } else znSelRect = znHit(d.s);
+  $("#znRectDel").disabled = !znSelRect; znDraw();
+};
+$("#znRectDel").onclick = () => { if (znSelRect && zn[znCur]) { zn[znCur][znSelRect.kind].splice(znSelRect.i, 1); znSelRect = null; $("#znRectDel").disabled = true; znDraw(); } };
+$("#znSel").onchange = () => { znCur = $("#znSel").value; znSelRect = null; znSyncSel(); znDraw(); };
+$("#znAdd").onclick = () => {
+  const n = (prompt("Имя зоны (латинские буквы, цифры, _), например bed:") || "").trim();
+  if (!n) return;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) { say("#znMsg", "имя зоны: латинские буквы, цифры и _, начинается не с цифры", false); return; }
+  if (zn[n]) { say("#znMsg", "зона «" + n + "» уже есть", false); return; }
+  zn[n] = {rects: [], exclude: []}; znCur = n; znSelRect = null; znSyncSel(); znDraw();
+  say("#znMsg", "зона «" + n + "» создана: обведите область на кадре и сохраните", true);
+};
+$("#znDel").onclick = () => { if (znCur && confirm("Удалить зону «" + znCur + "»? Задачи, которые на неё ссылаются, получат ошибку.")) { delete zn[znCur]; znCur = ""; znSelRect = null; znSyncSel(); znDraw(); } };
+$("#znShot").onclick = znShot;
+$("#znSave").onclick = () => run("#znMsg", async () => {
+  const out = {};
+  for (const n of Object.keys(zn)) {
+    if (!zn[n].rects.length) throw new Error("в зоне «" + n + "» нет ни одной области: обведите её на кадре или удалите зону");
+    out[n] = {rects: zn[n].rects}; if (zn[n].exclude.length) out[n].exclude = zn[n].exclude;
+  }
+  await post("/api/settings", JSON.stringify({zones: out}));
+  znBase = znStr(); await loadGlobal(); loadTasks();
+  return "зоны сохранены";
+}, "znSave");
+window.addEventListener("resize", znDraw);
+
 // ---- настройки ----
 async function loadSettings() {
   try {
@@ -1110,6 +1195,7 @@ $("#sSave").onclick = () => run("#sMsg", async () => {
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
+  $("#logLevel").value = $("#sLevel").value;
   return r.restartRequired ? "сохранено; веб-сервер перезапускается на новом порту " + r.settings.webPort : "сохранено";
 }, "sSave");
 

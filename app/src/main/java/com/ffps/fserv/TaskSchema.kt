@@ -30,15 +30,7 @@ object TaskSchema {
 
     fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
         fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
-        root.optJSONObject("voice")?.let { v -> voice(v)?.let { return err(v, it) } }
         val zones = HashSet<String>(extraZones)
-        root.optJSONObject("zones")?.let { z ->
-            for (name in z.keys()) {
-                val zo = z.getJSONObject(name)
-                zone(zo)?.let { return err(zo, "zone $name: $it") }
-                zones.add(name)
-            }
-        }
         val tasks = root.optJSONArray("tasks") ?: JSONArray()
         for (i in 0 until tasks.length()) {
             val t = tasks.getJSONObject(i)
@@ -50,16 +42,18 @@ object TaskSchema {
         return null
     }
 
-    private fun voice(o: JSONObject): String? {
-        if (o.has("volume") && !(o.opt("volume") is Number && o.optInt("volume", -1) in 0..100)) return "voice: volume — число от 0 до 100"
-        if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "voice: rate — число от 0.3 до 3 (1 = обычная скорость)"
-        if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "voice: pitch — число от 0.3 до 2 (1 = обычный тон)"
-        if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "voice: lang — например ru-RU"
-        if (o.has("engine") && o.optString("engine") !in listOf("system", "piper")) return "voice: engine — system (голос Android) или piper (нейроголос, скачивается на вкладке «Звук»)"
+    /** Проверка настроек голоса (settings.json, вкладка «Звук»); null или текст ошибки. */
+    fun checkVoice(o: JSONObject): String? {
+        if (o.has("volume") && !(o.opt("volume") is Number && o.optInt("volume", -1) in 0..100)) return "volume — число от 0 до 100"
+        if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "rate — число от 0.3 до 3 (1 = обычная скорость)"
+        if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "pitch — число от 0.3 до 2 (1 = обычный тон)"
+        if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "lang — например ru-RU"
+        if (o.has("engine") && o.optString("engine") !in listOf("system", "piper")) return "engine — system (голос Android) или piper (нейроголос, скачивается на вкладке «Звук»)"
         return null
     }
 
-    private fun zone(o: JSONObject): String? {
+    /** Проверка одной зоны детектора движения (settings.json, вкладка «Камера»); null или текст ошибки. */
+    fun checkZone(o: JSONObject): String? {
         if (!o.has("rect") && !o.has("rects") && !o.has("exclude")) return "нужен rect, rects или exclude"
         if (o.has("rect")) rect(o.opt("rect"))?.let { return "rect: $it" }
         for (key in listOf("rects", "exclude")) if (o.has(key)) {
@@ -188,12 +182,7 @@ object TaskSchema {
                     if (ms.minMs < 2_000 || ms.maxMs > 120_000) return e("ask: listen — от 2s до 2m (сколько ждать ответ)")
                 }
                 if (s.has("retries") && !(s.opt("retries") is Number && s.optInt("retries", -1) in 0..5)) return e("ask: retries — число от 0 до 5 (сколько раз переспросить)")
-                if (s.has("again")) {
-                    val t = s.opt("again")
-                    if (t !is String || t.isBlank()) return e("ask: again — текст в кавычках, который говорится при повторном вопросе")
-                    tpl(t, c)?.let { return e("ask: again: $it") }
-                    pauses(t)?.let { return e("ask: again: $it") }
-                }
+                if (s.has("again")) phrases(s.opt("again"), "ask: again", c)?.let { return e(it) }
                 volume(s)?.let { return e(it) }
             }
             "log", "telegram", "stop" -> {
@@ -291,7 +280,7 @@ object TaskSchema {
         if (w.has("area") && !(w.opt("area") is Number && w.optDouble("area") in 0.05..100.0)) return e("area — число процентов от 0.05 до 100")
         if (w.has("zone")) {
             val z = w.opt("zone")
-            if (z !is String || z !in c.zones) return e("зона «$z» не описана (строкой zone имя rect=[…]; описаны: ${c.zones.joinToString(", ").ifEmpty { "нет" }})")
+            if (z !is String || z !in c.zones) return e("зона «$z» не описана (зоны создаются на вкладке «Камера»; есть: ${c.zones.joinToString(", ").ifEmpty { "нет" }})")
         }
         return null
     }

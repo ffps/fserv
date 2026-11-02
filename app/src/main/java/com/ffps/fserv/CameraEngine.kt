@@ -271,7 +271,7 @@ object CameraEngine {
                 }
 
                 override fun onError(d: CameraDevice, error: Int) {
-                    FLog.w("camera", "ошибка камеры $error")
+                    FLog.e("camera", "ошибка камеры $error")
                     d.close()
                     if (gen == generation) { device = null; fail("ошибка камеры, код $error", true) }
                 }

@@ -55,10 +55,12 @@ object Updater {
             if (r.code != 200) throw java.io.IOException("GitHub: HTTP ${r.code} (${r.via}) ${r.body.take(120)}")
             val rel = JSONObject(r.body)
             val assets = HashMap<String, String>()
+            val sizes = HashMap<String, Long>()
             val a = rel.optJSONArray("assets")
             if (a != null) for (i in 0 until a.length()) {
                 val x = a.getJSONObject(i)
                 assets[x.getString("name")] = x.getString("browser_download_url")
+                sizes[x.getString("name")] = x.optLong("size")
             }
             val vUrl = assets["version.json"] ?: throw java.io.IOException("в релизе ${rel.optString("tag_name")} нет version.json")
             val vr = Net.request("updates", "GET", vUrl)
@@ -70,6 +72,7 @@ object Updater {
                 "versionName" to v.getString("versionName"),
                 "versionCode" to v.getLong("versionCode"),
                 "apk" to apk,
+                "sizeBytes" to (sizes[apk] ?: 0L),
                 "apkUrl" to (assets[apk] ?: throw java.io.IOException("в релизе нет файла $apk")),
                 "sha256" to v.getString("sha256").lowercase(),
                 "notes" to rel.optString("body").take(1000)
@@ -82,7 +85,7 @@ object Updater {
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName
             lastCheck = System.currentTimeMillis()
-            FLog.w("update", "проверка не удалась: $lastError")
+            FLog.e("update", "проверка не удалась: $lastError")
             throw e
         } finally {
             state = "idle"

@@ -109,6 +109,14 @@ object Settings {
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
+    /** Настройки голоса для задач (вкладка «Звук»): volume, engine, lang, voice, rate, pitch; отсутствующий ключ = значение по умолчанию. */
+    @Synchronized
+    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString())
+
+    /** Зоны детектора движения (вкладка «Камера»): имя → {rect | rects, exclude}. */
+    @Synchronized
+    fun zones(): JSONObject = JSONObject((o.optJSONObject("zones") ?: JSONObject()).toString())
+
     @Synchronized
     fun getStr(key: String): String = o.optJSONObject("state")?.optString(key, "") ?: ""
 
@@ -215,7 +223,9 @@ object Settings {
             )
         },
         "updateRepo" to updateRepo,
-        "updateCheckCron" to updateCheckCron
+        "updateCheckCron" to updateCheckCron,
+        "voice" to voice(),
+        "zones" to zones()
     )
 
     class Result(val errors: List<String>, val restartRequired: Boolean)
@@ -264,6 +274,17 @@ object Settings {
             if (c.has("rotation") && c.optInt("rotation", -2) !in listOf(-1, 0, 90, 180, 270)) errors.add("camera.rotation: -1 (авто), 0, 90, 180 или 270")
             if (c.has("resolution") && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString("resolution"))) errors.add("camera.resolution: вида 640x480")
         }
+        patch.optJSONObject("voice")?.let { v ->
+            val bad = v.keys().asSequence().firstOrNull { it !in listOf("volume", "rate", "pitch", "lang", "voice", "engine") }
+            if (bad != null) errors.add("voice.$bad: неизвестный параметр") else TaskSchema.checkVoice(v)?.let { errors.add("voice: $it") }
+        }
+        patch.optJSONObject("zones")?.let { z ->
+            for (name in z.keys()) {
+                if (!Regex("[A-Za-z_][A-Za-z0-9_]*").matches(name)) { errors.add("zones: имя «$name» — латинские буквы, цифры и _"); continue }
+                val zo = z.optJSONObject(name)
+                if (zo == null) errors.add("zones.$name: ожидается объект с rect, rects или exclude") else TaskSchema.checkZone(zo)?.let { errors.add("zones.$name: $it") }
+            }
+        }
         if (patch.has("netTimeoutSec") && patch.optInt("netTimeoutSec", -1) !in 2..120) errors.add("netTimeoutSec: число секунд от 2 до 120")
         patch.optJSONObject("proxy")?.let { p ->
             if (p.has("port") && p.optInt("port", -1) !in 1..65535) errors.add("proxy.port: число от 1 до 65535")
@@ -297,6 +318,9 @@ object Settings {
             FLog.addSecret(telegramToken)
         }
         if (patch.has("netTimeoutSec")) o.put("netTimeoutSec", patch.optInt("netTimeoutSec"))
+        // голос и зоны заменяются целиком: пропущенный ключ значит «по умолчанию»
+        patch.optJSONObject("voice")?.let { o.put("voice", JSONObject(it.toString())) }
+        patch.optJSONObject("zones")?.let { o.put("zones", JSONObject(it.toString())) }
         patch.optJSONObject("camera")?.let { src ->
             val dst = o.optJSONObject("camera") ?: JSONObject().also { o.put("camera", it) }
             for (k in listOf("intervalMs", "cellThreshold", "rotation")) if (src.has(k)) dst.put(k, src.optInt(k))

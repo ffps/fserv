@@ -1,5 +1,6 @@
 package com.ffps.fserv
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -28,7 +29,8 @@ class ScriptTest {
             telegram "К {time} не встал"
     """.trimIndent()
 
-    private val common = "voice volume=70 lang=ru-RU rate=0.95\nzone bed rect=[0.1,0.2,0.9,0.9] exclude=[[0,0,0.2,0.2]]\n"
+    private val zonesJson = JSONObject("""{"bed":{"rect":[0.1,0.2,0.9,0.9],"exclude":[[0,0,0.2,0.2]]}}""")
+    private val voiceJson = JSONObject("""{"volume":70,"lang":"ru-RU","rate":0.95}""")
     private val bed = setOf("bed")
 
     private fun err(text: String): String {
@@ -96,7 +98,7 @@ class ScriptTest {
         expect(task("play a.mp3").replace("cron=\"0 9 * * *\"", "cron=\"61 * * * *\""), "cron")
         expect("hello", "на верхнем уровне")
         expect("task\n  say \"a\"\ntask\n  say \"b\"", "одна задача")
-        expect("voice volume=300\ntask\n  say \"a\"", "общих настройках")
+        expect("voice volume=300\ntask\n  say \"a\"", "больше не пишутся")
         expect("# только комментарий", "нет строки task")
         expect("task wake\n  say \"a\"", "у task нет настройки «wake»")
         expect(task("watch 5s zone=nope"), "зона «nope»")
@@ -138,51 +140,43 @@ class ScriptTest {
         assertNull(Script.validate(task("stop \"не нужно {time}\"")))
     }
 
-    @Test fun commonFile() {
-        assertNull(Script.checkCommon(common).first)
-        val p = Script.parseCommon(common)
-        assertEquals("ru-RU", p.root.getJSONObject("voice").getString("lang"))
-        assertTrue(p.root.getJSONObject("zones").has("bed"))
-        assertEquals(listOf(1, 2), p.globalLines)
-        assertTrue(Script.checkCommon("# пусто\n").first == null)
-        assertTrue(Script.checkCommon("task\n  say \"x\"\n").first!!.contains("только voice и zone"))
-        assertTrue(Script.checkCommon("zone z rect=[0.5,0.5,0.2,0.2]\n").first!!.contains("x1 < x2"))
-        assertTrue(Script.checkCommon("voice volume=300\n").first!!.startsWith("строка 1: "))
-        assertTrue(Script.checkCommon("voice volume=1\nvoice volume=2\n").first!!.contains("уже есть"))
-        assertTrue(Script.checkCommon("zone a rect=[0,0,1,1]\nzone a rect=[0,0,1,1]\n").first!!.contains("уже есть"))
+    @Test fun voiceAndZoneSettings() {
+        assertNull(TaskSchema.checkVoice(voiceJson))
+        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"piper","rate":0.95,"volume":70}""")))
+        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"system"}""")))
+        assertTrue(TaskSchema.checkVoice(JSONObject("""{"engine":"google"}"""))!!.contains("engine"))
+        assertTrue(TaskSchema.checkVoice(JSONObject("""{"volume":300}"""))!!.contains("volume"))
+        assertNull(TaskSchema.checkZone(zonesJson.getJSONObject("bed")))
+        assertTrue(TaskSchema.checkZone(JSONObject("""{"rect":[0.5,0.5,0.2,0.2]}"""))!!.contains("x1 < x2"))
+        assertTrue(TaskSchema.checkZone(JSONObject("""{}"""))!!.contains("нужен rect"))
     }
 
-    @Test fun voiceEngine() {
-        val p = Script.parseCommon("voice engine=piper rate=0.95 volume=70\n")
-        assertEquals("piper", p.root.getJSONObject("voice").getString("engine"))
-        assertNull(Script.checkCommon("voice engine=piper\n").first)
-        assertNull(Script.checkCommon("voice engine=system\n").first)
-        assertTrue(Script.checkCommon("voice engine=google\n").first!!.contains("engine"))
+    @Test fun askAgainList() {
+        assertNull(Script.validate(task("ask [\"Назови число\", \"Скажи число\"] assign=p kind=number listen=5s retries=2 again=[\"Не расслышал!\", \"Не понял, скажи снова\"]")))
+        assertNull(Script.validate(task("ask \"Число?\" assign=p kind=number again=\"Ещё раз\"")))
+        expect(task("ask \"Число?\" assign=p again=[]"), "again")
+        expect(task("ask \"Число?\" assign=p again=5"), "again")
     }
 
     @Test fun taskSetIsolatesErrors() {
         val ok = "task \"Хорошая\" cron=\"0 8 * * *\"\n  watch 5s zone=bed assign=m\n  say \"a\"\n"
         val l = TaskSet.parseSet(mapOf(
-            "_common.txt" to common, "good.txt" to ok,
+            "good.txt" to ok,
             "broken.txt" to "task\n  say \"a\"\n  bogus\n", "nozone.txt" to "task\n  watch 5s zone=zzz\n  say \"a\"\n",
             "bad id.txt" to "task\n  say \"a\"\n"
-        )) { true }
-        assertNull(l.commonError)
+        ), voiceJson, zonesJson) { true }
         assertEquals(listOf("good"), (0 until l.root.getJSONArray("tasks").length()).map { l.root.getJSONArray("tasks").getJSONObject(it).getString("id") })
         assertEquals(setOf("broken", "nozone", "bad id"), l.errors.keys)
         assertTrue(l.errors.getValue("broken"), l.errors.getValue("broken").startsWith("строка 3: "))
         assertTrue(l.errors.getValue("nozone").contains("зона «zzz»"))
         assertEquals(70, l.root.getJSONObject("voice").getInt("volume"))
-        // без общего файла зон нет, и задача с зоной становится ошибочной
+        // без зон в настройках задача с зоной становится ошибочной
         assertTrue(TaskSet.parseSet(mapOf("good.txt" to ok)) { true }.errors.containsKey("good"))
-        // сломанный общий файл не отключает задачи без зон
-        val c = TaskSet.parseSet(mapOf("_common.txt" to "voice volume=999\n", "t.txt" to "task\n  say \"a\"\n")) { true }
-        assertTrue(c.commonError!!.startsWith("строка 1: "))
-        assertEquals(1, c.root.getJSONArray("tasks").length())
     }
 
     @Test fun taskSetValidation() {
-        assertNull(TaskSet.validateSet(mapOf("_common.txt" to common, "a.txt" to "task\n  say \"x\"\n")) { true })
+        assertNull(TaskSet.validateSet(mapOf("a.txt" to "task\n  say \"x\"\n")) { true })
+        assertTrue(TaskSet.validateSet(mapOf("_common.txt" to "voice volume=1\n")) { true }!!.contains("недопустимое имя"))
         assertTrue(TaskSet.validateSet(mapOf("a.txt" to "task\n  oops\n")) { true }!!.startsWith("tasks/a.txt: строка 2: "))
         assertTrue(TaskSet.validateSet(mapOf("../x.txt" to "task\n  say \"x\"\n")) { true }!!.contains("недопустимое имя"))
         assertTrue(TaskSet.validateSet(mapOf("a.json" to "{}")) { true }!!.contains("недопустимое имя"))
@@ -194,15 +188,13 @@ class ScriptTest {
     @Test fun examplesInDocsAreValid() {
         val f = listOf("../script.md", "script.md").map { java.io.File(it) }.firstOrNull { it.isFile } ?: return
         val blocks = Regex("```\\n(.*?)```", RegexOption.DOT_MATCHES_ALL).findAll(f.readText()).map { it.groupValues[1] }.toList()
-        val zones = blocks.flatMap { b -> b.lines().mapNotNull { Regex("^zone (\\w+) ").find(it)?.groupValues?.get(1) } }.toSet()
+        val zones = setOf("bed", "door", "room") // имена зон, которые в примерах считаются созданными на вкладке «Камера»
         var checked = 0
         for (b in blocks) {
             val top = b.lines().filter { it.isNotEmpty() && !it.startsWith(" ") && !it.startsWith("#") }
             if (top.isEmpty()) continue
             val isTask = top.all { it == "task" || it.startsWith("task ") }
-            val isCommon = top.all { it.startsWith("voice ") || it.startsWith("zone ") }
             if (isTask) assertNull("пример задачи из script.md не проходит проверку:\n$b", Script.validate(b, "x", zones))
-            else if (isCommon) assertNull("пример общих настроек из script.md не проходит проверку:\n$b", Script.checkCommon(b).first)
             else continue
             checked++
         }
