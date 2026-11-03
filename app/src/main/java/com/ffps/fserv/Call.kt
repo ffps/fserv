@@ -101,7 +101,6 @@ object Call {
         try {
             Slide.off()
             CameraEngine.suspendForCall()
-            beginAudio()
             Thread.sleep(300) // камера и микрофон освобождаются не мгновенно
             val res = Settings.call().optString("deviceRes", "640x480")
             if (!MainActivity.callStart(offer, res)) {
@@ -112,6 +111,7 @@ object Call {
             handler.postDelayed(watchdog, 2_000)
             latch?.await(25, TimeUnit.SECONDS)
             if (session !== s) return Result(false, error = ended[s.id] ?: "звонок отменён")
+            beginAudio() // режим связи включаем, когда звук уже захвачен: до этого он мешал запуску микрофона
             val a = answer
             if (a == null) {
                 val e = error ?: "устройство не ответило за 25 с"
@@ -161,6 +161,8 @@ object Call {
     // ---------------- из страницы звонка на устройстве ----------------
 
     fun onAnswer(sdp: String) { answer = sdp; latch?.countDown() }
+
+    fun onWarn(msg: String) = FLog.w("call", "страница звонка на устройстве: $msg")
 
     fun onError(msg: String) {
         FLog.w("call", "страница звонка на устройстве: $msg")
@@ -223,5 +225,6 @@ object Call {
 class CallBridge {
     @JavascriptInterface fun answer(sdp: String) = Call.onAnswer(sdp)
     @JavascriptInterface fun error(msg: String) = Call.onError(msg)
+    @JavascriptInterface fun warn(msg: String) = Call.onWarn(msg)
     @JavascriptInterface fun state(st: String) = Call.onState(st)
 }

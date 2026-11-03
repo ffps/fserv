@@ -25,11 +25,18 @@ async function callAccept(offer, res) {
   try {
     const m = /^(\d+)x(\d+)$/.exec(res) || [0, "640", "480"];
     const audio = {echoCancellation: true, noiseSuppression: true, autoGainControl: true};
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({audio, video: {facingMode: "user", width: {ideal: +m[1]}, height: {ideal: +m[2]}}});
-    } catch (e) {
-      stream = await navigator.mediaDevices.getUserMedia({audio}); // камеры нет или она недоступна: звонок только со звуком
+    const video = {facingMode: "user", width: {ideal: +m[1]}, height: {ideal: +m[2]}};
+    // если не удаётся взять и звук, и видео, звонок идёт с тем, что получилось (причина пишется в журнал приложения)
+    const tries = [["звук и видео", {audio, video}], ["звук без настроек и видео", {audio: true, video}], ["только видео", {video}], ["только звук", {audio: true}]];
+    let last = "";
+    for (const [name, c] of tries) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(c);
+        if (last) report("warn", "захват: " + name + " (первая попытка не удалась: " + last + ")");
+        break;
+      } catch (e) { last = (e && e.name ? e.name + ": " + e.message : String(e)); }
     }
+    if (!stream) throw new Error(last);
     if (stream.getVideoTracks().length) {
       document.getElementById("local").srcObject = stream;
       document.getElementById("local").style.display = "block";
