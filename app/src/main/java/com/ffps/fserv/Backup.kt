@@ -81,8 +81,6 @@ object Backup {
                 total += maxOf(e.size, 0)
                 when {
                     n == "settings.json" -> settings = try { JSONObject(readText(zf, e)) } catch (x: Exception) { return "settings.json: ${x.message}" }
-                    n == "tasks.json" -> return "в архиве задачи в старом формате JSON (до версии 0.8.0): он больше не поддерживается; перепишите задачи на новом языке и сделайте новую копию"
-                    n == "tasks.txt" -> return "в архиве задачи одним файлом (до версии 0.8.3): он больше не поддерживается"
                     n.startsWith("tasks/") && n.count { it == '/' } == 1 -> tasks[n.removePrefix("tasks/")] = try { readText(zf, e) } catch (x: IllegalArgumentException) { return x.message }
                     n.startsWith("sounds/") && n.count { it == '/' } == 1 -> {
                         val name = n.removePrefix("sounds/")

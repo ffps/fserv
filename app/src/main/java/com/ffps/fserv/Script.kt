@@ -127,7 +127,6 @@ object Script {
                         tasks.put(t)
                         spans.add(TaskSpan(id, l.no, taskEnd(l.no, pos)))
                     }
-                    "voice", "zone" -> fail(l.no, "строки voice и zone в сценариях больше не пишутся: голос настраивается на вкладке «Звук», зоны детектора движения — на вкладке «Камера»")
                     else -> fail(l.no, "на верхнем уровне допустима только task; встретилось «$word»" + if (word.contains('=')) " (настройки задачи пишутся в строке task или под ней, до шагов)" else "")
                 }
             }

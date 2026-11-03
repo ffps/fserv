@@ -98,7 +98,7 @@ class ScriptTest {
         expect(task("play a.mp3").replace("cron=\"0 9 * * *\"", "cron=\"61 * * * *\""), "cron")
         expect("hello", "на верхнем уровне")
         expect("task\n  say \"a\"\ntask\n  say \"b\"", "одна задача")
-        expect("voice volume=300\ntask\n  say \"a\"", "больше не пишутся")
+        expect("voice volume=300\ntask\n  say \"a\"", "на верхнем уровне")
         expect("# только комментарий", "нет строки task")
         expect("task wake\n  say \"a\"", "у task нет настройки «wake»")
         expect(task("watch 5s zone=nope"), "зона «nope»")
@@ -147,7 +147,6 @@ class ScriptTest {
         assertTrue(TaskSchema.checkVoice(JSONObject("""{"rate":1}"""))!!.contains("rate"))
         assertTrue(TaskSchema.checkVoice(JSONObject("""{"pitch":250}"""))!!.contains("pitch"))
         assertTrue(TaskSchema.validPct(100, 30, 300) && !TaskSchema.validPct(100.5, 30, 300) && !TaskSchema.validPct("100", 30, 300))
-        assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"piper"}"""))) // остаток старых копий (нейроголос убран в 0.15.0), игнорируется
         assertTrue(TaskSchema.checkVoice(JSONObject("""{"volume":300}"""))!!.contains("volume"))
         assertNull(TaskSchema.checkZone(zonesJson.getJSONObject("bed")))
         assertTrue(TaskSchema.checkZone(JSONObject("""{"rect":[0.5,0.5,0.2,0.2]}"""))!!.contains("x1 < x2"))

@@ -21,46 +21,17 @@ object Settings {
         } catch (e: Exception) {
             JSONObject()
         }
-        // До версии 0.3.0 пароль генерировался сам. Теперь его вводит пользователь,
-        // поэтому сгенерированный пароль и состояние службы сбрасываются один раз.
-        // До 0.4.1 было по прокси на назначение; оставляем первый заданный, галочки берём из «включён».
-        if (o.has("proxies") && !o.has("proxy")) {
-            val old = o.getJSONObject("proxies")
-            var first: JSONObject? = null
-            for (n in listOf("telegram", "llm", "updates")) {
-                val x = old.optJSONObject(n) ?: continue
-                if (first == null && x.optString("host").isNotBlank()) first = x
-            }
-            if (first != null) {
-                val np = JSONObject(first.toString())
-                np.remove("enabled")
-                for (n in listOf("telegram", "llm", "updates")) {
-                    val x = old.optJSONObject(n)
-                    np.put(n, x != null && x.optBoolean("enabled") && x.optString("host").isNotBlank())
-                }
-                o.put("proxy", np)
-            }
-            o.remove("proxies")
-            save()
-        }
-        if (o.optInt("schema", 0) < 2) {
-            o.remove("password")
-            o.put("serviceEnabled", false)
-            o.put("schema", 2)
-            save()
-        }
     }
 
     /**
-     * Восстановление из резервной копии: настройки из копии заменяют текущие, кроме состояния службы,
-     * версии схемы и отметок последнего срабатывания расписаний (иначе после перезапуска расписание сработает повторно).
+     * Восстановление из резервной копии: настройки из копии заменяют текущие, кроме состояния службы
+     * и отметок последнего срабатывания расписаний (иначе после перезапуска расписание сработает повторно).
      */
     @Synchronized
     fun replaceAll(n: JSONObject) {
-        for (k in listOf("serviceEnabled", "schema", "lastFired")) {
+        for (k in listOf("serviceEnabled", "lastFired")) {
             if (o.has(k)) n.put(k, o.get(k)) else n.remove(k)
         }
-        n.put("schema", 2)
         o = n
         save()
     }
@@ -72,7 +43,7 @@ object Settings {
     @Synchronized
     fun resetUser() {
         val n = JSONObject()
-        for (k in listOf("password", "webPort", "httpsPort", "autostart", "serviceEnabled", "schema", "lastFired")) if (o.has(k)) n.put(k, o.get(k))
+        for (k in listOf("password", "webPort", "httpsPort", "autostart", "serviceEnabled", "lastFired")) if (o.has(k)) n.put(k, o.get(k))
         o = n
         save()
     }
@@ -113,14 +84,7 @@ object Settings {
 
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
     @Synchronized
-    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString()).also {
-        it.remove("engine") // остаток нейроголоса (до 0.15.0), игнорируется
-        // rate и pitch — целые проценты (с 0.19.0); прежние дробные (0.95) и вне диапазона не переносятся: берётся 100
-        for ((k, lim) in listOf("rate" to (30..300), "pitch" to (30..200))) {
-            val x = it.opt(k)
-            if (x != null) { if (TaskSchema.validPct(x, lim.first, lim.last)) it.put(k, (x as Number).toInt()) else it.remove(k) }
-        }
-    }
+    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString())
 
     /** Параметры звонка (вкладка «Звонок»): разрешение камеры звонящего (adminRes) и камеры устройства (deviceRes). */
     @Synchronized
@@ -299,7 +263,7 @@ object Settings {
             if (c.has("resolution") && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString("resolution"))) errors.add("camera.resolution: вида 640x480")
         }
         patch.optJSONObject("voice")?.let { v ->
-            val bad = v.keys().asSequence().firstOrNull { it !in listOf("volume", "rate", "pitch", "lang", "voice", "engine") }
+            val bad = v.keys().asSequence().firstOrNull { it !in listOf("volume", "rate", "pitch", "lang", "voice") }
             if (bad != null) errors.add("voice.$bad: неизвестный параметр") else TaskSchema.checkVoice(v)?.let { errors.add("voice: $it") }
         }
         patch.optJSONObject("zones")?.let { z ->

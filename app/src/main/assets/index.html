@@ -601,8 +601,6 @@ for (const id of ["tkText"]) mkEditor(document.getElementById(id));
 // ---- вкладки ----
 let current = "status";
 function showTab(t) {
-  if (["settings", "update", "power", "pages"].includes(t)) t = "system"; // прежние адреса вкладок
-  if (t === "journal") t = "logs"; // бывший «Журнал событий» объединён с логом
   if (!document.getElementById(t) || !document.querySelector('#tabs a[data-t="' + t + '"]')) t = "status";
   current = t;
   document.querySelectorAll("#tabs a").forEach(x => x.classList.toggle("on", x.dataset.t === t));
@@ -876,7 +874,7 @@ let tkShown = "";              // текст, с которого начато �
 let tkIdShown = "";            // id, с которым начато редактирование
 let tkState = {};              // id -> {running, queued, next, enabled, cron}
 
-// список задач с сервера (общих настроек задач больше нет: голос — вкладка «Звук», зоны — вкладка «Камера»)
+// список задач с сервера
 async function loadGlobal() { cfgObj = (await api("/api/config/tasks")).json; }
 
 function showTask(text, orig, id) {

@@ -11,7 +11,6 @@ class App : Application() {
         installCrashHandler()
         Settings.init(this)
         TaskStore.init(this)
-        java.io.File(filesDir, "events.jsonl").delete() // бывший журнал событий, объединён с общим журналом
         FLog.minLevel = Settings.logLevel
         FLog.addSecret(Settings.password)
         FLog.addSecret(Settings.telegramToken)
@@ -24,8 +23,6 @@ class App : Application() {
         PhotoStore.init(this)
         Voice.init(this)
         Stt.init(this)
-        // остатки нейроголоса Piper (он убран в 0.15.0): модели и кэш занимали десятки МБ
-        try { java.io.File(filesDir, "piper").deleteRecursively() } catch (e: Exception) {}
         TaskEngine.init(this)
         Telegram.init(this)
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")

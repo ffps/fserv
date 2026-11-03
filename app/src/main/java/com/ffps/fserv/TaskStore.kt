@@ -29,8 +29,6 @@ object TaskStore {
     fun init(ctx: Context) {
         dir = File(ctx.filesDir, "tasks").also { it.mkdirs() }
         histDir = File(ctx.filesDir, "tasks-history").also { it.mkdirs() }
-        File(ctx.filesDir, "tasks.txt").delete() // файл прежнего формата
-        File(dir, "_common.txt").delete()        // общий файл прежнего формата: голос и зоны теперь в настройках приложения
     }
 
     private fun file(id: String) = File(dir, "$id.txt")
