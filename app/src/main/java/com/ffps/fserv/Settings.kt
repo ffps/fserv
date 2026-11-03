@@ -75,10 +75,10 @@ object Settings {
     /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */
     @get:Synchronized val serviceEnabled: Boolean get() = o.optBoolean("serviceEnabled", false)
 
-    @get:Synchronized val telegramToken: String get() = o.optString("telegramToken")
-    @get:Synchronized val telegramChatId: String get() = o.optString("telegramChatId")
-    @get:Synchronized val updateRepo: String get() = o.optString("updateRepo", "ffps/fserv")
-    @get:Synchronized val updateCheckCron: String get() = o.optString("updateCheckCron", "0 4 * * *")
+    @get:Synchronized val telegramToken: String get() = o.optJSONObject("telegram")?.optString("token") ?: ""
+    @get:Synchronized val telegramChatId: String get() = o.optJSONObject("telegram")?.optString("chatId") ?: ""
+    @get:Synchronized val updateRepo: String get() = o.optJSONObject("update")?.optString("repo", "ffps/fserv") ?: "ffps/fserv"
+    @get:Synchronized val updateCheckCron: String get() = o.optJSONObject("update")?.optString("cron", "0 4 * * *") ?: "0 4 * * *"
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
@@ -201,8 +201,7 @@ object Settings {
                 "stt" to (p?.optBoolean("stt") ?: false)
             )
         },
-        "updateRepo" to updateRepo,
-        "updateCheckCron" to updateCheckCron,
+        "update" to obj("repo" to updateRepo, "cron" to updateCheckCron),
         "voice" to voice(),
         "zones" to zones(),
         "call" to call()
@@ -232,9 +231,10 @@ object Settings {
         patch.optJSONObject("call")?.let { c ->
             for (k in listOf("adminRes", "deviceRes")) if (c.has(k) && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString(k))) errors.add("call.$k: вида 640x480")
         }
-        for (k in listOf("appRestartCron", "rebootCron", "updateCheckCron")) {
-            if (patch.has(k)) {
-                val v = patch.optString(k).trim()
+        val crons = listOf("appRestartCron" to patch.optString("appRestartCron"), "rebootCron" to patch.optString("rebootCron"), "update.cron" to patch.optJSONObject("update")?.optString("cron"))
+        for ((k, raw) in crons) {
+            if (raw != null && (patch.has(k) || k == "update.cron")) {
+                val v = raw.trim()
                 if (v.isNotEmpty()) {
                     try {
                         Cron.parse(v)
@@ -244,16 +244,16 @@ object Settings {
                 }
             }
         }
-        if (patch.has("telegramToken") && patch.optString("telegramToken").isNotEmpty() &&
-            !Regex("""\d{5,}:[A-Za-z0-9_-]{20,}""").matches(patch.optString("telegramToken").trim())) {
-            errors.add("telegramToken: ожидается вид 123456789:AAxxxxxxxx (от BotFather)")
+        patch.optJSONObject("telegram")?.let { t ->
+            if (t.optString("token").isNotEmpty() && !Regex("""\d{5,}:[A-Za-z0-9_-]{20,}""").matches(t.optString("token").trim())) {
+                errors.add("telegram.token: ожидается вид 123456789:AAxxxxxxxx (от BotFather)")
+            }
+            if (t.has("chatId") && t.optString("chatId").isNotBlank() && !Regex("""-?\d+|@[A-Za-z0-9_]{4,}""").matches(t.optString("chatId").trim())) {
+                errors.add("telegram.chatId: число (для группы со знаком минус) или @имя_канала")
+            }
         }
-        if (patch.has("telegramChatId") && patch.optString("telegramChatId").isNotBlank() &&
-            !Regex("""-?\d+|@[A-Za-z0-9_]{4,}""").matches(patch.optString("telegramChatId").trim())) {
-            errors.add("telegramChatId: число (для группы со знаком минус) или @имя_канала")
-        }
-        if (patch.has("updateRepo") && !Regex("""[\w.-]+/[\w.-]+""").matches(patch.optString("updateRepo").trim())) {
-            errors.add("updateRepo: ожидается владелец/репозиторий")
+        patch.optJSONObject("update")?.let { u ->
+            if (u.has("repo") && !Regex("""[\w.-]+/[\w.-]+""").matches(u.optString("repo").trim())) errors.add("update.repo: ожидается владелец/репозиторий")
         }
         patch.optJSONObject("camera")?.let { c ->
             if (c.has("intervalMs") && c.optInt("intervalMs", -1) !in 200..60000) errors.add("camera.intervalMs: от 200 до 60000 мс")
@@ -302,12 +302,17 @@ object Settings {
             if (patch.has(k)) o.put(k, patch.optString(k).trim())
         }
         if (patch.has("autostart")) o.put("autostart", patch.optBoolean("autostart"))
-        if (patch.has("updateCheckCron")) o.put("updateCheckCron", patch.optString("updateCheckCron").trim())
-        if (patch.has("updateRepo")) o.put("updateRepo", patch.optString("updateRepo").trim())
-        if (patch.has("telegramChatId")) o.put("telegramChatId", patch.optString("telegramChatId").trim())
-        // Пустой токен означает «не менять».
-        if (patch.optString("telegramToken").isNotEmpty()) {
-            o.put("telegramToken", patch.optString("telegramToken").trim())
+        patch.optJSONObject("update")?.let { u ->
+            val n = JSONObject((o.optJSONObject("update") ?: JSONObject()).toString())
+            if (u.has("repo")) n.put("repo", u.optString("repo").trim())
+            if (u.has("cron")) n.put("cron", u.optString("cron").trim())
+            o.put("update", n)
+        }
+        patch.optJSONObject("telegram")?.let { t ->
+            val n = JSONObject((o.optJSONObject("telegram") ?: JSONObject()).toString())
+            if (t.has("chatId")) n.put("chatId", t.optString("chatId").trim())
+            if (t.optString("token").isNotEmpty()) n.put("token", t.optString("token").trim()) // пустой токен означает «не менять»
+            o.put("telegram", n)
             FLog.addSecret(telegramToken)
         }
         if (patch.has("netTimeoutSec")) o.put("netTimeoutSec", patch.optInt("netTimeoutSec"))

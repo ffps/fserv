@@ -626,18 +626,18 @@ async function loadComm() {
     $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates; $("#pxStt").checked = p.stt;
     const t = (await api("/api/telegram")).json;
     $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + dt(t.lastSentAt) : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
-    const ob = (await api("/api/outbox")).json;
+    const ob = (await api("/api/telegram/outbox")).json;
     $("#obBody").innerHTML = ob.length ? ob.map(i => "<tr><td>" + esc(dt(i.created)) + "</td><td>" + esc(i.text) + "</td><td>" + i.attempts + "</td><td>" + esc(i.nextTry ? dt(i.nextTry) : "") + "</td><td>" + esc(i.lastError) + "</td></tr>").join("") : '<tr><td colspan="5" style="color:var(--dim)">пусто</td></tr>';
     rebase("tgSave"); rebase("pxSave");
   } catch (e) { say("#tgMsg", e.message, false); }
 }
 $("#tgSave").onclick = () => run("#tgMsg", async () => {
-  const patch = {telegramChatId: $("#tgChat").value.trim()};
-  if ($("#tgToken").value.trim()) patch.telegramToken = $("#tgToken").value.trim();
-  await post("/api/settings", JSON.stringify(patch)); loadComm(); return "сохранено";
+  const tg = {chatId: $("#tgChat").value.trim()};
+  if ($("#tgToken").value.trim()) tg.token = $("#tgToken").value.trim();
+  await post("/api/settings", JSON.stringify({telegram: tg})); loadComm(); return "сохранено";
 }, "tgSave");
 $("#tgTest").onclick = () => run("#tgMsg", async () => { say("#tgMsg", "отправляю через очередь…", true); try { return (await post("/api/telegram/test")).json.message; } finally { loadComm(); } });
-$("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/outbox/clear"); loadComm(); return r.json.message; }); };
+$("#obClear").onclick = () => { if (confirm("Удалить все неотправленные сообщения?")) run("#tgMsg", async () => { const r = await post("/api/telegram/outbox/clear"); loadComm(); return r.json.message; }); };
 $("#pxSave").onclick = () => run("#pxMsg", async () => {
   const px = {host: $("#pxHost").value.trim(), port: parseInt($("#pxPort").value || "1080", 10), user: $("#pxUser").value};
   if ($("#pxPass").value) px.password = $("#pxPass").value;
@@ -756,7 +756,7 @@ async function loadUpdate() {
     const u = (await api("/api/update")).json, st = (await api("/api/settings")).json;
     if (document.activeElement !== $("#upRepo") && document.activeElement !== $("#upCron")) {
       const dirty = DIRTY.upSave && DIRTY.upSave.base !== undefined && val(DIRTY.upSave.ids) !== DIRTY.upSave.base;
-      if (!dirty) { $("#upRepo").value = st.updateRepo; $("#upCron").value = st.updateCheckCron; rebase("upSave"); }
+      if (!dirty) { $("#upRepo").value = st.update.repo; $("#upCron").value = st.update.cron; rebase("upSave"); }
     }
     const l = u.latest;
     $("#upTable").innerHTML = kvRow("Установлена", u.current.versionName + " (" + u.current.versionCode + ")") +
@@ -780,7 +780,7 @@ async function loadUpdate() {
 }
 $("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName + ", " + r.json.latest.apk + (r.json.latest.sizeBytes ? ", " + (r.json.latest.sizeBytes / 1048576).toFixed(1) + " МБ" : "") : "обновлений нет"; });
 $("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
-$("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({updateRepo: $("#upRepo").value.trim(), updateCheckCron: $("#upCron").value.trim()})); return "сохранено"; }, "upSave");
+$("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({update: {repo: $("#upRepo").value.trim(), cron: $("#upCron").value.trim()}})); return "сохранено"; }, "upSave");
 
 function onTab() {
   if (current === "status") loadStatus();
@@ -841,12 +841,12 @@ $("#logClear").onclick = () => { if (confirm("Очистить журнал?")) 
 // ---- конфиг задач ----
 async function loadHist() {
   try {
-    const h = (await api("/api/config/history")).json;
+    const h = (await api("/api/tasks/history")).json;
     $("#cfgHist").innerHTML = h.length ? h.map(x => '<option value="' + esc(x.name) + '">' + esc(dt(x.time)) + ", задач " + x.tasks + " (" + x.size + " б)</option>").join("") : "<option value=''>истории нет</option>";
   } catch (e) {}
 }
-$("#cfgClear").onclick = () => { if (confirm("Удалить всю историю версий задач?")) run("#cfgMsg", async () => { await post("/api/config/history/clear"); loadHist(); return "история очищена"; }); };
-$("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/config/restore?name=" + encodeURIComponent(n)); closeEditor(); await loadGlobal(); loadTasks(); loadHist(); return "восстановлено"; }); };
+$("#cfgClear").onclick = () => { if (confirm("Удалить всю историю версий задач?")) run("#cfgMsg", async () => { await post("/api/tasks/history/clear"); loadHist(); return "история очищена"; }); };
+$("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confirm("Восстановить версию " + n + "? Текущая сохранится в истории.")) run("#cfgMsg", async () => { await post("/api/tasks/restore?name=" + encodeURIComponent(n)); closeEditor(); await loadGlobal(); loadTasks(); loadHist(); return "восстановлено"; }); };
 
 
 // ---- задачи: список, редактор одной задачи ----
@@ -875,7 +875,7 @@ let tkIdShown = "";            // id, с которым начато редак�
 let tkState = {};              // id -> {running, queued, next, enabled, cron}
 
 // список задач с сервера
-async function loadGlobal() { cfgObj = (await api("/api/config/tasks")).json; }
+async function loadGlobal() { cfgObj = (await api("/api/tasks/list")).json; }
 
 function showTask(text, orig, id) {
   tkOrig = orig; tkOpen = true; tkShown = text; tkIdShown = id || orig; $("#tkId").value = tkIdShown;
@@ -1136,7 +1136,7 @@ function clFillRes(sel, value) {
   sel.value = value;
 }
 async function loadCall() {
-  try { CL.st = (await api("/api/call/status")).json; } catch (e) { CL.st = null; }
+  try { CL.st = (await api("/api/call")).json; } catch (e) { CL.st = null; }
   if (CL.st && !clInCall()) { clFillRes($("#clAdminRes"), CL.st.call.adminRes); clFillRes($("#clDeviceRes"), CL.st.call.deviceRes); }
   if (!clInCall() && !CL.busy) clStatus(CL.st ? (CL.st.active ? "Занято: идёт звонок с адреса " + CL.st.from : "Готов к звонку") : "Устройство не отвечает");
   clRender();
@@ -1457,13 +1457,13 @@ $("#sSave").onclick = () => run("#sMsg", async () => {
 // ---- страницы ----
 async function loadPage() {
   try {
-    const p = (await api("/api/ui?name=" + $("#pgName").value)).json;
+    const p = (await api("/api/pages?name=" + $("#pgName").value)).json;
     $("#pgText").value = p.html; rebase("pgSave"); $("#pgState").textContent = (p.custom ? "используется ваша версия" : "используется встроенная версия") + ". Файл на устройстве: " + p.path; say("#pgMsg", "");
   } catch (e) { say("#pgMsg", e.message, false); }
 }
 $("#pgName").onchange = loadPage;
-$("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/ui?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; }, "pgSave");
-$("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/ui/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
+$("#pgSave").onclick = () => run("#pgMsg", async () => { await post("/api/pages?name=" + $("#pgName").value, $("#pgText").value); loadPage(); return "сохранено"; }, "pgSave");
+$("#pgReset").onclick = () => { if (confirm("Вернуть встроенную страницу? Ваша версия будет удалена.")) run("#pgMsg", async () => { await post("/api/pages/reset?name=" + $("#pgName").value); await loadPage(); return "возвращена встроенная"; }); };
 $("#camImg").onload = function () { if (this.naturalWidth > 1) { this.style.width = this.naturalWidth + "px"; this.style.height = this.naturalHeight + "px"; } };
 $("#pgShow").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/show"); return r.json.message; });
 $("#pgReload").onclick = () => run("#pgMsg", async () => { const r = await post("/api/kiosk/reload"); return r.json.message; });
@@ -1477,7 +1477,7 @@ async function loadPower() {
       "Перезагрузка устройства недоступна: нужен Device Owner или root. Для Device Owner на сброшенном устройстве без аккаунтов выполните: adb shell dpm set-device-owner com.ffps.fserv/.AdminReceiver";
   } catch (e) { say("#pMsg", e.message, false); }
 }
-$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен несколько секунд.")) run("#pMsg", async () => { await post("/api/restart-app");
+$("#pRestart").onclick = () => { if (confirm("Перезапустить приложение? Веб-интерфейс будет недоступен несколько секунд.")) run("#pMsg", async () => { await post("/api/restart");
   say("#pMsg", "перезапуск…", true); await new Promise(r => setTimeout(r, 2500));
   for (let n = 0; n < 40; n++) {
     try { const i = (await api("/api/info")).json; return "приложение перезапущено, веб-сервер снова отвечает (перезапусков с запуска процесса: " + i.server.softRestarts + ")"; }
@@ -1535,7 +1535,7 @@ $("#phDay").onchange = () => loadPhotos($("#phDay").value);
 $("#phDelDay").onclick = () => {
   if (!phDay) return;
   if (!confirm("Удалить все фото за " + phDay + " вместе с папкой? Это нельзя отменить.")) return;
-  run("#phMsg", async () => { const r = await post("/api/photos/delete_day?day=" + encodeURIComponent(phDay)); phDay = null; await loadPhotos(null); return r.json.message; });
+  run("#phMsg", async () => { const r = await post("/api/photos/delete?day=" + encodeURIComponent(phDay)); phDay = null; await loadPhotos(null); return r.json.message; });
 };
 $("#phTake").onclick = () => run("#phMsg", async () => {
   say("#phMsg", "снимаю…", true);

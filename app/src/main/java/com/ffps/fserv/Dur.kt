@@ -17,8 +17,6 @@ object Dur {
         override fun toString(): String = if (isRange) "${minMs}..${maxMs} мс" else "$minMs мс"
     }
 
-    private val PART = Regex("""(\d+(?:\.\d+)?)(ms|s|m|h|d)?""")
-
     private fun unit(u: String?): Long = when (u) {
         "ms" -> 1L
         "m" -> 60_000L

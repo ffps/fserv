@@ -79,8 +79,8 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val id = Telegram.enqueue(t)
                 json(Response.Status.OK, obj("ok" to true, "id" to id, "pending" to Telegram.pending()))
             }
-            get && uri == "/api/outbox" -> json(Response.Status.OK, Telegram.itemsJson())
-            post && uri == "/api/outbox/clear" -> {
+            get && uri == "/api/telegram/outbox" -> json(Response.Status.OK, Telegram.itemsJson())
+            post && uri == "/api/telegram/outbox/clear" -> {
                 val n = Telegram.clear()
                 FLog.i("telegram", "очередь отправки очищена вручную ($n сообщ.)")
                 ok("удалено сообщений: $n")
@@ -112,7 +112,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/stop" ->
                 if (TaskEngine.cancelCurrent()) ok("остановка запрошена") else fail(Response.Status.CONFLICT, "сейчас ничего не выполняется")
 
-            get && uri == "/api/call/status" -> json(Response.Status.OK, Call.status())
+            get && uri == "/api/call" -> json(Response.Status.OK, Call.status())
             post && uri == "/api/call/offer" -> {
                 val sdp = try { JSONObject(body(s)).optString("sdp") } catch (e: JSONException) { "" }
                 require(sdp.isNotEmpty()) { "нужен sdp в теле запроса" }
@@ -280,7 +280,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 ok("лог очищен")
             }
 
-            get && uri == "/api/config/tasks" -> json(Response.Status.OK, TaskStore.overview())
+            get && uri == "/api/tasks/list" -> json(Response.Status.OK, TaskStore.overview())
             get && uri == "/api/tasks/text" -> {
                 val t = TaskStore.taskText(q(s, "id") ?: "")
                 if (t == null) fail(Response.Status.NOT_FOUND, "задачи нет") else text(Response.Status.OK, "text/plain", t)
@@ -291,13 +291,13 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 val err = TaskStore.deleteTask(id)
                 if (err == null) { TaskEngine.refreshStt(); FLog.i("config", "удалена задача «$id»"); ok("задача удалена") } else fail(Response.Status.BAD_REQUEST, err)
             }
-            post && uri == "/api/config/history/clear" -> { TaskStore.clearHistory(); FLog.i("config", "история версий задач очищена"); ok("история очищена") }
-            get && uri == "/api/config/history" -> json(Response.Status.OK, TaskStore.history())
-            post && uri == "/api/config/restore" -> restoreConfig(q(s, "name") ?: "")
+            post && uri == "/api/tasks/history/clear" -> { TaskStore.clearHistory(); FLog.i("config", "история версий задач очищена"); ok("история очищена") }
+            get && uri == "/api/tasks/history" -> json(Response.Status.OK, TaskStore.history())
+            post && uri == "/api/tasks/restore" -> restoreConfig(q(s, "name") ?: "")
 
-            get && uri == "/api/ui" -> uiGet(q(s, "name"))
-            post && uri == "/api/ui" -> uiSave(q(s, "name"), body(s))
-            post && uri == "/api/ui/reset" -> uiReset(q(s, "name"))
+            get && uri == "/api/pages" -> uiGet(q(s, "name"))
+            post && uri == "/api/pages" -> uiSave(q(s, "name"), body(s))
+            post && uri == "/api/pages/reset" -> uiReset(q(s, "name"))
             post && uri == "/api/kiosk/show" -> {
                 if (MainActivity.isVisible()) ok("киоск уже на экране устройства")
                 else MainActivity.show(ctx).let { err ->
@@ -329,11 +329,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 }
             }
             post && uri == "/api/photos/delete" -> {
-                if (PhotoStore.delete(q(s, "day") ?: "", q(s, "name") ?: "")) ok("фото удалено") else fail(Response.Status.NOT_FOUND, "фото нет")
-            }
-            post && uri == "/api/photos/delete_day" -> {
-                val n = PhotoStore.deleteDay(q(s, "day") ?: "")
-                if (n > 0) { FLog.i("photo", "удалены все фото за ${q(s, "day")}: $n"); ok("удалено фото: $n") } else fail(Response.Status.NOT_FOUND, "в этой папке нет фото")
+                if (q(s, "name").isNullOrEmpty()) {
+                    // без name удаляется весь день вместе с папкой
+                    val n = PhotoStore.deleteDay(q(s, "day") ?: "")
+                    if (n > 0) { FLog.i("photo", "удалены все фото за ${q(s, "day")}: $n"); ok("удалено фото: $n") } else fail(Response.Status.NOT_FOUND, "в этой папке нет фото")
+                } else if (PhotoStore.delete(q(s, "day") ?: "", q(s, "name") ?: "")) ok("фото удалено") else fail(Response.Status.NOT_FOUND, "фото нет")
             }
             post && uri == "/api/photos/take" -> try {
                 val path = PhotoStore.shoot(ctx, "web-photo", "web")
@@ -372,7 +372,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
                 Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                 ok("всё сброшено, приложение перезапускается (пароль и порт сохранены)")
             }
-            post && uri == "/api/restart-app" -> {
+            post && uri == "/api/restart" -> {
                 FLog.i("web", "запрошен перезапуск приложения")
                 Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                 ok("приложение перезапускается")
@@ -538,23 +538,23 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/logs" to "технический лог; ?lines=300&level=INFO",
         "GET /api/logs/download" to "весь лог файлом",
         "POST /api/logs/clear" to "очистить лог",
-        "GET /api/config/tasks" to "для редактора: задачи (id, название, текст, ошибка)",
+        "GET /api/tasks/list" to "для редактора: задачи (id, название, текст, ошибка)",
         "GET /api/tasks/text" to "текст одной задачи; ?id=",
         "POST /api/tasks/save" to "сохранить задачу (тело: её текст); ?id=прежний_id (пусто для новой)&new=id (имя файла tasks/<id>.txt; другой id переименовывает)",
         "POST /api/tasks/delete" to "удалить задачу; ?id=",
-        "POST /api/config/history/clear" to "удалить всю историю версий задач",
-        "GET /api/config/history" to "сохранённые версии набора задач",
-        "POST /api/config/restore" to "восстановить версию набора задач; ?name=…",
-        "GET /api/ui" to "страница index или kiosk; ?name=kiosk",
-        "POST /api/ui" to "заменить страницу (тело: HTML); ?name=kiosk",
-        "POST /api/ui/reset" to "вернуть встроенную страницу; ?name=kiosk",
+        "POST /api/tasks/history/clear" to "удалить всю историю версий задач",
+        "GET /api/tasks/history" to "сохранённые версии набора задач",
+        "POST /api/tasks/restore" to "восстановить версию набора задач; ?name=…",
+        "GET /api/pages" to "страница index или kiosk; ?name=kiosk",
+        "POST /api/pages" to "заменить страницу (тело: HTML); ?name=kiosk",
+        "POST /api/pages/reset" to "вернуть встроенную страницу; ?name=kiosk",
         "POST /api/kiosk/show" to "вывести киоск на передний план",
         "POST /api/kiosk/reload" to "перечитать киоск на экране устройства",
         "GET /api/telegram" to "состояние Telegram: настроен ли, сколько в очереди, последняя ошибка",
         "POST /api/telegram/test" to "поставить тестовое сообщение в очередь и дождаться доставки (до таймаута сети)",
         "POST /api/telegram/send" to "поставить в очередь сообщение (тело: текст)",
-        "GET /api/outbox" to "очередь неотправленных сообщений",
-        "POST /api/outbox/clear" to "очистить очередь",
+        "GET /api/telegram/outbox" to "очередь неотправленных сообщений",
+        "POST /api/telegram/outbox/clear" to "очистить очередь",
         "POST /api/proxy/test" to "проверить связь: запрос к Telegram, Gemini и GitHub (через прокси, если стоит галочка, иначе напрямую); ?name=telegram|llm|updates проверяет один адрес",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
@@ -562,7 +562,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/tasks" to "задачи, ближайшие запуски, ход и итоги выполнения",
         "POST /api/tasks/run" to "запустить задачу; ?id=wakeup&dry=1 (пробный) &assume=moved:true (результат watch в пробном запуске)",
         "POST /api/tasks/stop" to "остановить выполняющуюся задачу",
-        "GET /api/call/status" to "звонок: доступность устройства, идёт ли звонок и с какого адреса, доступна ли задача ring, порт HTTPS, параметры",
+        "GET /api/call" to "звонок: доступность устройства, идёт ли звонок и с какого адреса, доступна ли задача ring, порт HTTPS, параметры",
         "POST /api/call/offer" to "начать видеозвонок: тело {\"sdp\": предложение WebRTC}; ответ {id, sdp}; если идёт звонок с другого адреса, 409 и busyFrom, повтор с ?force=1 прерывает его",
         "POST /api/call/ping" to "подтвердить, что звонок жив (раз в несколько секунд, иначе он завершится); ?id=; ответ с ended=true, если звонок уже завершён",
         "POST /api/call/end" to "завершить звонок; ?id=",
@@ -596,13 +596,12 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/camera/test/stop" to "остановить стресс-тест",
         "GET /api/photos" to "дни с фотографиями; ?day=2026-10-31 даёт список фото дня",
         "GET /api/photos/file" to "фото: ?day=&name= (&thumb=1 — уменьшенная копия)",
-        "POST /api/photos/delete" to "удалить фото: ?day=&name=",
-        "POST /api/photos/delete_day" to "удалить все фото дня вместе с папкой: ?day=",
+        "POST /api/photos/delete" to "удалить фото: ?day=&name=; без name удаляются все фото дня вместе с папкой",
         "POST /api/photos/take" to "сделать снимок сейчас (камера включается на время снимка, если она выключена)",
         "GET /api/backup" to "выгрузить все настройки, задачи, звуки и свои страницы одним zip (fserv.ДАТА.NN.zip)",
         "POST /api/restore" to "восстановить из zip (тело = файл): сначала проверка, затем замена всех настроек и перезапуск",
         "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1); пароль и порт остаются",
-        "POST /api/restart-app" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
+        "POST /api/restart" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
         "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
         "GET /" to "веб-интерфейс",
         "GET /default" to "встроенный веб-интерфейс, даже если страница подменена",
