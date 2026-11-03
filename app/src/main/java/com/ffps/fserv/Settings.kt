@@ -111,9 +111,16 @@ object Settings {
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
-    /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch; отсутствующий ключ = значение по умолчанию. */
+    /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
     @Synchronized
-    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString()).also { it.remove("engine") } // engine — остаток нейроголоса (до 0.15.0), игнорируется
+    fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString()).also {
+        it.remove("engine") // остаток нейроголоса (до 0.15.0), игнорируется
+        // rate и pitch — целые проценты (с 0.19.0); прежние дробные (0.95) и вне диапазона не переносятся: берётся 100
+        for ((k, lim) in listOf("rate" to (30..300), "pitch" to (30..200))) {
+            val x = it.opt(k)
+            if (x != null) { if (TaskSchema.validPct(x, lim.first, lim.last)) it.put(k, (x as Number).toInt()) else it.remove(k) }
+        }
+    }
 
     /** Параметры звонка (вкладка «Звонок»): разрешение камеры звонящего (adminRes) и камеры устройства (deviceRes). */
     @Synchronized

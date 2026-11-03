@@ -30,7 +30,7 @@ class ScriptTest {
     """.trimIndent()
 
     private val zonesJson = JSONObject("""{"bed":{"rect":[0.1,0.2,0.9,0.9],"exclude":[[0,0,0.2,0.2]]}}""")
-    private val voiceJson = JSONObject("""{"volume":70,"lang":"ru-RU","rate":0.95}""")
+    private val voiceJson = JSONObject("""{"volume":70,"lang":"ru-RU","rate":95}""")
     private val bed = setOf("bed")
 
     private fun err(text: String): String {
@@ -142,7 +142,11 @@ class ScriptTest {
 
     @Test fun voiceAndZoneSettings() {
         assertNull(TaskSchema.checkVoice(voiceJson))
-        assertNull(TaskSchema.checkVoice(JSONObject("""{"rate":0.95,"volume":70}""")))
+        assertNull(TaskSchema.checkVoice(JSONObject("""{"rate":95,"pitch":100,"volume":70}""")))
+        assertTrue(TaskSchema.checkVoice(JSONObject("""{"rate":0.95}"""))!!.contains("rate")) // с 0.19.0 проценты, дробные не годятся
+        assertTrue(TaskSchema.checkVoice(JSONObject("""{"rate":1}"""))!!.contains("rate"))
+        assertTrue(TaskSchema.checkVoice(JSONObject("""{"pitch":250}"""))!!.contains("pitch"))
+        assertTrue(TaskSchema.validPct(100, 30, 300) && !TaskSchema.validPct(100.5, 30, 300) && !TaskSchema.validPct("100", 30, 300))
         assertNull(TaskSchema.checkVoice(JSONObject("""{"engine":"piper"}"""))) // остаток старых копий (нейроголос убран в 0.15.0), игнорируется
         assertTrue(TaskSchema.checkVoice(JSONObject("""{"volume":300}"""))!!.contains("volume"))
         assertNull(TaskSchema.checkZone(zonesJson.getJSONObject("bed")))
@@ -245,6 +249,19 @@ class ScriptTest {
         assertNull(Script.validate("task \"Звонок\" preempt=false\n  say \"a\"\n"))
         assertTrue(Script.validate("task preempt=yes\n  say \"a\"\n")!!.contains("preempt"))
         assertEquals(true, Script.parse("task preempt=true\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0).getBoolean("preempt"))
+    }
+
+    @Test fun telegramConfirm() {
+        assertNull(Script.validate(task("telegram \"CALL {time}\" confirm=10s assign=sent", "if sent", "  say \"Я сообщил\"", "else", "  say \"Нет связи\"")))
+        assertNull(Script.validate(task("telegram \"x\" confirm=5s")))
+        assertEquals(true, Script.parse(task("telegram \"x\" confirm=5s assign=ok")).root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0).has("confirm"))
+        expect(task("telegram \"x\" assign=sent"), "только вместе с confirm")
+        expect(task("telegram \"x\" confirm=500ms"), "confirm")
+        expect(task("telegram \"x\" confirm=5m"), "confirm")
+        expect(task("telegram \"x\" confirm=5s assign=time"), "занято")
+        expect(task("telegram \"x\" confirm=5s assign=a-b"), "assign")
+        expect(task("telegram \"x\" confirm=5s", "say \"{sent}\""), "sent")
+        expect(task("telegram \"x\" wait=true"), "нет параметра")
     }
 
     @Test fun slideStep() {

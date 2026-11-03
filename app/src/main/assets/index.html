@@ -48,7 +48,7 @@
   .hint { color:var(--dim); font-size:13px; margin:8px 0 0; }
   table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; }
-  .f { display:grid; grid-template-columns:minmax(150px,240px) 1fr; gap:10px 14px; align-items:center; max-width:780px; }
+  .f { display:grid; grid-template-columns:auto 1fr; gap:10px 14px; column-gap:40px; align-items:center; max-width:780px; }
   .f input[type=text], .f input[type=number], .f input[type=password], .f input:not([type]), .f select { width:100%; }
   code { background:var(--code); padding:1px 5px; border-radius:4px; }
   a { color:var(--acc-d); }
@@ -209,8 +209,8 @@
     <label for="vsVol">Громкость по умолчанию, %</label><input id="vsVol" type="number" min="0" max="100" placeholder="не задана">
     <label for="vsLang">Язык голоса</label><input id="vsLang" placeholder="ru-RU">
     <label for="vsVoice">Голос</label><select id="vsVoice"><option value="">по умолчанию</option></select>
-    <label for="vsRate">Скорость речи (1 = обычная)</label><input id="vsRate" type="number" step="0.05" min="0.3" max="3" placeholder="1">
-    <label for="vsPitch">Тон голоса (1 = обычный)</label><input id="vsPitch" type="number" step="0.05" min="0.3" max="2" placeholder="1">
+    <label for="vsRate">Скорость речи, %</label><input id="vsRate" type="number" step="1" min="30" max="300" placeholder="100">
+    <label for="vsPitch">Тон голоса, %</label><input id="vsPitch" type="number" step="1" min="30" max="200" placeholder="100">
     <label for="svVol">Громкость проверки, %</label><input id="svVol" type="number" min="0" max="100" value="80">
   </div>
   <div class="row" style="margin-top:12px"><button class="btn" id="vsSave">Сохранить</button></div>
@@ -1329,7 +1329,7 @@ async function loadVoiceCfg() {
     if (DIRTY.vsSave && DIRTY.vsSave.base !== undefined && val(DIRTY.vsSave.ids) !== DIRTY.vsSave.base) return; // не затираем несохранённое
     const v = (await api("/api/settings")).json.voice || {};
     $("#vsVol").value = v.volume ?? ""; $("#vsLang").value = v.lang || "";
-    $("#vsRate").value = v.rate ?? ""; $("#vsPitch").value = v.pitch ?? "";
+    $("#vsRate").value = v.rate ?? 100; $("#vsPitch").value = v.pitch ?? 100;
     try {
       const vi = (await api("/api/voice")).json;
       const vs = (vi.voices || []).slice(); if (v.voice && !vs.some(x => x.name === v.voice)) vs.unshift({name: v.voice, locale: "?"});
@@ -1343,8 +1343,8 @@ $("#vsSave").onclick = () => run("#vsMsg", async () => {
   if ($("#vsVol").value !== "") v.volume = Number($("#vsVol").value);
   if ($("#vsLang").value.trim()) v.lang = $("#vsLang").value.trim();
   if ($("#vsVoice").value) v.voice = $("#vsVoice").value;
-  if ($("#vsRate").value !== "") v.rate = Number($("#vsRate").value);
-  if ($("#vsPitch").value !== "") v.pitch = Number($("#vsPitch").value);
+  v.rate = $("#vsRate").value === "" ? 100 : Number($("#vsRate").value);
+  v.pitch = $("#vsPitch").value === "" ? 100 : Number($("#vsPitch").value);
   await post("/api/settings", JSON.stringify({voice: v}));
   loadVoiceCfg(); return "сохранено";
 }, "vsSave");

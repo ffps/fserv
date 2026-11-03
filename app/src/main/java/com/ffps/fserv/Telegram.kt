@@ -33,6 +33,8 @@ object Telegram {
     private lateinit var file: File
     private val lock = Object()
     private val items = ArrayList<Item>()
+    private val delivered = LinkedHashSet<Long>() // номера последних доставленных сообщений (для шага telegram confirm=…)
+    private var lastId = 0L
     private var thread: Thread? = null
     @Volatile private var running = false
     private var loopFails = 0
@@ -94,7 +96,8 @@ object Telegram {
     fun enqueue(text: String, files: List<String> = emptyList()): Long {
         val t = if (text.length > 4000) text.take(4000) + "…" else text
         synchronized(lock) {
-            val id = System.currentTimeMillis() * 1000 + (items.size % 1000)
+            val id = maxOf(System.currentTimeMillis() * 1000 + (items.size % 1000), lastId + 1)
+            lastId = id
             items.add(Item(id, t, System.currentTimeMillis(), files.take(10)))
             while (items.size > MAX_ITEMS) {
                 val d = items.removeAt(0)
@@ -108,6 +111,12 @@ object Telegram {
     }
 
     fun pending(): Int = synchronized(lock) { items.size }
+
+    /** Сообщение с этим номером доставлено в Telegram (помнятся последние 100). */
+    fun isDelivered(id: Long): Boolean = synchronized(lock) { id in delivered }
+
+    /** Сообщение с этим номером ещё в очереди (не доставлено и не отброшено). */
+    fun isQueued(id: Long): Boolean = synchronized(lock) { items.any { it.id == id } }
 
     fun itemsJson(): JSONArray = synchronized(lock) {
         arr(items.map {
@@ -171,7 +180,12 @@ object Telegram {
             if (delayed > DELAY_NOTE_MS) "\n\n<i>Отправлено в ${tf.format(Date(m.createdAt))}</i>" else ""
         try {
             send(m, text)
-            synchronized(lock) { items.remove(m); saveLocked() }
+            synchronized(lock) {
+                items.remove(m)
+                delivered.add(m.id)
+                while (delivered.size > 100) delivered.remove(delivered.first())
+                saveLocked()
+            }
             lastError = ""
             lastSentAt = System.currentTimeMillis()
             FLog.i("telegram", "отправлено" + if (m.attempts > 0) " после ${m.attempts} неудачных попыток" else "")

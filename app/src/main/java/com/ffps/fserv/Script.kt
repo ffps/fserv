@@ -46,7 +46,7 @@ object Script {
         "ask" to listOf("assign", "kind", "listen", "retries", "again", "volume"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
-        "telegram" to listOf("files"),
+        "telegram" to listOf("files", "confirm", "assign"),
         "photo" to listOf("assign", "size"),
         "delay" to emptyList(),
         "watch" to listOf("poll", "assign", "threshold", "area", "zone"),

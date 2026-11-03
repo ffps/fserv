@@ -77,8 +77,8 @@ object Voice {
             val v = t.voices?.firstOrNull { it.name == name } ?: return "голос «$name» не найден (список на вкладке «Звук»)"
             t.voice = v
         }
-        t.setSpeechRate((cfg?.optDouble("rate", 1.0) ?: 1.0).toFloat())
-        t.setPitch((cfg?.optDouble("pitch", 1.0) ?: 1.0).toFloat())
+        t.setSpeechRate((cfg?.optInt("rate", 100) ?: 100) / 100f)
+        t.setPitch((cfg?.optInt("pitch", 100) ?: 100) / 100f)
         return null
     }
 

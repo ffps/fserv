@@ -385,7 +385,16 @@ object TaskEngine {
                 }
                 val paths = names.mapNotNull { n -> (r.vars[n] as? String)?.takeIf { it.isNotEmpty() } }
                 log(r, p, "telegram: $text" + if (names.isNotEmpty()) " + фото: ${paths.size} из ${names.size}" + (if (paths.size < names.size) " (остальные переменные пусты: фото не снято)" else "") else "")
-                if (!dry) Telegram.enqueue(text, paths)
+                val name = s.optString("assign")
+                var id = 0L
+                if (!dry) id = Telegram.enqueue(text, paths)
+                if (s.has("confirm")) {
+                    val ms = Dur.parse(s.opt("confirm"), "confirm").sample(r.rnd)
+                    val ok = if (dry) r.assume[name] != false else confirmTelegram(r, id, ms)
+                    log(r, p, if (dry) "пробный запуск: сообщение ${if (ok) "доставлено" else "не доставлено"} (задайте assume=$name:false, чтобы проверить другую ветку)"
+                        else if (ok) "telegram: доставлено" else "telegram: не доставлено за ${Dur.human(ms)}, остаётся в очереди и уйдёт позже")
+                    if (name.isNotEmpty()) r.vars[name] = ok
+                }
             }
             s.has("delay") -> {
                 val ms = Dur.parse(s.opt("delay"), "delay").sample(r.rnd)
@@ -592,6 +601,19 @@ object TaskEngine {
             log(r, p, "фото сохранено: $path")
         } catch (e: IllegalStateException) {
             throw StepError(e.message ?: "не удалось сделать фото")
+        }
+    }
+
+    /** Ждёт, пока сообщение [id] будет доставлено, но не дольше [ms]. false: не успело, отброшено или Telegram не настроен. */
+    private fun confirmTelegram(r: Run, id: Long, ms: Long): Boolean {
+        val end = System.currentTimeMillis() + ms
+        while (true) {
+            check(r)
+            if (Telegram.isDelivered(id)) return true
+            if (!Telegram.isQueued(id) || !Settings.telegramConfigured) return false
+            val left = end - System.currentTimeMillis()
+            if (left <= 0) return false
+            sleep(r, minOf(left, 100L))
         }
     }
 

@@ -42,11 +42,14 @@ object TaskSchema {
         return null
     }
 
+    /** Целое число в пределах [min]..[max] (проценты скорости и тона речи). */
+    fun validPct(x: Any?, min: Int, max: Int): Boolean = x is Number && x.toDouble() == Math.floor(x.toDouble()) && x.toDouble() in min.toDouble()..max.toDouble()
+
     /** Проверка настроек голоса (settings.json, вкладка «Звук»); null или текст ошибки. */
     fun checkVoice(o: JSONObject): String? {
         if (o.has("volume") && !(o.opt("volume") is Number && o.optInt("volume", -1) in 0..100)) return "volume — число от 0 до 100"
-        if (o.has("rate") && !(o.opt("rate") is Number && o.optDouble("rate") in 0.3..3.0)) return "rate — число от 0.3 до 3 (1 = обычная скорость)"
-        if (o.has("pitch") && !(o.opt("pitch") is Number && o.optDouble("pitch") in 0.3..2.0)) return "pitch — число от 0.3 до 2 (1 = обычный тон)"
+        if (o.has("rate") && !validPct(o.opt("rate"), 30, 300)) return "rate — целое число процентов от 30 до 300 (100 = обычная скорость)"
+        if (o.has("pitch") && !validPct(o.opt("pitch"), 30, 200)) return "pitch — целое число процентов от 30 до 200 (100 = обычный тон)"
         if (o.has("lang") && !Regex("[a-z]{2,3}([-_][A-Za-z]{2,4})?").matches(o.optString("lang"))) return "lang — например ru-RU"
         return null
     }
@@ -114,6 +117,7 @@ object TaskSchema {
             is JSONArray -> for (i in 0 until steps.length()) collectVars(steps.opt(i), vars, photos)
             is JSONObject -> {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
                 for (k in listOf("then", "else", "do", "background")) collectVars(steps.opt(k), vars, photos)
@@ -191,6 +195,16 @@ object TaskSchema {
                 if (v !is String || (v.isBlank() && a != "stop")) return e("$a: нужен непустой текст")
                 tpl(v, c)?.let { return e("$a: $it") }
                 if (PAUSE_RE.containsMatchIn(v)) return e("$a: {pause:…} допускается только в say")
+                if (a == "telegram" && s.has("confirm")) {
+                    val d = try { Dur.parse(s.opt("confirm"), "confirm") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "confirm") }
+                    if (d.minMs < 1_000 || d.maxMs > 120_000) return e("telegram: confirm — от 1s до 2m (сколько ждать подтверждения доставки)")
+                }
+                if (a == "telegram" && s.has("assign")) {
+                    if (!s.has("confirm")) return e("telegram: assign работает только вместе с confirm, например telegram \"Вызов\" confirm=10s assign=sent")
+                    val n = s.opt("assign")
+                    if (n !is String || !VAR_RE.matches(n)) return e("telegram: assign — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("telegram: имя «$n» занято встроенной подстановкой")
+                }
                 if (a == "telegram" && s.has("files")) {
                     val names = when (val f = s.opt("files")) {
                         is String -> listOf(f)
