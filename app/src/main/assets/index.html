@@ -116,10 +116,10 @@
 
 <section id="call">
   <style>
-    .clbox { position:relative; width:100%; max-width:420px; aspect-ratio:3/4; background:#000; border-radius:12px; overflow:hidden; touch-action:none; }
+    .clbox { position:relative; width:100%; max-width:420px; aspect-ratio:2/3; background:#000; border-radius:12px; overflow:hidden; touch-action:none; }
     .clbox video { position:absolute; }
     #clRemote { left:0; top:0; width:100%; height:100%; object-fit:cover; background:#000; }
-    #clLocal { right:10px; bottom:10px; width:30%; aspect-ratio:3/4; object-fit:cover; border:2px solid rgba(255,255,255,.65); border-radius:10px; background:#222; cursor:grab; touch-action:none; z-index:2; visibility:hidden; }
+    #clLocal { right:10px; bottom:10px; width:22%; aspect-ratio:2/3; object-fit:cover; border:2px solid rgba(255,255,255,.65); border-radius:10px; background:#222; cursor:grab; touch-action:none; z-index:2; visibility:hidden; }
     .clstatus { position:absolute; left:10px; top:10px; right:10px; color:#fff; font-size:13px; text-shadow:0 1px 3px #000; pointer-events:none; z-index:2; }
     .clbtns { position:absolute; left:10px; bottom:10px; display:flex; gap:8px; z-index:3; }
     .clb { width:46px; height:46px; border-radius:50%; border:0; background:rgba(60,60,60,.75); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
@@ -1089,7 +1089,7 @@ async function gotoTask(id) {
 document.addEventListener("click", e => { const a = e.target.closest("a[data-goto]"); if (!a) return; e.preventDefault(); gotoTask(a.dataset.goto); });
 
 // ---- звонок ----
-const CL = {pc: null, stream: null, id: null, facing: "user", muted: false, pingTimer: null, tickTimer: null, t0: 0, st: null, busy: false, fails: 0};
+const CL = {cams: 0, pc: null, stream: null, id: null, facing: "user", muted: false, pingTimer: null, tickTimer: null, t0: 0, st: null, busy: false, fails: 0};
 const CLI = {
   call: svg('<path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>'),
   hang: svg('<g transform="rotate(135 12 12)"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></g>'),
@@ -1118,7 +1118,7 @@ function clRender() {
   const mute = $("#clMute");
   mute.innerHTML = CL.muted ? CLI.micOff : CLI.mic;
   mute.className = "clb" + (CL.muted ? " warn" : "");
-  mute.disabled = !inCall;
+  mute.disabled = !secure;
   mute.title = CL.muted ? "Включить микрофон" : "Выключить микрофон";
   const ring = $("#clRing");
   ring.innerHTML = CLI.bell;
@@ -1127,6 +1127,7 @@ function clRender() {
   const cam = $("#clCam");
   cam.innerHTML = CLI.flip;
   cam.disabled = !secure;
+  cam.style.display = CL.cams > 1 ? "" : "none"; // одна камера: переключать нечего
   cam.title = "Камера звонящего: " + (CL.facing === "user" ? "передняя" : "задняя") + "; нажмите, чтобы переключить";
   $("#clLocal").style.transform = CL.facing === "user" ? "scaleX(-1)" : "none";
   $("#clLocal").style.visibility = CL.stream && CL.stream.getVideoTracks().length ? "visible" : "hidden";
@@ -1153,7 +1154,7 @@ function clCleanup() {
   clearInterval(CL.pingTimer); clearInterval(CL.tickTimer); CL.pingTimer = CL.tickTimer = null;
   try { if (CL.stream) CL.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
   try { if (CL.pc) CL.pc.close(); } catch (e) {}
-  CL.pc = null; CL.stream = null; CL.id = null; CL.muted = false; CL.fails = 0;
+  CL.pc = null; CL.stream = null; CL.id = null; CL.fails = 0; // CL.muted сохраняется: микрофон можно выключить до звонка
   $("#clRemote").srcObject = null; $("#clLocal").srcObject = null;
 }
 function clIceDone(pc, ms) {
@@ -1172,6 +1173,8 @@ async function clStart(force) {
     const f = CL.stream.getVideoTracks()[0] && CL.stream.getVideoTracks()[0].getSettings().facingMode;
     if (f) CL.facing = f === "environment" ? "environment" : "user";
     $("#clLocal").srcObject = CL.stream;
+    CL.stream.getAudioTracks().forEach(t => { t.enabled = !CL.muted; }); // микрофон мог быть выключен заранее
+    clCams(); // после доступа браузер показывает все камеры
     const pc = new RTCPeerConnection({iceServers: []});
     CL.pc = pc;
     CL.stream.getTracks().forEach(t => pc.addTrack(t, CL.stream));
@@ -1221,11 +1224,17 @@ function clFinish(reason, deviceKnows) {
 }
 $("#clCall").onclick = () => { if (clInCall()) clFinish("вы повесили трубку", false); else clStart(false); };
 $("#clMute").onclick = () => {
-  if (!CL.stream) return;
   CL.muted = !CL.muted;
-  CL.stream.getAudioTracks().forEach(t => { t.enabled = !CL.muted; });
+  if (CL.stream) CL.stream.getAudioTracks().forEach(t => { t.enabled = !CL.muted; });
   clRender();
 };
+// число камер: кнопка переключения нужна, только если их больше одной (до первого доступа браузер может не показать все)
+function clCams() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  navigator.mediaDevices.enumerateDevices().then(ds => { CL.cams = ds.filter(d => d.kind === "videoinput").length; clRender(); }).catch(() => {});
+}
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener("devicechange", clCams);
+clCams();
 $("#clRing").onclick = () => run("#clMsg", async () => (await post("/api/call/ring")).json.message);
 $("#clCam").onclick = async () => {
   const next = CL.facing === "user" ? "environment" : "user";

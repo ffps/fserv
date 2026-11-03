@@ -6,15 +6,18 @@
 <title>Звонок</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  #remote { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; background: #000; } /* по высоте экрана, лишнее по бокам обрезается: как в окне на вкладке «Звонок» */
+  #remote { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; background: #000; opacity: 0; }
+  #remote.on { opacity: 1; } /* по высоте экрана, лишнее по бокам обрезается: как в окне на вкладке «Звонок» */
   #local { position: fixed; right: 14px; bottom: 14px; width: 24%; max-width: 280px; aspect-ratio: 3 / 4; object-fit: cover;
            transform: scaleX(-1); border: 2px solid rgba(255,255,255,.6); border-radius: 10px; background: #222; display: none; }
 </style>
 </head>
 <body>
-<video id="remote" autoplay playsinline></video>
-<video id="local" autoplay playsinline muted></video>
+<!-- прозрачный poster: иначе WebView показывает на весь экран значок медиаплеера, пока нет кадров -->
+<video id="remote" autoplay playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
+<video id="local" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
 <script>
+document.getElementById("remote").addEventListener("playing", () => document.getElementById("remote").classList.add("on"));
 // Страница звонка на устройстве: отвечает на предложение (offer) администратора и показывает его видео во весь экран,
 // а своё видео (с передней камеры, зеркально) в правом нижнем углу. Результат передаётся приложению через мост Android.
 let pc = null, stream = null;
