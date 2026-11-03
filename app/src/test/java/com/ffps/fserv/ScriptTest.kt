@@ -240,6 +240,13 @@ class ScriptTest {
         expect(task("photo resolution=1280x720"), "у photo нет параметра «resolution»")
     }
 
+    @Test fun preemptSetting() {
+        assertNull(Script.validate("task preempt=true\n  say \"a\"\n"))
+        assertNull(Script.validate("task \"Звонок\" preempt=false\n  say \"a\"\n"))
+        assertTrue(Script.validate("task preempt=yes\n  say \"a\"\n")!!.contains("preempt"))
+        assertEquals(true, Script.parse("task preempt=true\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0).getBoolean("preempt"))
+    }
+
     @Test fun slideStep() {
         assertNull(Script.validate(task("slide hello.svg")))
         assertNull(Script.validate(task("slide [\"hello.svg\",\"hi.gif\"] for=5s fit=contain bg=auto brightness=90 fade_in=1s fade_out=2s tap=hide")))

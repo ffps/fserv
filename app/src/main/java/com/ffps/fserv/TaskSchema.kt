@@ -79,6 +79,7 @@ object TaskSchema {
         val id = t.optString("id")
         if (t.has("title") && t.opt("title") !is String) return c.err(t, "task $id: title — текст, например title=\"Подъём\"")
         if (t.has("enabled") && t.opt("enabled") !is Boolean) return c.err(t, "task $id: enabled — true или false")
+        if (t.has("preempt") && t.opt("preempt") !is Boolean) return c.err(t, "task $id: preempt — true или false")
         if (t.has("cron")) {
             if (t.opt("cron") !is String) return c.err(t, "task $id: cron пишется в кавычках, например cron=\"0 8 * * *\"")
             try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: cron: ${e.message}") }

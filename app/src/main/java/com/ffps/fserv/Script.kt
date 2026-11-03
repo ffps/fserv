@@ -57,7 +57,7 @@ object Script {
         "stop" to emptyList(),
         "log" to emptyList()
     )
-    val TASK_SETTINGS = listOf("title", "cron", "enabled", "late_ok", "timeout")
+    val TASK_SETTINGS = listOf("title", "cron", "enabled", "late_ok", "timeout", "preempt")
 
     private val KEY_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*=""")
     private val WORD_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*""")

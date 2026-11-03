@@ -50,6 +50,8 @@ object TaskEngine {
         val rnd = Random()
         val deadline = System.currentTimeMillis() + deadlineMs
         @Volatile var cancelled = false
+        /** Название задачи, которая прервала этот запуск (preempt), или null. */
+        @Volatile var preemptedBy: String? = null
         val bg = ArrayList<Thread>()
         /** Номера слайдов, показанных этим запуском: в конце запуска скрываются, если ещё на экране. */
         val slideTokens = java.util.concurrent.CopyOnWriteArrayList<Int>()
@@ -62,7 +64,7 @@ object TaskEngine {
     }
 
     private lateinit var app: Context
-    private val queue = LinkedBlockingQueue<Req>()
+    private val queue = java.util.concurrent.LinkedBlockingDeque<Req>()
     private var worker: Thread? = null
     @Volatile private var current: Run? = null
     private val recent = ArrayDeque<RunInfo>()
@@ -133,9 +135,25 @@ object TaskEngine {
         val root = config()
         if (findTask(root, id) == null) return TaskStore.load().errors[id]?.let { "в задаче «$id» ошибка, она не запускается: $it" } ?: "задачи «$id» нет"
         if (!dry && (current?.info?.id == id || queue.any { it.taskId == id })) return "задача «$id» уже выполняется или стоит в очереди"
-        queue.add(Req(id, "manual", dry, assume, System.currentTimeMillis(), Long.MAX_VALUE / 4))
+        enqueue(Req(id, "manual", dry, assume, System.currentTimeMillis(), Long.MAX_VALUE / 4), findTask(root, id))
         start()
         return null
+    }
+
+    /** Задача с настройкой preempt=true (для id call по умолчанию так) встаёт в очереди первой и прерывает выполняющуюся задачу, если та не preempt. */
+    private fun isPreempt(task: JSONObject?): Boolean =
+        task != null && (if (task.has("preempt")) task.optBoolean("preempt") else task.optString("id") == "call")
+
+    private fun enqueue(req: Req, task: JSONObject?) {
+        if (req.dry || !isPreempt(task)) { queue.add(req); return }
+        queue.addFirst(req)
+        val cur = current
+        if (cur != null && !isPreempt(cur.task) && !cur.cancelled) {
+            val who = task?.optString("title").orEmpty().ifEmpty { req.taskId }
+            cur.preemptedBy = who
+            cur.cancelled = true
+            FLog.w("task", "задача «${cur.title()}» прервана: запускается «$who» с приоритетом (preempt)")
+        }
     }
 
     fun cancelCurrent(): Boolean {
@@ -168,7 +186,7 @@ object TaskEngine {
                 FLog.w("task", "запуск «${t.optString("title").ifEmpty { id }}» пропущен: предыдущий запуск ещё идёт")
                 continue
             }
-            queue.add(Req(id, "cron", false, emptyMap(), fire * 60000, lateMs + GRACE_MS))
+            enqueue(Req(id, "cron", false, emptyMap(), fire * 60000, lateMs + GRACE_MS), t)
             start()
         }
     }
@@ -222,7 +240,7 @@ object TaskEngine {
         } catch (e: Stopped) {
             info.status = "ok"; info.message = "остановлена шагом stop: ${e.reason}"
         } catch (e: Cancelled) {
-            info.status = "cancelled"; info.message = "остановлена вручную"
+            info.status = "cancelled"; info.message = run.preemptedBy?.let { "прервана задачей «$it» (preempt)" } ?: "остановлена вручную"
         } catch (e: TimedOut) {
             info.status = "timeout"; info.message = "не уложилась в timeout (${Dur.human(timeout)})"
         } catch (e: StepError) {
