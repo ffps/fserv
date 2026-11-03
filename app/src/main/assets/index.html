@@ -99,6 +99,7 @@
   <a data-t="photos" href="#photos">Фото</a>
   <a data-t="slides" href="#slides">Слайды</a>
   <a data-t="comm" href="#comm">Связь</a>
+  <a data-t="call" href="#call">Звонок</a>
   <a data-t="logs" href="#logs">Журнал</a>
   <a data-t="system" href="#system">Система</a>
 </nav>
@@ -111,6 +112,45 @@
     <summary>Ответ /api/info целиком</summary>
         <pre id="infoRaw"></pre>
   </details>
+</section>
+
+<section id="call">
+  <style>
+    .clbox { position:relative; width:100%; max-width:420px; aspect-ratio:3/4; background:#000; border-radius:12px; overflow:hidden; touch-action:none; }
+    .clbox video { position:absolute; }
+    #clRemote { left:0; top:0; width:100%; height:100%; object-fit:cover; background:#000; }
+    #clLocal { right:10px; bottom:10px; width:30%; aspect-ratio:3/4; object-fit:cover; border:2px solid rgba(255,255,255,.65); border-radius:10px; background:#222; cursor:grab; touch-action:none; z-index:2; visibility:hidden; }
+    .clstatus { position:absolute; left:10px; top:10px; right:10px; color:#fff; font-size:13px; text-shadow:0 1px 3px #000; pointer-events:none; z-index:2; }
+    .clbtns { position:absolute; left:10px; bottom:10px; display:flex; gap:8px; z-index:3; }
+    .clb { width:46px; height:46px; border-radius:50%; border:0; background:rgba(60,60,60,.75); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+    .clb svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+    .clb:disabled { opacity:.45; cursor:not-allowed; }
+    .clb.green { background:#2e7d32; }
+    .clb.red { background:#c62828; }
+    .clb.warn { background:#ef6c00; }
+  </style>
+  <h2>Звонок</h2>
+  <p class="hint" id="clNote" style="display:none"></p>
+  <div class="clbox" id="clBox">
+    <video id="clRemote" autoplay playsinline></video>
+    <div class="clstatus" id="clStatus">Готов к звонку</div>
+    <div class="clbtns">
+      <button class="clb" id="clCall" disabled></button>
+      <button class="clb" id="clMute" disabled></button>
+      <button class="clb" id="clRing" disabled></button>
+      <button class="clb" id="clCam"></button>
+    </div>
+    <video id="clLocal" autoplay playsinline muted></video>
+  </div>
+  <div class="msg" id="clMsg"></div>
+  <h2 style="margin-top:22px">Параметры звонка</h2>
+  <div class="f">
+    <label for="clAdminRes">Камера звонящего (эта страница)</label><select id="clAdminRes"></select>
+    <label for="clDeviceRes">Камера устройства</label><select id="clDeviceRes"></select>
+  </div>
+  <div class="row" style="margin-top:12px"><button class="btn" id="clSave">Сохранить</button></div>
+  <div class="msg" id="clPMsg"></div>
+  <p class="hint">Видеосвязь идёт напрямую между этой страницей и устройством (WebRTC), подтверждение на устройстве не нужно: оно сразу показывает ваше видео во весь экран, а своё в углу. Работает только в одной сети с устройством и только по адресу https:// (браузер даёт камеру и микрофон лишь защищённым страницам; сертификат самоподписанный, его нужно один раз подтвердить). На время звонка камера и микрофон устройства принадлежат звонку: задачи, которым они нужны, получают ошибку. Кнопки слева направо: вызов и завершение, микрофон, звонок (запускает задачу <code>ring</code>, если она есть и включена), переключение камеры звонящего. Окошко своего видео можно перетащить. Разрешение: браузер и камера выбирают ближайшее поддерживаемое. Если позвонить с другого адреса, идущий звонок можно прервать после подтверждения; в журнал пишутся оба адреса.</p>
 </section>
 
 <section id="logs">
@@ -348,6 +388,8 @@
     <input id="sReboot" placeholder="например 0 4 * * *   (пусто = выключено)">
     <label for="sPort">Порт веб-интерфейса</label>
     <input id="sPort" type="number" min="1024" max="65535">
+    <label for="sPortS">Порт HTTPS (для звонка)</label>
+    <input id="sPortS" type="number" min="1024" max="65535">
     <label for="sBoot">Автозапуск службы</label>
     <label><input id="sBoot" type="checkbox"> запускать при включении устройства</label>
     <label for="sPass">Новый пароль</label>
@@ -459,7 +501,7 @@ function refreshDirty() {
 document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
-track("sSave", ["sLevel", "sTmo", "sApp", "sReboot", "sPort", "sBoot", "sPass"]);
+track("sSave", ["sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -752,6 +794,7 @@ function onTab() {
   if (current === "camera") { loadCamera(true); loadZones(); znShot(); }
   if (current === "photos") loadPhotos(null);
   if (current === "slides") loadSlides();
+  if (current === "call") loadCall();
 }
 
 // ---- состояние ----
@@ -1045,6 +1088,189 @@ async function gotoTask(id) {
 }
 document.addEventListener("click", e => { const a = e.target.closest("a[data-goto]"); if (!a) return; e.preventDefault(); gotoTask(a.dataset.goto); });
 
+// ---- звонок ----
+const CL = {pc: null, stream: null, id: null, facing: "user", muted: false, pingTimer: null, tickTimer: null, t0: 0, st: null, busy: false, fails: 0};
+const CLI = {
+  call: svg('<path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>'),
+  hang: svg('<g transform="rotate(135 12 12)"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></g>'),
+  mic: svg('<path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/>'),
+  micOff: svg('<path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/><path d="M2 2l20 20"/>'),
+  bell: svg('<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>'),
+  flip: svg('<path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>')
+};
+const CL_RES = ["320x240", "640x480", "960x540", "1280x720"];
+function clSecure() { return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+function clStatus(t) { $("#clStatus").textContent = t; }
+function clInCall() { return !!CL.id; }
+function clRender() {
+  const secure = clSecure(), st = CL.st, inCall = clInCall();
+  const note = $("#clNote");
+  if (!secure) {
+    const port = (st && st.httpsPort) || 8443;
+    const url = "https://" + location.hostname + ":" + port + "/#call";
+    note.style.display = ""; note.innerHTML = 'Для видеозвонка нужен защищённый адрес: откройте <a href="' + esc(url) + '">' + esc(url) + '</a>. Браузер предупредит о сертификате (он самоподписанный): согласитесь продолжить, это нужно один раз.';
+  } else { note.style.display = "none"; }
+  const call = $("#clCall");
+  call.innerHTML = inCall ? CLI.hang : CLI.call;
+  call.className = "clb " + (inCall ? "red" : (secure && st && st.available ? "green" : ""));
+  call.disabled = CL.busy ? !inCall : !(inCall || (secure && st && st.available));
+  call.title = inCall ? "Завершить вызов" : CL.busy ? "Соединяю…" : !secure ? "Нужен адрес https:// (см. сообщение выше)" : !st ? "Устройство не отвечает" : !st.available ? st.reason : "Позвонить на устройство";
+  const mute = $("#clMute");
+  mute.innerHTML = CL.muted ? CLI.micOff : CLI.mic;
+  mute.className = "clb" + (CL.muted ? " warn" : "");
+  mute.disabled = !inCall;
+  mute.title = CL.muted ? "Включить микрофон" : "Выключить микрофон";
+  const ring = $("#clRing");
+  ring.innerHTML = CLI.bell;
+  ring.disabled = !(st && st.ring);
+  ring.title = st && st.ring ? "Подать сигнал на устройстве (задача ring)" : "Нет включённой задачи ring";
+  const cam = $("#clCam");
+  cam.innerHTML = CLI.flip;
+  cam.disabled = !secure;
+  cam.title = "Камера звонящего: " + (CL.facing === "user" ? "передняя" : "задняя") + "; нажмите, чтобы переключить";
+  $("#clLocal").style.transform = CL.facing === "user" ? "scaleX(-1)" : "none";
+  $("#clLocal").style.visibility = CL.stream && CL.stream.getVideoTracks().length ? "visible" : "hidden";
+}
+function clFillRes(sel, value) {
+  const list = CL_RES.includes(value) ? CL_RES : [value].concat(CL_RES);
+  sel.innerHTML = list.map(r => '<option value="' + r + '">' + r.replace("x", "×") + "</option>").join("");
+  sel.value = value;
+}
+async function loadCall() {
+  try { CL.st = (await api("/api/call/status")).json; } catch (e) { CL.st = null; }
+  if (CL.st && !clInCall()) { clFillRes($("#clAdminRes"), CL.st.call.adminRes); clFillRes($("#clDeviceRes"), CL.st.call.deviceRes); }
+  if (!clInCall() && !CL.busy) clStatus(CL.st ? (CL.st.active ? "Занято: идёт звонок с адреса " + CL.st.from : "Готов к звонку") : "Устройство не отвечает");
+  clRender();
+}
+setInterval(() => { if (current === "call" && !clInCall() && !CL.busy) loadCall(); }, 4000);
+function clError(e) {
+  if (e && e.name === "NotAllowedError") return "доступ к камере или микрофону запрещён в браузере (проверьте значок замка в адресной строке)";
+  if (e && e.name === "NotFoundError") return "камера или микрофон не найдены";
+  if (e && e.name === "NotReadableError") return "камера или микрофон заняты другой программой";
+  return (e && e.message) || String(e);
+}
+function clCleanup() {
+  clearInterval(CL.pingTimer); clearInterval(CL.tickTimer); CL.pingTimer = CL.tickTimer = null;
+  try { if (CL.stream) CL.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { if (CL.pc) CL.pc.close(); } catch (e) {}
+  CL.pc = null; CL.stream = null; CL.id = null; CL.muted = false; CL.fails = 0;
+  $("#clRemote").srcObject = null; $("#clLocal").srcObject = null;
+}
+function clIceDone(pc, ms) {
+  return new Promise(done => {
+    if (pc.iceGatheringState === "complete") return done();
+    const t = setTimeout(done, ms);
+    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); done(); } };
+  });
+}
+async function clStart(force) {
+  if (CL.busy || clInCall()) return;
+  CL.busy = true; clRender(); clStatus("Соединяю…"); say("#clMsg", "");
+  try {
+    const res = (CL.st && CL.st.call ? CL.st.call.adminRes : "640x480").split("x").map(Number);
+    CL.stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}, video: {facingMode: CL.facing, width: {ideal: res[0]}, height: {ideal: res[1]}}});
+    const f = CL.stream.getVideoTracks()[0] && CL.stream.getVideoTracks()[0].getSettings().facingMode;
+    if (f) CL.facing = f === "environment" ? "environment" : "user";
+    $("#clLocal").srcObject = CL.stream;
+    const pc = new RTCPeerConnection({iceServers: []});
+    CL.pc = pc;
+    CL.stream.getTracks().forEach(t => pc.addTrack(t, CL.stream));
+    pc.ontrack = e => { const r = $("#clRemote"); r.srcObject = e.streams[0]; r.play().catch(() => {}); };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") clStatus("Идёт звонок");
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") clFinish("связь потеряна", false);
+    };
+    await pc.setLocalDescription(await pc.createOffer());
+    await clIceDone(pc, 3000);
+    const r = await fetch("/api/call/offer" + (force ? "?force=1" : ""), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({sdp: pc.localDescription.sdp})});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409 && j.busyFrom) {
+      clCleanup();
+      if (confirm("Сейчас идёт звонок с адреса " + j.busyFrom + ". Прервать его и позвонить с этого адреса?")) { CL.busy = false; return clStart(true); }
+      clStatus("Отменено"); return;
+    }
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    CL.id = j.id;
+    await pc.setRemoteDescription({type: "answer", sdp: j.sdp});
+    CL.t0 = Date.now();
+    CL.pingTimer = setInterval(clPing, 3000);
+    CL.tickTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - CL.t0) / 1000);
+      if ($("#clStatus").textContent.startsWith("Идёт звонок")) clStatus("Идёт звонок " + String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"));
+    }, 1000);
+  } catch (e) {
+    clCleanup(); clStatus("Не удалось позвонить"); say("#clMsg", clError(e), false);
+  } finally { CL.busy = false; clRender(); }
+}
+async function clPing() {
+  if (!CL.id) return;
+  try {
+    const r = await fetch("/api/call/ping?id=" + encodeURIComponent(CL.id), {method: "POST"});
+    const j = await r.json().catch(() => ({}));
+    if (j.ended) { clFinish(j.error || "звонок завершён", true); return; }
+    CL.fails = 0;
+  } catch (e) {
+    if (++CL.fails >= 3) clFinish("связь с устройством потеряна", false);
+  }
+}
+// завершение звонка: notify — сообщить устройству (если оно само не завершило)
+function clFinish(reason, deviceKnows) {
+  const id = CL.id;
+  if (id && !deviceKnows) fetch("/api/call/end?id=" + encodeURIComponent(id), {method: "POST"}).catch(() => {});
+  clCleanup(); clStatus("Звонок завершён"); say("#clMsg", "звонок завершён: " + reason, true); clRender(); loadCall();
+}
+$("#clCall").onclick = () => { if (clInCall()) clFinish("вы повесили трубку", false); else clStart(false); };
+$("#clMute").onclick = () => {
+  if (!CL.stream) return;
+  CL.muted = !CL.muted;
+  CL.stream.getAudioTracks().forEach(t => { t.enabled = !CL.muted; });
+  clRender();
+};
+$("#clRing").onclick = () => run("#clMsg", async () => (await post("/api/call/ring")).json.message);
+$("#clCam").onclick = async () => {
+  const next = CL.facing === "user" ? "environment" : "user";
+  if (!CL.stream || !CL.pc) { CL.facing = next; clRender(); return; }
+  try {
+    const res = (CL.st && CL.st.call ? CL.st.call.adminRes : "640x480").split("x").map(Number);
+    const ns = await navigator.mediaDevices.getUserMedia({video: {facingMode: next, width: {ideal: res[0]}, height: {ideal: res[1]}}});
+    const nt = ns.getVideoTracks()[0];
+    const sender = CL.pc.getSenders().find(x => x.track && x.track.kind === "video");
+    if (sender) await sender.replaceTrack(nt);
+    CL.stream.getVideoTracks().forEach(t => { t.stop(); CL.stream.removeTrack(t); });
+    CL.stream.addTrack(nt);
+    $("#clLocal").srcObject = CL.stream;
+    const f = nt.getSettings().facingMode; // у камер без признака (веб-камера компьютера) положение остаётся прежним
+    if (f) CL.facing = f === "environment" ? "environment" : "user";
+    clRender();
+  } catch (e) { say("#clMsg", "не удалось переключить камеру: " + clError(e), false); }
+};
+$("#clSave").onclick = () => run("#clPMsg", async () => {
+  await post("/api/settings", JSON.stringify({call: {adminRes: $("#clAdminRes").value, deviceRes: $("#clDeviceRes").value}}));
+  await loadCall(); return "сохранено";
+});
+// перетаскивание окошка своего видео (мышь и палец)
+(() => {
+  const el = $("#clLocal"), box = $("#clBox"); let d = null;
+  el.onpointerdown = e => {
+    const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+    d = {dx: e.clientX - r.left, dy: e.clientY - r.top};
+    el.setPointerCapture(e.pointerId);
+    el.style.right = "auto"; el.style.bottom = "auto";
+    el.style.left = (r.left - b.left) + "px"; el.style.top = (r.top - b.top) + "px";
+    el.style.cursor = "grabbing"; e.preventDefault();
+  };
+  el.onpointermove = e => {
+    if (!d) return;
+    const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+    el.style.left = Math.min(Math.max(e.clientX - b.left - d.dx, 0), b.width - r.width) + "px";
+    el.style.top = Math.min(Math.max(e.clientY - b.top - d.dy, 0), b.height - r.height) + "px";
+  };
+  el.onpointerup = el.onpointercancel = () => { d = null; el.style.cursor = "grab"; };
+})();
+// закрытие страницы во время звонка: сообщить устройству, чтобы оно не ждало
+window.addEventListener("pagehide", () => { if (CL.id) navigator.sendBeacon("/api/call/end?id=" + encodeURIComponent(CL.id)); });
+clRender();
+
 // ---- слайды ----
 async function loadSlides() {
   try {
@@ -1199,18 +1425,18 @@ async function loadSettings() {
   try {
     const s = (await api("/api/settings")).json;
     $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
-    $("#sPort").value = s.webPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
+    $("#sPort").value = s.webPort; $("#sPortS").value = s.httpsPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
     say("#sMsg", ""); rebase("sSave");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
   const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value,
-             webPort: Number($("#sPort").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked};
+             webPort: Number($("#sPort").value), httpsPort: Number($("#sPortS").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked};
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
   $("#logLevel").value = $("#sLevel").value;
-  return r.restartRequired ? "сохранено; веб-сервер перезапускается на новом порту " + r.settings.webPort : "сохранено";
+  return r.restartRequired ? "сохранено; веб-сервер перезапускается на портах " + r.settings.webPort + " и " + r.settings.httpsPort : "сохранено";
 }, "sSave");
 
 // ---- страницы ----

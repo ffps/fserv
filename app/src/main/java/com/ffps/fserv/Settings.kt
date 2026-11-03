@@ -72,7 +72,7 @@ object Settings {
     @Synchronized
     fun resetUser() {
         val n = JSONObject()
-        for (k in listOf("password", "webPort", "autostart", "serviceEnabled", "schema", "lastFired")) if (o.has(k)) n.put(k, o.get(k))
+        for (k in listOf("password", "webPort", "httpsPort", "autostart", "serviceEnabled", "schema", "lastFired")) if (o.has(k)) n.put(k, o.get(k))
         o = n
         save()
     }
@@ -91,6 +91,8 @@ object Settings {
     }
 
     @get:Synchronized val webPort: Int get() = o.optInt("webPort", 8080)
+    /** Порт HTTPS (самоподписанный сертификат): без защищённого соединения браузер не даёт странице камеру и микрофон (звонок). */
+    @get:Synchronized val httpsPort: Int get() = o.optInt("httpsPort", 8443)
     @get:Synchronized val password: String get() = o.optString("password")
     @get:Synchronized val logLevel: String get() = o.optString("logLevel", "INFO")
     @get:Synchronized val appRestartCron: String get() = o.optString("appRestartCron", "")
@@ -112,6 +114,11 @@ object Settings {
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch; отсутствующий ключ = значение по умолчанию. */
     @Synchronized
     fun voice(): JSONObject = JSONObject((o.optJSONObject("voice") ?: JSONObject()).toString()).also { it.remove("engine") } // engine — остаток нейроголоса (до 0.15.0), игнорируется
+
+    /** Параметры звонка (вкладка «Звонок»): разрешение камеры звонящего (adminRes) и камеры устройства (deviceRes). */
+    @Synchronized
+    fun call(): JSONObject = JSONObject().put("adminRes", o.optJSONObject("call")?.optString("adminRes")?.ifEmpty { null } ?: "640x480")
+        .put("deviceRes", o.optJSONObject("call")?.optString("deviceRes")?.ifEmpty { null } ?: "640x480")
 
     /** Зоны детектора движения (вкладка «Камера»): имя → {rect | rects, exclude}. */
     @Synchronized
@@ -195,6 +202,7 @@ object Settings {
     @Synchronized
     fun publicJson(): JSONObject = obj(
         "webPort" to webPort,
+        "httpsPort" to httpsPort,
         "logLevel" to logLevel,
         "appRestartCron" to appRestartCron,
         "rebootCron" to rebootCron,
@@ -225,7 +233,8 @@ object Settings {
         "updateRepo" to updateRepo,
         "updateCheckCron" to updateCheckCron,
         "voice" to voice(),
-        "zones" to zones()
+        "zones" to zones(),
+        "call" to call()
     )
 
     class Result(val errors: List<String>, val restartRequired: Boolean)
@@ -243,6 +252,14 @@ object Settings {
         if (patch.has("webPort")) {
             val v = patch.optInt("webPort", -1)
             if (v !in 1024..65535) errors.add("webPort: число от 1024 до 65535")
+        }
+        if (patch.has("httpsPort")) {
+            val v = patch.optInt("httpsPort", -1)
+            if (v !in 1024..65535) errors.add("httpsPort: число от 1024 до 65535")
+            else if (v == (if (patch.has("webPort")) patch.optInt("webPort") else webPort)) errors.add("httpsPort: должен отличаться от webPort")
+        }
+        patch.optJSONObject("call")?.let { c ->
+            for (k in listOf("adminRes", "deviceRes")) if (c.has(k) && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString(k))) errors.add("call.$k: вида 640x480")
         }
         for (k in listOf("appRestartCron", "rebootCron", "updateCheckCron")) {
             if (patch.has(k)) {
@@ -305,6 +322,11 @@ object Settings {
             o.put("webPort", patch.optInt("webPort"))
             restart = true
         }
+        if (patch.has("httpsPort") && patch.optInt("httpsPort") != httpsPort) {
+            o.put("httpsPort", patch.optInt("httpsPort"))
+            restart = true
+        }
+        patch.optJSONObject("call")?.let { c -> o.put("call", JSONObject(call().toString()).also { n -> for (k in listOf("adminRes", "deviceRes")) if (c.has(k)) n.put(k, c.optString(k)) }) }
         for (k in listOf("appRestartCron", "rebootCron")) {
             if (patch.has(k)) o.put(k, patch.optString(k).trim())
         }

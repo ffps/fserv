@@ -286,7 +286,9 @@ object Stt {
      * [kind] — number или yesno: распознаются только слова из словаря этого вида. Ошибки условий (нет разрешения, нет модели)
      * приходят как IllegalStateException с понятным текстом. Тихий звук усиливается программно (до ×8, без перегруза).
      */
-    fun listen(ctx: Context, kind: String, maxMs: Long, cancel: () -> Boolean): String {
+    fun listen(ctx: Context, kind: String, maxMs: Long, cancel0: () -> Boolean): String {
+        if (Call.active) throw IllegalStateException("микрофон занят звонком")
+        val cancel = { cancel0() || Call.active } // начавшийся звонок прерывает слушание: микрофон нужен ему
         check(ctx)?.let { throw IllegalStateException(it) }
         phase = "loading"
         val t0 = System.currentTimeMillis()

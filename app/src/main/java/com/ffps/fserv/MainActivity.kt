@@ -16,6 +16,8 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -36,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var root: FrameLayout
     private var slideWeb: WebView? = null
+    private var callWeb: WebView? = null
     private var slideSpec: Slide.Spec? = null
     private var savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
     private val handler = Handler(Looper.getMainLooper())
@@ -162,6 +165,57 @@ class MainActivity : Activity() {
         if (out > 0) w.animate().alpha(0f).setDuration(out).withEndAction(finish).start() else finish.run()
     }
 
+    // ---------------- видеозвонок (см. Call) ----------------
+
+    /** Окно звонка поверх всего: страница call.html с WebRTC. Она отдаётся из приложения по «адресу» https://call.local (защищённый контекст, сети не нужно). */
+    private fun callStartUi(offer: String, res: String) {
+        callStopUi()
+        val w = WebView(this).apply {
+            setBackgroundColor(Color.BLACK)
+            settings.javaScriptEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.allowFileAccess = false
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            keepScreenOn = true
+            addJavascriptInterface(CallBridge(), "Android")
+            webChromeClient = object : WebChromeClient() {
+                // камеру и микрофон получает только страница звонка из самого приложения
+                override fun onPermissionRequest(request: PermissionRequest?) {
+                    val r = request ?: return
+                    if (r.origin.host == "call.local") r.grant(r.resources) else r.deny()
+                }
+            }
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val u = request?.url ?: return null
+                    return if (u.host == "call.local" && u.path == "/call.html") {
+                        WebResourceResponse("text/html", "utf-8", assets.open("call.html"))
+                    } else {
+                        WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    if (url?.startsWith("https://call.local") == true) {
+                        view?.evaluateJavascript("callAccept(" + org.json.JSONObject.quote(offer) + "," + org.json.JSONObject.quote(res) + ")", null)
+                    }
+                }
+            }
+        }
+        callWeb = w
+        root.addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        w.loadUrl("https://call.local/call.html")
+    }
+
+    /** Закрывает окно звонка (камера и микрофон освобождаются, под ним снова киоск). */
+    private fun callStopUi() {
+        val w = callWeb ?: return
+        callWeb = null
+        try { w.loadUrl("about:blank"); root.removeView(w); w.destroy() } catch (e: Exception) {}
+    }
+
     override fun onResume() {
         super.onResume()
         resumed = true
@@ -258,6 +312,7 @@ class MainActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         slideWeb?.let { try { it.destroy() } catch (e: Exception) {} }
         slideWeb = null
+        if (callWeb != null) { callStopUi(); Call.endExternal("киоск закрыт системой") }
         web.destroy()
         super.onDestroy()
     }
@@ -329,6 +384,16 @@ class MainActivity : Activity() {
             a.runOnUiThread { a.showSlideUi(spec) }
             return true
         }
+
+        /** Показать окно звонка с предложением [offer] администратора (из любого потока). false — киоск не на переднем плане. */
+        fun callStart(offer: String, res: String): Boolean {
+            val a = current ?: return false
+            if (!(resumed && focused)) return false
+            a.runOnUiThread { a.callStartUi(offer, res) }
+            return true
+        }
+
+        fun callStop() { current?.let { a -> a.runOnUiThread { a.callStopUi() } } }
 
         fun hideSlide() { current?.let { a -> a.runOnUiThread { a.hideSlideUi() } } }
 

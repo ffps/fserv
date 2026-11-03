@@ -25,6 +25,10 @@ class ServerService : Service() {
     enum class State { STOPPED, RUNNING, FAIL }
 
     private var server: WebServer? = null
+
+    private var httpsServer: WebServer? = null
+
+    @Volatile private var httpsStarting = false
     private var scheduler: Scheduler? = null
     private var wake: PowerManager.WakeLock? = null
     private var wifi: WifiManager.WifiLock? = null
@@ -132,6 +136,7 @@ class ServerService : Service() {
         if (server != null) {
             state = State.RUNNING
             error = ""
+            startHttps()
         }
         Telegram.start()
         TaskEngine.start()
@@ -158,9 +163,33 @@ class ServerService : Service() {
         updateNotification()
     }
 
+    /** HTTPS на втором порту (нужен для звонка из браузера). Сертификат при первом запуске выпускается несколько секунд, поэтому в отдельном потоке; сбой не мешает основной работе. */
+    @Synchronized
+    private fun startHttps() {
+        if (httpsServer != null || httpsStarting) return
+        httpsStarting = true
+        val port = Settings.httpsPort
+        Thread({
+            try {
+                val factory = Https.socketFactory(applicationContext)
+                val s = WebServer(applicationContext, port)
+                s.makeSecure(factory, null)
+                s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+                synchronized(this) { httpsServer = s }
+                FLog.i("web", "веб-сервер HTTPS запущен на порту $port")
+            } catch (e: Exception) {
+                FLog.w("web", "HTTPS не запущен (порт $port): ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                httpsStarting = false
+            }
+        }, "https-start").start()
+    }
+
     @Synchronized
     private fun stopServer() {
         handler.removeCallbacks(retry)
+        try { httpsServer?.stop() } catch (e: Exception) { FLog.w("web", "ошибка при остановке HTTPS", e) }
+        httpsServer = null
         try {
             server?.stop()
         } catch (e: Exception) {

@@ -20,6 +20,7 @@ class App : Application() {
         CameraEngine.init(this)
         Sounds.init(this)
         Slides.init(this)
+        Call.init(this)
         PhotoStore.init(this)
         Voice.init(this)
         Stt.init(this)

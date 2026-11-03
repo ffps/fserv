@@ -114,6 +114,9 @@ object TaskEngine {
     /** Голос, зоны и исправные задачи; задачи с ошибками сюда не попадают (они видны в редакторе). */
     private fun config(): JSONObject = TaskStore.load().root
 
+    /** Есть ли задача с таким id, и включена ли она (для кнопки «звонок» на вкладке «Звонок»: задача ring). */
+    fun taskEnabled(id: String): Boolean = findTask(config(), id)?.optBoolean("enabled", true) == true
+
     private fun findTask(root: JSONObject, id: String): JSONObject? {
         val a = root.optJSONArray("tasks") ?: return null
         for (i in 0 until a.length()) a.optJSONObject(i)?.let { if (it.optString("id") == id) return it }
@@ -597,6 +600,7 @@ object TaskEngine {
             try {
                 CameraEngine.start("task")
                 while (CameraEngine.state != CameraEngine.State.RUNNING) {
+                    if (Call.active) throw StepError("камера занята звонком")
                     if (System.currentTimeMillis() > end + 15_000) throw StepError("камера не заработала: ${CameraEngine.lastError.ifEmpty { "нет кадров" }}")
                     sleep(r, 100)
                 }
@@ -605,6 +609,7 @@ object TaskEngine {
                 CameraEngine.resetBaseline()
                 val base = CameraEngine.motionHits
                 while (System.currentTimeMillis() < end) {
+                    if (Call.active) throw StepError("камера занята звонком")
                     if (CameraEngine.motionHits > base) { moved = true; break }
                     sleep(r, 100)
                 }

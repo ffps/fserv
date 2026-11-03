@@ -212,6 +212,7 @@ object PhotoStore {
      * Бросает IllegalStateException с понятным текстом. [cancel] прерывает ожидание.
      */
     fun shoot(ctx: Context, owner: String, label: String, cancel: () -> Boolean = { false }, size: String? = null): String {
+        if (Call.active) throw IllegalStateException("камера занята звонком")
         if (!CameraEngine.hasPermission(ctx)) throw IllegalStateException("нет разрешения на камеру (кнопка Allow camera в окне настроек)")
         if (needsPermission(ctx)) throw IllegalStateException("нет разрешения на запись фото (кнопка Allow photo storage в окне настроек)")
         val wasRunning = CameraEngine.state == CameraEngine.State.RUNNING

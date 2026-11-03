@@ -112,6 +112,30 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
             post && uri == "/api/tasks/stop" ->
                 if (TaskEngine.cancelCurrent()) ok("остановка запрошена") else fail(Response.Status.CONFLICT, "сейчас ничего не выполняется")
 
+            get && uri == "/api/call/status" -> json(Response.Status.OK, Call.status())
+            post && uri == "/api/call/offer" -> {
+                val sdp = try { JSONObject(body(s)).optString("sdp") } catch (e: JSONException) { "" }
+                require(sdp.isNotEmpty()) { "нужен sdp в теле запроса" }
+                val r = Call.start(ip, sdp, q(s, "force") == "1")
+                when {
+                    r.ok -> json(Response.Status.OK, obj("ok" to true, "id" to r.id, "sdp" to r.sdp))
+                    r.busyFrom != null -> json(Response.Status.CONFLICT, obj("ok" to false, "error" to r.error, "busyFrom" to r.busyFrom))
+                    else -> fail(Response.Status.INTERNAL_ERROR, r.error ?: "звонок не удался")
+                }
+            }
+            post && uri == "/api/call/ping" -> {
+                val reason = Call.ping(q(s, "id") ?: "")
+                if (reason == null) ok("идёт") else json(Response.Status.NOT_FOUND, obj("ok" to false, "ended" to true, "error" to reason))
+            }
+            post && uri == "/api/call/end" -> { Call.end(q(s, "id"), "завершён администратором", ip); ok("завершён") }
+            post && uri == "/api/call/ring" -> {
+                if (!TaskEngine.taskEnabled("ring")) fail(Response.Status.CONFLICT, "задачи ring нет или она выключена")
+                else {
+                    val err = TaskEngine.runNow("ring", false, emptyMap())
+                    if (err == null) { FLog.i("call", "сигнал ring запущен с адреса $ip"); ok("сигнал запущен") } else fail(Response.Status.CONFLICT, err)
+                }
+            }
+
             get && uri == "/api/sounds" -> {
                 val users = TaskStore.soundUsers()
                 val files = Sounds.list()
@@ -538,6 +562,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "GET /api/tasks" to "задачи, ближайшие запуски, ход и итоги выполнения",
         "POST /api/tasks/run" to "запустить задачу; ?id=wakeup&dry=1 (пробный) &assume=moved:true (результат watch в пробном запуске)",
         "POST /api/tasks/stop" to "остановить выполняющуюся задачу",
+        "GET /api/call/status" to "звонок: доступность устройства, идёт ли звонок и с какого адреса, доступна ли задача ring, порт HTTPS, параметры",
+        "POST /api/call/offer" to "начать видеозвонок: тело {\"sdp\": предложение WebRTC}; ответ {id, sdp}; если идёт звонок с другого адреса, 409 и busyFrom, повтор с ?force=1 прерывает его",
+        "POST /api/call/ping" to "подтвердить, что звонок жив (раз в несколько секунд, иначе он завершится); ?id=; ответ с ended=true, если звонок уже завершён",
+        "POST /api/call/end" to "завершить звонок; ?id=",
+        "POST /api/call/ring" to "запустить задачу ring (сигнал, привлекающий внимание)",
         "GET /api/sounds" to "загруженные звуки; playing — что звучит на устройстве при прослушивании",
         "GET /api/sounds/file" to "отдать звук для прослушивания в браузере; ?name=alarm.mp3 или system:alarm",
         "POST /api/sounds" to "загрузить звук: тело файла, ?name=alarm.mp3",

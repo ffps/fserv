@@ -186,6 +186,18 @@ object CameraEngine {
         if (empty) h.post { closeCamera(); state = State.STOPPED }
     }
 
+    /** Начался звонок: камера закрывается (она нужна звонку). Владельцы остаются в списке, после звонка камера откроется снова. */
+    fun suspendForCall() {
+        ensureThread()
+        h.post { closeCamera(); state = State.STOPPED }
+    }
+
+    /** Звонок закончился: если камеру кто-то ждёт, открываем её снова. */
+    fun callEnded() {
+        ensureThread()
+        h.post { if (state == State.ERROR) state = State.STOPPED; openIfNeeded() }
+    }
+
     fun owners(): List<String> = synchronized(owners) { owners.toList() }
 
     /** Ждёт, пока камера не перейдёт в нужное состояние. Возвращает false по таймауту. */
@@ -234,6 +246,7 @@ object CameraEngine {
     private fun openIfNeeded() {
         if (synchronized(owners) { owners.isEmpty() }) return
         if (device != null || state == State.OPENING) return
+        if (Call.active) { fail("камера занята звонком", false); return }
         if (!hasPermission(app)) {
             fail("нет разрешения на камеру: на устройстве откройте окно настроек fServe и нажмите Allow camera", false)
             return
