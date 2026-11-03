@@ -6,7 +6,7 @@
 <title>Звонок</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  #remote { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #remote { position: fixed; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; background: #000; } /* по высоте экрана, лишнее по бокам обрезается: как в окне на вкладке «Звонок» */
   #local { position: fixed; right: 14px; bottom: 14px; width: 24%; max-width: 280px; aspect-ratio: 3 / 4; object-fit: cover;
            transform: scaleX(-1); border: 2px solid rgba(255,255,255,.6); border-radius: 10px; background: #222; display: none; }
 </style>

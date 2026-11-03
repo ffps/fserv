@@ -1230,13 +1230,21 @@ $("#clRing").onclick = () => run("#clMsg", async () => (await post("/api/call/ri
 $("#clCam").onclick = async () => {
   const next = CL.facing === "user" ? "environment" : "user";
   if (!CL.stream || !CL.pc) { CL.facing = next; clRender(); return; }
+  const res = (CL.st && CL.st.call ? CL.st.call.adminRes : "640x480").split("x").map(Number);
+  const open = f => navigator.mediaDevices.getUserMedia({video: {facingMode: f, width: {ideal: res[0]}, height: {ideal: res[1]}}});
   try {
-    const res = (CL.st && CL.st.call ? CL.st.call.adminRes : "640x480").split("x").map(Number);
-    const ns = await navigator.mediaDevices.getUserMedia({video: {facingMode: next, width: {ideal: res[0]}, height: {ideal: res[1]}}});
-    const nt = ns.getVideoTracks()[0];
-    const sender = CL.pc.getSenders().find(x => x.track && x.track.kind === "video");
-    if (sender) await sender.replaceTrack(nt);
+    // телефон не открывает две камеры сразу: прежнюю освобождаем до запроса новой, а если новая не открылась, возвращаем прежнюю
     CL.stream.getVideoTracks().forEach(t => { t.stop(); CL.stream.removeTrack(t); });
+    let ns;
+    try { ns = await open(next); }
+    catch (e) {
+      try { ns = await open(CL.facing); } catch (e2) {}
+      if (ns) { const bt = ns.getVideoTracks()[0], sd = CL.pc.getSenders().find(x => x.track === null || (x.track && x.track.kind === "video")); if (sd) await sd.replaceTrack(bt); CL.stream.addTrack(bt); $("#clLocal").srcObject = CL.stream; }
+      throw e;
+    }
+    const nt = ns.getVideoTracks()[0];
+    const sender = CL.pc.getSenders().find(x => x.track === null || (x.track && x.track.kind === "video"));
+    if (sender) await sender.replaceTrack(nt);
     CL.stream.addTrack(nt);
     $("#clLocal").srcObject = CL.stream;
     const f = nt.getSettings().facingMode; // у камер без признака (веб-камера компьютера) положение остаётся прежним
