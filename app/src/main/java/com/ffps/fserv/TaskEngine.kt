@@ -114,6 +114,9 @@ object TaskEngine {
     /** Голос, зоны и исправные задачи; задачи с ошибками сюда не попадают (они видны в редакторе). */
     private fun config(): JSONObject = TaskStore.load().root
 
+    /** Задача выполняется или стоит в очереди (кнопка звонка на киоске в это время не нажимается). */
+    fun isBusy(id: String): Boolean = current?.info?.id == id || queue.any { it.taskId == id }
+
     /** Есть ли задача с таким id, и включена ли она (для кнопки «звонок» на вкладке «Звонок»: задача ring). */
     fun taskEnabled(id: String): Boolean = findTask(config(), id)?.optBoolean("enabled", true) == true
 

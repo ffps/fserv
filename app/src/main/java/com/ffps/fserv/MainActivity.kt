@@ -10,7 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.webkit.WebResourceResponse
 import android.view.View
 import android.view.WindowInsets
@@ -39,6 +42,11 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private var slideWeb: WebView? = null
     private var callWeb: WebView? = null
+    private var callBtn: ImageView? = null
+    private val bgExec = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val callBtnTick = object : Runnable {
+        override fun run() { updateCallButton(); handler.postDelayed(this, 1500) }
+    }
     private var slideSpec: Slide.Spec? = null
     private var savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
     private val handler = Handler(Looper.getMainLooper())
@@ -72,6 +80,7 @@ class MainActivity : Activity() {
         gestures(web)
         root = FrameLayout(this).apply { addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
         setContentView(root)
+        makeCallButton()
 
         // Пока пароль не задан, сразу открываем окно настроек.
         if (!Settings.isConfigured) startActivity(Intent(this, SettingsActivity::class.java))
@@ -163,6 +172,50 @@ class MainActivity : Activity() {
         val finish = Runnable { try { root.removeView(w); w.destroy() } catch (e: Exception) {} }
         w.animate().cancel()
         if (out > 0) w.animate().alpha(0f).setDuration(out).withEndAction(finish).start() else finish.run()
+    }
+
+    // ---------------- кнопка звонка на киоске ----------------
+
+    /**
+     * Круглая кнопка внизу по центру. Видна, только если есть включённая задача call; нажатие запускает её (пока она выполняется
+     * или ждёт очереди, нажатия игнорируются). Лежит под слайдом и окном видеозвонка: они её закрывают.
+     */
+    private fun makeCallButton() {
+        val d = resources.displayMetrics.density
+        val size = (72 * d).toInt()
+        val b = ImageView(this).apply {
+            setImageResource(R.drawable.ic_call)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#2E7D32")) }
+            val pad = (20 * d).toInt()
+            setPadding(pad, pad, pad, pad)
+            elevation = 6 * d
+            visibility = View.GONE
+            contentDescription = "Позвонить"
+            setOnClickListener {
+                if (alpha < 1f) return@setOnClickListener // задача уже выполняется
+                alpha = 0.45f
+                FLog.i("call", "нажата кнопка звонка на киоске")
+                bgExec.execute {
+                    val err = TaskEngine.runNow("call", false, emptyMap())
+                    if (err != null) FLog.w("call", "задача call не запущена: $err")
+                }
+            }
+        }
+        callBtn = b
+        root.addView(b, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = (28 * d).toInt() })
+        handler.post(callBtnTick)
+    }
+
+    private fun updateCallButton() {
+        val b = callBtn ?: return
+        bgExec.execute {
+            val show = try { TaskEngine.taskEnabled("call") && !Call.active } catch (e: Exception) { false }
+            val busy = try { TaskEngine.isBusy("call") } catch (e: Exception) { false }
+            runOnUiThread {
+                b.visibility = if (show) View.VISIBLE else View.GONE
+                b.alpha = if (busy) 0.45f else 1f
+            }
+        }
     }
 
     // ---------------- видеозвонок (см. Call) ----------------
@@ -310,6 +363,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (current === this) current = null
         handler.removeCallbacksAndMessages(null)
+        bgExec.shutdown()
         slideWeb?.let { try { it.destroy() } catch (e: Exception) {} }
         slideWeb = null
         if (callWeb != null) { callStopUi(); Call.endExternal("киоск закрыт системой") }
