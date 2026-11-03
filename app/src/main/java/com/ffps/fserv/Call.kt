@@ -50,8 +50,8 @@ object Call {
         override fun run() {
             val s = session ?: return
             val now = System.currentTimeMillis()
-            if (now - s.lastPing > 12_000) { end(s.id, "админка перестала отвечать", null); return }
-            if (MainActivity.isVisible()) s.hidden = 0 else if (++s.hidden >= 3) { end(s.id, "киоск ушёл с переднего плана", null); return }
+            if (now - s.lastPing > 12_000) { end(s.id, "админка перестала отвечать", null, true); return }
+            if (MainActivity.isVisible()) s.hidden = 0 else if (++s.hidden >= 3) { end(s.id, "киоск ушёл с переднего плана", null, true); return }
             handler.postDelayed(this, 2_000)
         }
     }
@@ -104,7 +104,7 @@ object Call {
             Thread.sleep(300) // камера и микрофон освобождаются не мгновенно
             val res = Settings.call().optString("deviceRes", "640x480")
             if (!MainActivity.callStart(offer, res)) {
-                end(s.id, "не удалось показать окно звонка", null)
+                end(s.id, "не удалось показать окно звонка", null, true)
                 return Result(false, error = "не удалось показать окно звонка на устройстве")
             }
             handler.removeCallbacks(watchdog)
@@ -115,12 +115,12 @@ object Call {
             val a = answer
             if (a == null) {
                 val e = error ?: "устройство не ответило за 25 с"
-                end(s.id, e, null)
+                end(s.id, e, null, true)
                 return Result(false, error = e)
             }
             return Result(true, id = s.id, sdp = a)
         } catch (e: Exception) {
-            end(s.id, "ошибка: ${e.message ?: e.javaClass.simpleName}", null)
+            end(s.id, "ошибка: ${e.message ?: e.javaClass.simpleName}", null, true)
             return Result(false, error = e.message ?: e.javaClass.simpleName)
         }
     }
@@ -133,18 +133,18 @@ object Call {
     }
 
     /** Завершение по просьбе админки (кнопка или закрытие страницы). */
-    fun end(id: String?, reason: String, by: String?) {
+    fun end(id: String?, reason: String, by: String?, abnormal: Boolean = false) {
         synchronized(lock) {
             val s = session ?: return
             if (id != null && s.id != id) return
-            endLocked(s, if (by != null) "$reason (адрес $by)" else reason)
+            endLocked(s, if (by != null) "$reason (адрес $by)" else reason, abnormal)
         }
     }
 
     /** Завершение из самого приложения (киоск закрыт и т. п.). */
-    fun endExternal(reason: String) = end(null, reason, null)
+    fun endExternal(reason: String) = end(null, reason, null, true)
 
-    private fun endLocked(s: Session, reason: String) {
+    private fun endLocked(s: Session, reason: String, abnormal: Boolean = false) {
         if (session !== s) return
         session = null
         active = false
@@ -155,7 +155,9 @@ object Call {
         endAudio()
         CameraEngine.callEnded()
         latch?.countDown()
-        FLog.i("call", "звонок с адреса ${s.addr} завершён: $reason, длился ${(System.currentTimeMillis() - s.startedAt) / 1000} с")
+        // обычное завершение (повесили трубку, заменён звонком) — INFO; обрыв и сбои — WARN
+        val text = "звонок с адреса ${s.addr} завершён: $reason, длился ${(System.currentTimeMillis() - s.startedAt) / 1000} с"
+        if (abnormal) FLog.w("call", text) else FLog.i("call", text)
     }
 
     // ---------------- из страницы звонка на устройстве ----------------
@@ -168,7 +170,7 @@ object Call {
         FLog.w("call", "страница звонка на устройстве: $msg")
         error = "устройство: $msg"
         val s = session
-        if (s != null && !s.connected) latch?.countDown() else if (s != null) end(s.id, "устройство: $msg", null)
+        if (s != null && !s.connected) latch?.countDown() else if (s != null) end(s.id, "устройство: $msg", null, true)
     }
 
     fun onState(st: String) {
@@ -176,8 +178,8 @@ object Call {
         FLog.d("call", "состояние связи на устройстве: $st")
         when (st) {
             "connected" -> { s.connected = true; FLog.i("call", "связь с адресом ${s.addr} установлена") }
-            "failed", "closed" -> end(s.id, "связь потеряна ($st)", null)
-            "disconnected" -> handler.postDelayed({ if (session === s) end(s.id, "связь потеряна", null) }, 8_000)
+            "failed", "closed" -> end(s.id, "связь потеряна ($st)", null, true)
+            "disconnected" -> handler.postDelayed({ if (session === s) end(s.id, "связь потеряна", null, true) }, 8_000)
         }
     }
 
