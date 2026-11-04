@@ -58,6 +58,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         val ip = s.remoteIpAddress ?: ""
         val loopback = ip == "127.0.0.1" || ip == "::1" || ip == "0:0:0:0:0:0:0:1"
         if (get && uri == "/kiosk" && loopback) return page("kiosk", false)
+        if (get && uri == "/api/weather" && loopback) return json(Response.Status.OK, Weather.apiJson()) // для страницы киоска, которая входа не имеет
 
         if (!authorized(s)) return unauthorized(s, uri, ip)
 
@@ -260,11 +261,21 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
             }
             get && uri == "/api/llm/models" -> try {
-                val p = q(s, "provider") ?: Settings.llmProvider
-                require(p in Settings.LLM_PROVIDERS) { "provider: gemini или groq" }
-                json(Response.Status.OK, obj("provider" to p, "models" to arr(Llm.models(p))))
+                val p = q(s, "preset") ?: Settings.llmPreset
+                require(p in Settings.LLM_PRESETS) { "preset: groq, gemini или custom" }
+                json(Response.Status.OK, obj("preset" to p, "models" to arr(Llm.models(p))))
             } catch (e: Llm.LlmError) {
                 fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
+            }
+            post && uri == "/api/weather/check" -> try {
+                // что находится по городу из тела запроса (ещё не сохранённому): название места и координаты
+                val city = (q(s, "city") ?: Settings.weatherCity).trim()
+                val place = Weather.check(city)
+                json(Response.Status.OK, obj("ok" to true, "message" to place))
+            } catch (e: IllegalStateException) {
+                fail(Response.Status.CONFLICT, e.message ?: "ошибка")
+            } catch (e: java.io.IOException) {
+                fail(Response.Status.INTERNAL_ERROR, "нет связи: ${e.message}")
             }
             post && uri == "/api/chat/test" -> try {
                 // проверка разговора без голоса: тело {topic, history:[{role,text}]}; сервер ничего не хранит, историю держит страница
@@ -275,12 +286,14 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 require(topicName.isEmpty() || !topic.isNullOrEmpty()) { "темы «$topicName» нет (сохраните её на вкладке «Чат»)" }
                 val ha = b.optJSONArray("history") ?: JSONArray()
                 val hist = (0 until ha.length()).map { i -> ha.getJSONObject(i).let { Chat.Msg(if (it.optString("role") == "assistant") "assistant" else "user", it.optString("text")) } }
-                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic ?: ""), hist)
+                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic ?: "", Weather.chatContext()), hist)
                 json(Response.Status.OK, obj("ok" to true, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "проверка чата не удалась: ${e.message}")
                 fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
             }
+
+            get && uri == "/api/weather" -> json(Response.Status.OK, Weather.apiJson())
 
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
             post && uri == "/api/camera/start" -> {
@@ -576,8 +589,8 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
     /** Проверка связи: запрос к каждому из трёх адресов; через прокси, если для адреса стоит галочка, иначе напрямую. Любой HTTP-ответ означает, что связь есть. */
     private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
-        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini, Groq)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"), "stt" to ("Модель речи (alphacephei.com)" to "https://alphacephei.com/vosk/models/"))
-        require(name == null || all.any { it.first == name }) { "name: telegram, llm, updates или stt" }
+        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (${Llm.label()})" to (Settings.llmUrl(Settings.llmPreset) + "/")), "updates" to ("GitHub" to "https://api.github.com/"), "stt" to ("Модель речи (alphacephei.com)" to "https://alphacephei.com/vosk/models/"), "weather" to ("Погода (open-meteo.com)" to "https://api.open-meteo.com/"))
+        require(name == null || all.any { it.first == name }) { "name: telegram, llm, updates, stt или weather" }
         val targets = all.filter { name == null || it.first == name }.map { Triple(it.first, it.second.first, it.second.second) }
         val lines = ArrayList<String>()
         var bad = 0
@@ -641,9 +654,11 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "POST /api/telegram/send" to "поставить в очередь сообщение (тело: текст)",
         "GET /api/telegram/outbox" to "очередь неотправленных сообщений",
         "POST /api/telegram/outbox/clear" to "очистить очередь",
-        "POST /api/proxy/test" to "проверить связь: запрос к Telegram, Gemini и GitHub (через прокси, если стоит галочка, иначе напрямую); ?name=telegram|llm|updates проверяет один адрес",
-        "POST /api/llm/test" to "проверка языковой модели (Gemini или Groq по настройкам): короткий запрос, ответ и время",
-        "GET /api/llm/models" to "доступные модели провайдера; ?provider=gemini|groq (нужен сохранённый ключ)",
+        "POST /api/proxy/test" to "проверить связь: запрос к Telegram, LLM, GitHub, модели речи и погоде (через прокси, если стоит галочка, иначе напрямую); ?name=telegram|llm|updates|stt|weather проверяет один адрес",
+        "POST /api/llm/test" to "проверка языковой модели (пресет из настроек): короткий запрос, ответ и время",
+        "GET /api/llm/models" to "доступные модели пресета; ?preset=groq|gemini|custom (нужен сохранённый адрес и ключ)",
+        "GET /api/weather" to "текущая погода для киоска и чата (с самого устройства доступна без входа)",
+        "POST /api/weather/check" to "найти место по городу; ?city=Екатеринбург или ?city=56.84,60.61",
         "POST /api/chat/test" to "проверка разговора без голоса: тело {\"topic\": имя темы, \"history\": [{\"role\": \"user|assistant\", \"text\": …}]}; ответ {reply, alert, end, ms}",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",

@@ -47,35 +47,46 @@ class ChatTest {
         assertFalse(Chat.systemPrompt("Мои правила", "").contains(Chat.DEFAULT_RULES))
     }
 
-    @Test fun geminiBody() {
-        val b = Chat.geminiBody("sys", listOf(Chat.Msg("user", "привет"), Chat.Msg("assistant", "здравствуйте")), true)
-        assertEquals("sys", b.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text"))
-        val c = b.getJSONArray("contents")
-        assertEquals("user", c.getJSONObject(0).getString("role"))
-        assertEquals("model", c.getJSONObject(1).getString("role"))
-        val g = b.getJSONObject("generationConfig")
-        assertEquals("application/json", g.getString("responseMimeType"))
-        assertEquals(0, g.getJSONObject("thinkingConfig").getInt("thinkingBudget"))
-        assertFalse(Chat.geminiBody("s", emptyList(), false).getJSONObject("generationConfig").has("thinkingConfig"))
+    @Test fun systemPromptContext() {
+        val s = Chat.systemPrompt("Правила", "тема", "Сейчас среда, 4 ноября 2026 года, 19:55.")
+        assertTrue(s.indexOf("Правила") < s.indexOf("Сейчас среда"))
+        assertTrue(s.indexOf("Сейчас среда") < s.indexOf("Тема разговора"))
+        assertFalse(Chat.systemPrompt("Правила", "тема", "  ").contains("\n\n\n"))
     }
 
-    @Test fun groqBody() {
-        val b = Chat.groqBody("m1", "sys", listOf(Chat.Msg("user", "привет")))
+    @Test fun openAiBody() {
+        val b = Chat.openAiBody("m1", "sys", listOf(Chat.Msg("user", "привет"), Chat.Msg("assistant", "здравствуйте")))
         assertEquals("m1", b.getString("model"))
         val m = b.getJSONArray("messages")
         assertEquals("system", m.getJSONObject(0).getString("role"))
+        assertEquals("sys", m.getJSONObject(0).getString("content"))
         assertEquals("user", m.getJSONObject(1).getString("role"))
+        assertEquals("assistant", m.getJSONObject(2).getString("role"))
         assertEquals("json_object", b.getJSONObject("response_format").getString("type"))
+        assertFalse(b.has("reasoning_effort"))
+        assertEquals(Chat.MAX_TOKENS, b.getInt("max_tokens"))
     }
 
-    @Test fun providerResponses() {
-        val g = """{"candidates":[{"content":{"parts":[{"text":"{\"reply\":\"ок\"}"}]},"finishReason":"STOP"}]}"""
-        assertEquals("ок", Chat.parseReply(Chat.geminiText(g)).text)
+    @Test fun openAiBodyOptions() {
+        val b = Chat.openAiBody("openai/gpt-oss-120b", "s", emptyList(), json = false, reasoningEffort = "low")
+        assertFalse(b.has("response_format"))
+        assertEquals("low", b.getString("reasoning_effort"))
+        assertEquals("user", b.getJSONArray("messages").getJSONObject(1).getString("role")) // пустая история: модель просят начать разговор
+    }
+
+    @Test fun openAiResponses() {
         val q = """{"choices":[{"message":{"role":"assistant","content":"{\"reply\":\"хорошо\",\"end\":true}"}}]}"""
-        val r = Chat.parseReply(Chat.groqText(q))
+        val r = Chat.parseReply(Chat.openAiText(q))
         assertEquals("хорошо", r.text); assertTrue(r.end)
-        try { Chat.geminiText("""{"promptFeedback":{"blockReason":"SAFETY"}}"""); fail() } catch (e: IllegalStateException) { assertTrue(e.message!!.contains("SAFETY")) }
-        try { Chat.geminiText("""{"candidates":[{"finishReason":"MAX_TOKENS"}]}"""); fail() } catch (e: IllegalStateException) { assertTrue(e.message!!.contains("MAX_TOKENS")) }
-        try { Chat.groqText("""{"choices":[]}"""); fail() } catch (e: IllegalStateException) { }
+        try { Chat.openAiText("""{"choices":[]}"""); fail() } catch (e: IllegalStateException) { }
+        try { Chat.openAiText("""{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"""); fail() } catch (e: IllegalStateException) { assertTrue(e.message!!.contains("length")) }
+    }
+
+    @Test fun parseModels() {
+        val groq = """{"object":"list","data":[{"id":"openai/gpt-oss-120b"},{"id":"llama-3.3-70b-versatile"},{"id":"openai/gpt-oss-120b"}]}"""
+        assertEquals(listOf("llama-3.3-70b-versatile", "openai/gpt-oss-120b"), Chat.parseModels(groq))
+        val gemini = """{"data":[{"id":"models/gemini-3.1-flash-lite"},{"id":"models/gemini-2.5-pro"},{"id":""}]}"""
+        assertEquals(listOf("gemini-2.5-pro", "gemini-3.1-flash-lite"), Chat.parseModels(gemini))
+        assertEquals(emptyList<String>(), Chat.parseModels("""{"data":[]}"""))
     }
 }

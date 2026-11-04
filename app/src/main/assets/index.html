@@ -294,11 +294,10 @@
   <div class="row" style="margin-top:10px"><button class="ib del" id="obClear" title="Очистить очередь"></button></div>
   <h2 style="margin-top:22px">Языковая модель (LLM)</h2>
   <div class="f">
-    <label for="llProv">Провайдер</label><select id="llProv"><option value="gemini">Gemini (Google)</option><option value="groq">Groq</option></select>
-    <label for="llGKey">Ключ Gemini</label><input id="llGKey" type="password" autocomplete="new-password" placeholder="пусто = не менять">
-    <label for="llGModel">Модель Gemini</label><input id="llGModel" list="llGList" placeholder="gemini-2.5-flash"><datalist id="llGList"></datalist>
-    <label for="llQKey">Ключ Groq</label><input id="llQKey" type="password" autocomplete="new-password" placeholder="пусто = не менять">
-    <label for="llQModel">Модель Groq</label><input id="llQModel" list="llQList" placeholder="llama-3.3-70b-versatile"><datalist id="llQList"></datalist>
+    <label for="llProv">Провайдер</label><select id="llProv"><option value="groq">Groq</option><option value="gemini">Gemini (Google)</option><option value="custom">Другой (совместимый с OpenAI)</option></select>
+    <label for="llUrl">Адрес API</label><input id="llUrl" placeholder="https://api.example.com/v1">
+    <label for="llKey">Ключ</label><input id="llKey" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+    <label for="llModel">Модель</label><input id="llModel" list="llList" autocomplete="off"><datalist id="llList"></datalist>
     <label for="llTmo">Таймаут запроса, с</label><input id="llTmo" type="number" min="3" max="60" placeholder="15">
   </div>
   <div class="row" style="margin-top:14px">
@@ -307,7 +306,7 @@
     <button class="btn sec" id="llModels">Показать модели</button>
   </div>
   <div class="msg" id="llMsg"></div>
-  <p class="hint">Нужна для шага <code>chat</code> (разговор с ИИ). Работает выбранный провайдер; ключ у Gemini берётся в Google AI Studio, у Groq в консоли Groq. «Проверить» и «Показать модели» используют сохранённые настройки. Список моделей подставляется в подсказки поля «Модель». Запросы идут через прокси, если для LLM стоит галочка ниже. В модель уходит только текст разговора, звук не передаётся.</p>
+  <p class="hint">Нужна для шага <code>chat</code> (разговор с ИИ). Подходит любой сервис с API, совместимым с OpenAI (<code>/chat/completions</code> и <code>/models</code>). Пресеты Groq и Gemini подставляют адрес и модель по умолчанию; для остального выберите «Другой» и укажите адрес (с <code>https://</code> или <code>http://</code>, без <code>/chat/completions</code>), ключ (для своего сервера можно пустой) и модель. Адрес, ключ и модель запоминаются отдельно для каждого пресета, работает выбранный. Ключ у Gemini берётся в Google AI Studio, у Groq в консоли Groq. «Проверить» и «Показать модели» используют сохранённые настройки; при нажатии на поле «Модель» показывается весь список, а набранные буквы его сужают. Запросы идут через прокси, если для LLM стоит галочка ниже. В модель уходит только текст разговора, звук не передаётся.</p>
   <h2 style="margin-top:22px">SOCKS5-прокси</h2>
   <div class="f">
     <label for="pxHost">Адрес</label><input id="pxHost" placeholder="хост или IP">
@@ -323,6 +322,7 @@
     <label><input type="checkbox" id="pxLlm"> LLM</label><button class="btn sec sm" data-pt="llm">Проверить</button><span class="msg" id="pt_llm"></span>
     <label title="Загрузка обновлений приложения"><input type="checkbox" id="pxUp"> GitHub</label><button class="btn sec sm" data-pt="updates">Проверить</button><span class="msg" id="pt_updates"></span>
     <label title="Загрузка моделей речи и нейроголоса"><input type="checkbox" id="pxStt"> STT/TTS</label><button class="btn sec sm" data-pt="stt">Проверить</button><span class="msg" id="pt_stt"></span>
+    <label title="Запросы погоды (Open-Meteo)"><input type="checkbox" id="pxWx"> Погода</label><button class="btn sec sm" data-pt="weather">Проверить</button><span class="msg" id="pt_weather"></span>
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
@@ -443,6 +443,10 @@
     <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
     <label for="sTmo">Таймаут сети, секунд</label>
     <input id="sTmo" type="number" min="2" max="120">
+    <label for="sCity">Город (для погоды)</label>
+    <input id="sCity" placeholder="например Екатеринбург или 56.84, 60.61 (пусто = погода не нужна)">
+    <label for="sWx">Обновлять погоду, минут</label>
+    <input id="sWx" type="number" min="0" max="1440" placeholder="60">
     <label for="sApp">Перезапуск приложения (cron)</label>
     <input id="sApp" placeholder="например 30 3 * * *   (пусто = выключено)">
     <label for="sReboot">Перезагрузка устройства (cron)</label>
@@ -456,7 +460,7 @@
     <label for="sPass">Новый пароль</label>
     <input id="sPass" type="password" autocomplete="new-password" placeholder="пусто = не менять">
   </div>
-  <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button></div>
+  <div class="row" style="margin-top:14px"><button class="btn" id="sSave">Сохранить</button><button class="btn sec" id="sCityFind">Найти город</button></div>
   <div class="msg" id="sMsg"></div>
   <p class="hint">Cron: пять полей «минута час день месяц день_недели», например <code>0 4 * * *</code> — каждый день в 4:00, <code>*/30 * * * *</code> — каждые полчаса. Время по часам устройства. При смене порта веб-сервер перезапускается сам, откройте страницу по новому адресу. После смены пароля браузер спросит его заново.</p>
 
@@ -570,7 +574,7 @@ function refreshDirty() {
 document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
-track("sSave", ["sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
+track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -685,27 +689,37 @@ document.querySelectorAll("#tabs a").forEach(b => b.onclick = e => {
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---- LLM (вкладка «Связь») ----
-function llFill(l) {
-  $("#llProv").value = l.provider; $("#llTmo").value = l.timeoutSec;
-  $("#llGModel").value = l.gemini.model; $("#llQModel").value = l.groq.model;
-  $("#llGKey").value = ""; $("#llQKey").value = "";
-  $("#llGKey").placeholder = l.gemini.keySet ? "задан (" + l.gemini.keyHint + "), пусто = не менять" : "не задан";
-  $("#llQKey").placeholder = l.groq.keySet ? "задан (" + l.groq.keyHint + "), пусто = не менять" : "не задан";
+let LL = null; // последние сохранённые настройки LLM
+function llShow(p) {
+  const x = LL.presets[p], d = LL.defaults[p];
+  $("#llUrl").value = x.url; $("#llUrl").placeholder = d.url || "https://api.example.com/v1";
+  $("#llModel").value = x.model; $("#llModel").placeholder = d.model || "имя модели";
+  $("#llKey").value = "";
+  $("#llKey").placeholder = x.keySet ? "задан (" + x.keyHint + "), пусто = не менять" : (p === "custom" ? "не задан (для своего сервера можно не нужен)" : "не задан");
+  $("#llList").innerHTML = "";
 }
+function llFill(l) { LL = l; $("#llProv").value = l.preset; $("#llTmo").value = l.timeoutSec; llShow(l.preset); }
+$("#llProv").onchange = () => llShow($("#llProv").value);
 $("#llSave").onclick = () => run("#llMsg", async () => {
-  const l = {provider: $("#llProv").value, timeoutSec: Number($("#llTmo").value || 15), gemini: {model: $("#llGModel").value.trim()}, groq: {model: $("#llQModel").value.trim()}};
-  if ($("#llGKey").value.trim()) l.gemini.key = $("#llGKey").value.trim();
-  if ($("#llQKey").value.trim()) l.groq.key = $("#llQKey").value.trim();
-  await post("/api/settings", JSON.stringify({llm: l})); loadComm(); return "сохранено";
+  const p = $("#llProv").value;
+  const x = {url: $("#llUrl").value.trim(), model: $("#llModel").value.trim()};
+  if ($("#llKey").value.trim()) x.key = $("#llKey").value.trim();
+  await post("/api/settings", JSON.stringify({llm: {preset: p, timeoutSec: Number($("#llTmo").value || 15), [p]: x}})); loadComm(); return "сохранено";
 });
 $("#llTest").onclick = () => run("#llMsg", async () => { say("#llMsg", "запрос к модели…", true); return (await post("/api/llm/test")).json.message; });
 $("#llModels").onclick = () => run("#llMsg", async () => {
   const p = $("#llProv").value;
   say("#llMsg", "запрашиваю список моделей…", true);
-  const r = (await api("/api/llm/models?provider=" + p)).json;
-  $(p === "groq" ? "#llQList" : "#llGList").innerHTML = r.models.map(m => '<option value="' + esc(m) + '">').join("");
-  return "моделей: " + r.models.length + " (они подставляются в подсказки поля «Модель»; нажмите на поле)";
+  const r = (await api("/api/llm/models?preset=" + p)).json;
+  $("#llList").innerHTML = r.models.map(m => '<option value="' + esc(m) + '">').join("");
+  return "моделей: " + r.models.length + " (нажмите на поле «Модель», чтобы выбрать)";
 });
+// список подсказок фильтруется по набранному тексту, поэтому при входе в поле временно очищаем его: видны все модели
+(() => {
+  const m = $("#llModel"); let prev = "";
+  m.addEventListener("focus", () => { if ($("#llList").options.length) { prev = m.value; m.value = ""; } });
+  m.addEventListener("blur", () => { if (m.value === "" && prev) m.value = prev; prev = ""; });
+})();
 
 // ---- чат: правила, темы и проверка разговора без голоса ----
 let chHist = [], chEnded = false, chBusy = false;
@@ -787,7 +801,7 @@ async function loadComm() {
     const p = st.proxy;
     $("#pxHost").value = p.host; $("#pxPort").value = p.port; $("#pxUser").value = p.user; $("#pxPass").value = "";
     $("#pxPass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
-    $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates; $("#pxStt").checked = p.stt;
+    $("#pxTg").checked = p.telegram; $("#pxLlm").checked = p.llm; $("#pxUp").checked = p.updates; $("#pxStt").checked = p.stt; $("#pxWx").checked = p.weather;
     const t = (await api("/api/telegram")).json;
     $("#tgState").textContent = (t.configured ? "Настроен." : "Не настроен.") + " В очереди: " + t.pending + (t.lastSentAt ? ". Последняя отправка: " + dt(t.lastSentAt) : "") + (t.lastError ? ". Последняя ошибка: " + t.lastError : "");
     const ob = (await api("/api/telegram/outbox")).json;
@@ -807,7 +821,7 @@ $("#pxSave").onclick = () => run("#pxMsg", async () => {
   if ($("#pxPass").value) px.password = $("#pxPass").value;
   await post("/api/settings", JSON.stringify({proxy: px})); loadComm(); return "сохранено";
 }, "pxSave");
-for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"], ["#pxStt", "stt"]]) {
+for (const [id, k] of [["#pxTg", "telegram"], ["#pxLlm", "llm"], ["#pxUp", "updates"], ["#pxStt", "stt"], ["#pxWx", "weather"]]) {
   $(id).onchange = () => run("#pxuMsg", async () => {
     try { await post("/api/settings", JSON.stringify({proxy: {[k]: $(id).checked}})); }
     finally { loadComm(); }
@@ -1614,18 +1628,25 @@ async function loadSettings() {
     const s = (await api("/api/settings")).json;
     $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
     $("#sPort").value = s.webPort; $("#sPortS").value = s.httpsPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
+    $("#sCity").value = s.weather.city; $("#sWx").value = s.weather.everyMin;
     say("#sMsg", ""); rebase("sSave");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
   const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value,
-             webPort: Number($("#sPort").value), httpsPort: Number($("#sPortS").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked};
+             webPort: Number($("#sPort").value), httpsPort: Number($("#sPortS").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked,
+             weather: {city: $("#sCity").value.trim(), everyMin: Number($("#sWx").value === "" ? 60 : $("#sWx").value)}};
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;
   $("#sPass").value = "";
   $("#logLevel").value = $("#sLevel").value;
   return r.restartRequired ? "сохранено; веб-сервер перезапускается на портах " + r.settings.webPort + " и " + r.settings.httpsPort : "сохранено";
 }, "sSave");
+
+$("#sCityFind").onclick = () => run("#sMsg", async () => {
+  say("#sMsg", "ищу…", true);
+  return "найдено: " + (await post("/api/weather/check?city=" + encodeURIComponent($("#sCity").value.trim()))).json.message;
+});
 
 // ---- страницы ----
 async function loadPage() {

@@ -16,7 +16,7 @@ class App : Application() {
         FLog.addSecret(Settings.password)
         FLog.addSecret(Settings.telegramToken)
         for (px in Settings.allProxies()) FLog.addSecret(px.password)
-        for (p in Settings.LLM_PROVIDERS) FLog.addSecret(Settings.llmKey(p))
+        for (p in Settings.LLM_PRESETS) FLog.addSecret(Settings.llmKey(p))
         Net.init()
         CameraEngine.init(this)
         Sounds.init(this)
@@ -27,6 +27,7 @@ class App : Application() {
         Stt.init(this)
         TaskEngine.init(this)
         Telegram.init(this)
+        Weather.start()
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")
     }
 

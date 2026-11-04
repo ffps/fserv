@@ -605,7 +605,7 @@ object TaskEngine {
         val topic = cfg?.optJSONObject("topics")?.optString(topicName).orEmpty()
         if (topic.isEmpty()) throw StepError("темы «$topicName» нет: создайте её на вкладке «Чат»")
         val rules = cfg?.optString("rules").orEmpty()
-        if (!Llm.configured()) throw StepError("не задан ключ ${Settings.llmProvider}: вкладка «Связь», раздел LLM")
+        Llm.problem()?.let { throw StepError(it) }
         Stt.check(r.ctx)?.let { throw StepError(it) }
         Stt.prepareAsync("free")
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
@@ -618,7 +618,7 @@ object TaskEngine {
         while (true) {
             check(r)
             val last = n + 1 >= turns || end - System.currentTimeMillis() < 45_000 || silences >= 2
-            val system = Chat.systemPrompt(rules, topic) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
+            val system = Chat.systemPrompt(rules, topic, Weather.chatContext()) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
             val res = try {
                 Llm.ask(system, hist)
             } catch (e: Llm.LlmError) {

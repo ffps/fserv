@@ -14,9 +14,12 @@
   #date { font-weight: 300; font-size: 8vh; font-size: min(8vw, 10vh); margin-top: 10vh; opacity: .9; color: #39c;}
   #day  { font-weight: 300; font-size: 8vh; font-size: min(8vw, 10vh); margin-top: 1vh; opacity: .9; color: #39c;}
   #day.weekend {color: #c93;}
+  #wx { position: absolute; top: 3vh; left: 0; right: 0; text-align: center; font-weight: 300; font-size: 6vh; font-size: min(5vw, 6vh); color: #7ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 3vw; }
+  #wx .i { margin-right: .4em; }
 </style>
 </head>
 <body>
+<div id="wx" style="display:none"><span class="i" id="wxi"></span><span id="wxt"></span></div>
 <div class="wrap">
   <div id="time"><span id="hh">--</span><span class="c">:</span><span id="mm">--</span></div>
   <div id="date"></div>
@@ -38,6 +41,32 @@
   }
   tick();
   setInterval(tick, 1000);
+
+  // погода: строка сверху по центру; пока данных нет (или погода выключена в настройках) строка скрыта
+  function weather() {
+    var next = 30000;
+    var x = new XMLHttpRequest();
+    x.open("GET", "/api/weather");
+    x.timeout = 10000;
+    x.onload = function () {
+      try {
+        var w = JSON.parse(x.responseText);
+        var box = document.getElementById("wx");
+        if (w.enabled && w.available) {
+          document.getElementById("wxi").textContent = w.icon;
+          document.getElementById("wxt").textContent = w.text;
+          box.style.display = "";
+          next = 600000;
+        } else {
+          box.style.display = "none";
+          next = w.enabled ? 30000 : 600000;
+        }
+      } catch (e) { /* ответ непонятен: попробуем позже */ }
+    };
+    x.onloadend = function () { setTimeout(weather, next); };
+    x.send();
+  }
+  weather();
 </script>
 </body>
 </html>

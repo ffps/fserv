@@ -12,11 +12,12 @@ import java.util.Locale
  * Отправка сообщений в Telegram напрямую с устройства (токен бота и chat id берутся из настроек).
  * Все сообщения идут через очередь на диске: если сети или прокси нет, сообщение ждёт и уходит позже,
  * с пометкой времени исходного события. Порядок сохраняется. Сообщение пропадает только если оно старше
- * 7 дней, очередь переполнена (200) или Telegram упорно отвергает именно это сообщение (HTTP 400).
+ * 24 часов, очередь переполнена (200) или Telegram отверг именно это сообщение (HTTP 400) три раза подряд.
  */
 object Telegram {
     private const val MAX_ITEMS = 200
-    private const val MAX_AGE_MS = 7L * 24 * 3600 * 1000
+    private const val MAX_AGE_MS = 24L * 3600 * 1000
+    private const val MAX_REJECTED = 3
     private const val DELAY_NOTE_MS = 120_000L
     private val BACKOFF = longArrayOf(10, 30, 60, 120, 300).map { it * 1000 }
 
@@ -163,7 +164,7 @@ object Telegram {
             val now = System.currentTimeMillis()
             while (items.isNotEmpty() && now - items[0].createdAt > MAX_AGE_MS) {
                 val d = items.removeAt(0)
-                FLog.w("telegram", "сообщение ${d.id} старше 7 дней, удалено")
+                FLog.w("telegram", "сообщение ${d.id} старше 24 часов, удалено")
                 saveLocked()
             }
             if (items.isEmpty()) { lock.wait(30_000); return }
@@ -242,9 +243,9 @@ object Telegram {
         m.nextTry = System.currentTimeMillis() + wait
         FLog.w("telegram", "не отправлено (попытка ${m.attempts}, повтор через ${wait / 1000} с): $msg")
         synchronized(lock) {
-            if (m.rejected >= 10) {
+            if (m.rejected >= MAX_REJECTED) {
                 items.remove(m)
-                FLog.w("telegram", "Telegram отверг сообщение 10 раз подряд, оно удалено: $msg")
+                FLog.w("telegram", "Telegram отверг сообщение $MAX_REJECTED раза подряд, оно удалено: $msg")
             }
             saveLocked()
         }

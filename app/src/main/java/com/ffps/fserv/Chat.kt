@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /**
  * Разговор с ИИ (шаг chat и проверка на вкладке «Чат»): чистая логика без обращения к сети и устройству.
- * Собирает инструкцию модели из общих правил и темы, формирует тела запросов Gemini и Groq и разбирает ответы.
+ * Собирает инструкцию модели из общих правил и темы, формирует тело запроса в формате OpenAI и разбирает ответы.
  * Модель отвечает JSON-объектом {reply, alert, end}: реплика для озвучивания, признак тревоги и признак конца разговора.
  */
 object Chat {
@@ -26,8 +26,10 @@ object Chat {
     class Msg(val role: String, val text: String) // role: user или assistant
     class Reply(val text: String, val alert: Boolean, val end: Boolean)
 
-    fun systemPrompt(rules: String, topic: String): String =
-        rules.trim().ifEmpty { DEFAULT_RULES } + "\n\nТема разговора: " + topic.trim().ifEmpty { "свободная беседа" } + "\n\n" + FORMAT
+    /** [context] — дополнительные сведения для модели (дата, время, погода); пусто — без них. */
+    fun systemPrompt(rules: String, topic: String, context: String = ""): String =
+        rules.trim().ifEmpty { DEFAULT_RULES } + (if (context.isBlank()) "" else "\n\n" + context.trim()) +
+            "\n\nТема разговора: " + topic.trim().ifEmpty { "свободная беседа" } + "\n\n" + FORMAT
 
     /** История для запроса: начинается с реплики пользователя (модели Gemini этого требуют) и не длиннее [MAX_HISTORY]. */
     fun prepare(history: List<Msg>): List<Msg> {
@@ -36,46 +38,31 @@ object Chat {
         return if (h.isEmpty()) listOf(Msg("user", "Начни разговор.")) else h
     }
 
-    fun geminiBody(system: String, history: List<Msg>, thinkingOff: Boolean): JSONObject {
-        val contents = JSONArray()
-        for (m in prepare(history)) {
-            contents.put(JSONObject().put("role", if (m.role == "assistant") "model" else "user")
-                .put("parts", JSONArray().put(JSONObject().put("text", m.text))))
-        }
-        val gen = JSONObject().put("maxOutputTokens", MAX_TOKENS).put("temperature", 0.7).put("responseMimeType", "application/json")
-        if (thinkingOff) gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
-        return JSONObject()
-            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-            .put("contents", contents)
-            .put("generationConfig", gen)
-    }
-
-    fun groqBody(model: String, system: String, history: List<Msg>): JSONObject {
+    /** Тело запроса `/chat/completions`; [json] включает режим JSON-ответа, [reasoningEffort] (low…high) задаётся только моделям, которые его знают. */
+    fun openAiBody(model: String, system: String, history: List<Msg>, json: Boolean = true, reasoningEffort: String? = null): JSONObject {
         val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", system))
         for (m in prepare(history)) msgs.put(JSONObject().put("role", m.role).put("content", m.text))
-        return JSONObject().put("model", model).put("messages", msgs).put("max_tokens", MAX_TOKENS).put("temperature", 0.7)
-            .put("response_format", JSONObject().put("type", "json_object"))
+        val o = JSONObject().put("model", model).put("messages", msgs).put("max_tokens", MAX_TOKENS).put("temperature", 0.7)
+        if (json) o.put("response_format", JSONObject().put("type", "json_object"))
+        if (reasoningEffort != null) o.put("reasoning_effort", reasoningEffort)
+        return o
     }
 
-    /** Текст ответа Gemini; IllegalStateException с понятной причиной, если текста нет. */
-    fun geminiText(resp: String): String {
+    fun openAiText(resp: String): String {
         val j = JSONObject(resp)
-        val c = j.optJSONArray("candidates")?.optJSONObject(0)
-        val parts = c?.optJSONObject("content")?.optJSONArray("parts")
-        val sb = StringBuilder()
-        if (parts != null) for (i in 0 until parts.length()) sb.append(parts.optJSONObject(i)?.optString("text") ?: "")
-        if (sb.isBlank()) {
-            val block = j.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty()
-            val fin = c?.optString("finishReason").orEmpty()
-            throw IllegalStateException("модель не вернула текст" + if (block.isNotEmpty()) " (запрос заблокирован: $block)" else if (fin.isNotEmpty()) " (причина: $fin)" else "")
+        val c = j.optJSONArray("choices")?.optJSONObject(0)
+        val t = c?.optJSONObject("message")?.optString("content").orEmpty()
+        if (t.isBlank()) {
+            val fin = c?.optString("finish_reason").orEmpty()
+            throw IllegalStateException("модель не вернула текст" + if (fin.isNotEmpty()) " (причина: $fin)" else "")
         }
-        return sb.toString()
+        return t
     }
 
-    fun groqText(resp: String): String {
-        val t = JSONObject(resp).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
-        if (t.isBlank()) throw IllegalStateException("модель не вернула текст")
-        return t
+    /** Имена моделей из ответа `/models` (поле data[].id), без префикса «models/», по алфавиту. */
+    fun parseModels(resp: String): List<String> {
+        val a = JSONObject(resp).optJSONArray("data")
+        return (0 until (a?.length() ?: 0)).mapNotNull { a!!.optJSONObject(it)?.optString("id")?.removePrefix("models/")?.takeIf { s -> s.isNotEmpty() } }.distinct().sorted()
     }
 
     /** Разбор ответа модели: JSON {reply, alert, end}; если JSON не получился, весь текст считается репликой. */

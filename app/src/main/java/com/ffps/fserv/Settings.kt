@@ -82,31 +82,48 @@ object Settings {
 
     // ---------- LLM и вкладка «Чат» ----------
 
-    val LLM_PROVIDERS = listOf("gemini", "groq")
-    private val LLM_DEFAULT_MODEL = mapOf("gemini" to "gemini-2.5-flash", "groq" to "llama-3.3-70b-versatile")
+    /** Пресеты провайдера: groq и gemini подставляют адрес и модель, custom — любой сервис с API, совместимым с OpenAI. Ключи и адреса хранятся отдельно для каждого пресета. */
+    val LLM_PRESETS = listOf("groq", "gemini", "custom")
+    val LLM_DEFAULT_URL = mapOf("groq" to "https://api.groq.com/openai/v1", "gemini" to "https://generativelanguage.googleapis.com/v1beta/openai", "custom" to "")
+    val LLM_DEFAULT_MODEL = mapOf("groq" to "openai/gpt-oss-120b", "gemini" to "gemini-3.1-flash-lite", "custom" to "")
 
-    @get:Synchronized val llmProvider: String get() = o.optJSONObject("llm")?.optString("provider")?.takeIf { it in LLM_PROVIDERS } ?: "gemini"
+    @get:Synchronized val llmPreset: String get() = o.optJSONObject("llm")?.optString("preset")?.takeIf { it in LLM_PRESETS } ?: "groq"
     @get:Synchronized val llmTimeoutSec: Int get() = (o.optJSONObject("llm")?.optInt("timeoutSec", 15) ?: 15).coerceIn(3, 60)
 
     @Synchronized
-    fun llmKey(provider: String): String = o.optJSONObject("llm")?.optJSONObject(provider)?.optString("key") ?: ""
+    fun llmKey(preset: String): String = o.optJSONObject("llm")?.optJSONObject(preset)?.optString("key") ?: ""
 
     @Synchronized
-    fun llmModel(provider: String): String =
-        o.optJSONObject("llm")?.optJSONObject(provider)?.optString("model")?.trim()?.ifEmpty { null } ?: LLM_DEFAULT_MODEL.getValue(provider)
+    fun llmUrl(preset: String): String =
+        (o.optJSONObject("llm")?.optJSONObject(preset)?.optString("url")?.trim()?.ifEmpty { null } ?: LLM_DEFAULT_URL.getValue(preset)).trimEnd('/')
+
+    @Synchronized
+    fun llmModel(preset: String): String =
+        o.optJSONObject("llm")?.optJSONObject(preset)?.optString("model")?.trim()?.ifEmpty { null } ?: LLM_DEFAULT_MODEL.getValue(preset)
 
     /** Вкладка «Чат»: rules — общие правила для модели (пусто = встроенные), topics — темы разговора (имя → что обсудить). */
     @Synchronized
     fun chat(): JSONObject = JSONObject((o.optJSONObject("chat") ?: JSONObject()).toString())
 
     private fun llmPublic(): JSONObject {
-        val r = obj("provider" to llmProvider, "timeoutSec" to llmTimeoutSec)
-        for (p in LLM_PROVIDERS) {
+        val r = obj("preset" to llmPreset, "timeoutSec" to llmTimeoutSec)
+        val presets = JSONObject()
+        val defaults = JSONObject()
+        for (p in LLM_PRESETS) {
             val k = llmKey(p)
-            r.put(p, obj("keySet" to k.isNotEmpty(), "keyHint" to if (k.length > 8) k.take(3) + "…" + k.takeLast(3) else "", "model" to llmModel(p)))
+            presets.put(p, obj("url" to llmUrl(p), "keySet" to k.isNotEmpty(), "keyHint" to if (k.length > 8) k.take(3) + "…" + k.takeLast(3) else "", "model" to llmModel(p)))
+            defaults.put(p, obj("url" to LLM_DEFAULT_URL.getValue(p), "model" to LLM_DEFAULT_MODEL.getValue(p)))
         }
-        return r
+        return r.put("presets", presets).put("defaults", defaults)
     }
+
+    // ---------- Погода ----------
+
+    /** Город для погоды: название или «широта, долгота»; пусто — погода не нужна. */
+    @get:Synchronized val weatherCity: String get() = o.optJSONObject("weather")?.optString("city")?.trim() ?: ""
+
+    /** Период обновления погоды, минут; 0 — погода выключена (не запрашивается, не показывается на киоске, не попадает в чат). */
+    @get:Synchronized val weatherEveryMin: Int get() = (o.optJSONObject("weather")?.optInt("everyMin", 60) ?: 60).coerceIn(0, 1440)
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
@@ -170,7 +187,7 @@ object Settings {
     @Synchronized
     fun allProxies(): List<ProxyCfg> = listOfNotNull(proxyCfg("test"))
 
-    val PURPOSES = listOf("telegram", "llm", "updates", "stt")
+    val PURPOSES = listOf("telegram", "llm", "updates", "stt", "weather")
 
     /** Настройки заданы: без пароля веб-интерфейс не запускается. */
     val isConfigured: Boolean get() = password.isNotEmpty()
@@ -226,16 +243,21 @@ object Settings {
                 "telegram" to (p?.optBoolean("telegram") ?: false),
                 "llm" to (p?.optBoolean("llm") ?: false),
                 "updates" to (p?.optBoolean("updates") ?: false),
-                "stt" to (p?.optBoolean("stt") ?: false)
+                "stt" to (p?.optBoolean("stt") ?: false),
+                "weather" to (p?.optBoolean("weather") ?: false)
             )
         },
         "update" to obj("repo" to updateRepo, "cron" to updateCheckCron),
         "voice" to voice(),
         "zones" to zones(),
         "llm" to llmPublic(),
+        "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
+
+    /** Взводится при изменении города или периода погоды: Weather обновит данные сразу. */
+    @Volatile var weatherChanged = false
 
     class Result(val errors: List<String>, val restartRequired: Boolean)
 
@@ -283,12 +305,18 @@ object Settings {
             }
         }
         patch.optJSONObject("llm")?.let { l ->
-            if (l.has("provider") && l.optString("provider") !in LLM_PROVIDERS) errors.add("llm.provider: gemini или groq")
+            if (l.has("preset") && l.optString("preset") !in LLM_PRESETS) errors.add("llm.preset: groq, gemini или custom")
             if (l.has("timeoutSec") && l.optInt("timeoutSec", -1) !in 3..60) errors.add("llm.timeoutSec: от 3 до 60 секунд")
-            for (p in LLM_PROVIDERS) l.optJSONObject(p)?.let { x ->
+            for (p in LLM_PRESETS) l.optJSONObject(p)?.let { x ->
                 if (x.optString("key").isNotEmpty() && !Regex("""\S{8,300}""").matches(x.optString("key").trim())) errors.add("llm.$p.key: ключ без пробелов, 8–300 знаков")
-                if (x.has("model") && x.optString("model").isNotBlank() && !Regex("""[\w.:/-]{1,80}""").matches(x.optString("model").trim())) errors.add("llm.$p.model: имя модели, например ${LLM_DEFAULT_MODEL.getValue(p)}")
+                if (x.has("url") && x.optString("url").isNotBlank() && !Regex("""https?://[^\s/?#]+[^\s?#]*""").matches(x.optString("url").trim())) errors.add("llm.$p.url: адрес вида https://api.example.com/v1")
+                if (x.has("model") && x.optString("model").isNotBlank() && !Regex("""[\w.:/-]{1,80}""").matches(x.optString("model").trim())) errors.add("llm.$p.model: имя модели, например ${LLM_DEFAULT_MODEL.getValue("groq")}")
             }
+        }
+        patch.optJSONObject("weather")?.let { w ->
+            if (w.has("city") && w.optString("city").length > 80) errors.add("weather.city: не длиннее 80 знаков")
+            if (w.has("city") && WeatherText.parseCoords(w.optString("city")) == null && Regex("""[-\d.,;\s]+""").matches(w.optString("city")) && w.optString("city").isNotBlank()) errors.add("weather.city: координаты вида 56.84, 60.61 (широта от -90 до 90, долгота от -180 до 180)")
+            if (w.has("everyMin") && w.optInt("everyMin", -1) !in 0..1440) errors.add("weather.everyMin: минуты от 0 до 1440 (0 — выключено)")
         }
         patch.optJSONObject("chat")?.let { c ->
             if (c.optString("rules").length > 4000) errors.add("chat.rules: не длиннее 4000 знаков")
@@ -361,14 +389,23 @@ object Settings {
         }
         patch.optJSONObject("llm")?.let { l ->
             val n = JSONObject((o.optJSONObject("llm") ?: JSONObject()).toString())
-            if (l.has("provider")) n.put("provider", l.optString("provider"))
+            if (l.has("preset")) n.put("preset", l.optString("preset"))
             if (l.has("timeoutSec")) n.put("timeoutSec", l.optInt("timeoutSec"))
-            for (p in LLM_PROVIDERS) l.optJSONObject(p)?.let { x ->
+            for (p in LLM_PRESETS) l.optJSONObject(p)?.let { x ->
                 val pn = n.optJSONObject(p) ?: JSONObject().also { n.put(p, it) }
+                if (x.has("url")) pn.put("url", x.optString("url").trim())
                 if (x.has("model")) pn.put("model", x.optString("model").trim())
                 if (x.optString("key").isNotEmpty()) { pn.put("key", x.optString("key").trim()); FLog.addSecret(x.optString("key").trim()) } // пустой ключ — «не менять»
+                if (x.optBoolean("clearKey")) pn.remove("key")
             }
             o.put("llm", n)
+        }
+        patch.optJSONObject("weather")?.let { w ->
+            val n = JSONObject((o.optJSONObject("weather") ?: JSONObject()).toString())
+            if (w.has("city")) n.put("city", w.optString("city").trim())
+            if (w.has("everyMin")) n.put("everyMin", w.optInt("everyMin"))
+            o.put("weather", n)
+            weatherChanged = true
         }
         // темы и правила чата заменяются целиком: пропущенная тема считается удалённой
         patch.optJSONObject("chat")?.let { c ->
