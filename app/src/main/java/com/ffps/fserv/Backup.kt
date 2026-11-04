@@ -136,6 +136,7 @@ object Backup {
             }
             TaskStore.replaceAll(tasks)
             Settings.replaceAll(settings)
+            Sessions.clear() // пароль в копии может быть другим
             TaskStore.invalidate()
         }
     }

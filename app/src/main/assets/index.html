@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fServe</title>
+<script>if (location.pathname.replace(/\/+$/, "") === "/phone") document.documentElement.classList.add("phone");</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20120%20120'%3E%3Cdefs%3E%3ClinearGradient%20id='g'%20x1='0'%20y1='0'%20x2='1'%20y2='1'%3E%3Cstop%20offset='0'%20stop-color='%23ff9a1f'/%3E%3Cstop%20offset='1'%20stop-color='%23d81b60'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width='120'%20height='120'%20rx='26'%20fill='url%28%23g%29'/%3E%3Cellipse%20cx='60'%20cy='60'%20rx='36'%20ry='32'%20fill='none'%20stroke='%23FFFFFF'%20stroke-width='8'%20/%3E%3Cellipse%20cx='49'%20cy='56'%20rx='6'%20ry='10'%20fill='%23FFFFFF'%20/%3E%3Cellipse%20cx='71'%20cy='56'%20rx='6'%20ry='10'%20fill='%23FFFFFF'%20/%3E%3C/svg%3E">
 <style>
   :root { --bg:#f5f6fa; --panel:#ffffff; --line:#e2e5ee; --text:#1c2030; --dim:#69708a; --acc:#d81b60; --acc-d:#ad1457;
@@ -14,6 +15,7 @@
   header h1 { margin:0; font-size:19px; font-weight:650; letter-spacing:.01em; }
   header svg { width:30px; height:30px; flex:none; }
   header .ver { color:var(--dim); font-size:13px; }
+  header #logout { margin-left:auto; }
   nav { display:flex; gap:2px; flex-wrap:wrap; padding:0 20px; background:var(--panel); border-bottom:1px solid var(--line); }
   nav a { background:transparent; color:var(--dim); border-bottom:3px solid transparent; padding:11px 14px 9px; cursor:pointer; font:inherit; text-decoration:none; }
   nav a:hover { color:var(--text); }
@@ -90,6 +92,7 @@
   <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><ellipse cx="60" cy="60" rx="36" ry="32" fill="none" stroke="#FFFFFF" stroke-width="8" /><ellipse cx="49" cy="56" rx="6" ry="10" fill="#FFFFFF" /><ellipse cx="71" cy="56" rx="6" ry="10" fill="#FFFFFF" /></svg>
   <h1>fServe</h1><span class="ver" id="ver"></span>
   <span class="ver" id="beat"></span>
+  <button class="ib" id="logout" title="Выйти" aria-label="Выйти"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
 </header>
 <nav id="tabs">
   <a data-t="status" href="#status" class="on">Состояние</a>
@@ -128,6 +131,21 @@
     .clb.green { background:#2e7d32; }
     .clb.red { background:#c62828; }
     .clb.warn { background:#ef6c00; }
+    /* режим /phone: только видеотелефон на весь экран */
+    html.phone header, html.phone nav, html.phone #call > h2, html.phone #call > .f, html.phone #call > .hint:not(#clNote), html.phone #call > .row, html.phone #clPMsg, html.phone #clParams { display:none !important; }
+    html.phone body { background:#000; }
+    html.phone main { max-width:none; margin:0; padding:0; }
+    html.phone section#call { padding:0; border:0; border-radius:0; box-shadow:none; background:#000; }
+    html.phone .clbox { position:fixed; left:0; top:0; width:100%; height:100%; max-width:none; aspect-ratio:auto; border-radius:0; }
+    html.phone .clstatus { top:calc(10px + env(safe-area-inset-top)); font-size:15px; }
+    html.phone .clbtns { left:50%; transform:translateX(-50%); bottom:calc(22px + env(safe-area-inset-bottom)); gap:14px; }
+    html.phone .clb { width:58px; height:58px; }
+    html.phone .clb svg { width:26px; height:26px; }
+    html.phone #clLocal { bottom:calc(100px + env(safe-area-inset-bottom)); }
+    html.phone #clMsg, html.phone #clNote { position:fixed; left:12px; right:12px; bottom:calc(92px + env(safe-area-inset-bottom)); z-index:5; margin:0; padding:6px 10px; border-radius:8px; background:rgba(0,0,0,.65); color:#fff; text-align:center; }
+    html.phone #clNote { bottom:auto; top:calc(44px + env(safe-area-inset-top)); }
+    html.phone #clMsg:empty { display:none; }
+    html.phone #clMsg.ok { color:#a5d6a7; } html.phone #clMsg.err { color:#ef9a9a; }
   </style>
   <h2>Звонок</h2>
   <p class="hint" id="clNote" style="display:none"></p>
@@ -143,7 +161,7 @@
     <video id="clLocal" autoplay playsinline muted></video>
   </div>
   <div class="msg" id="clMsg"></div>
-  <h2 style="margin-top:22px">Параметры звонка</h2>
+  <h2 style="margin-top:22px" id="clParams">Параметры звонка</h2>
   <div class="f">
     <label for="clAdminRes" title="Эта страница: камера компьютера или телефона, с которого вы звоните">Камера звонящего</label><select id="clAdminRes" title="Эта страница: камера компьютера или телефона, с которого вы звоните"></select>
     <label for="clDeviceRes">Камера устройства</label><select id="clDeviceRes"></select>
@@ -457,6 +475,14 @@
 
 <script>
 "use strict";
+const PHONE = document.documentElement.classList.contains("phone");
+// сессия закончилась (или пароль сменили): любой запрос вне страницы входа ведёт на форму входа
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...a) => {
+  const r = await _fetch(...a);
+  if (r.status === 401) location.href = "/login?next=" + encodeURIComponent(location.pathname + location.hash);
+  return r;
+};
 const $ = s => document.querySelector(s);
 const dt = s => String(s || "").replace("T", " ").replace(/(Z|[+-]\d\d:\d\d)$/, "");
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -601,11 +627,12 @@ for (const id of ["tkText"]) mkEditor(document.getElementById(id));
 // ---- вкладки ----
 let current = "status";
 function showTab(t) {
+  if (PHONE) t = "call"; // режим /phone: только звонок
   if (!document.getElementById(t) || !document.querySelector('#tabs a[data-t="' + t + '"]')) t = "status";
   current = t;
   document.querySelectorAll("#tabs a").forEach(x => x.classList.toggle("on", x.dataset.t === t));
   document.querySelectorAll("main section").forEach(x => x.classList.toggle("on", x.id === t));
-  if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
+  if (!PHONE && location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
   onTab();
 }
 document.querySelectorAll("#tabs a").forEach(b => b.onclick = e => {
@@ -1148,7 +1175,13 @@ function clError(e) {
   if (e && e.name === "NotReadableError") return "камера или микрофон заняты другой программой";
   return (e && e.message) || String(e);
 }
+// экран телефона не гаснет во время звонка (нужен безопасный контекст, то есть HTTPS)
+let clWake = null;
+async function clWakeOn() { try { if (navigator.wakeLock && !clWake) { clWake = await navigator.wakeLock.request("screen"); clWake.addEventListener("release", () => { clWake = null; }); } } catch (e) {} }
+function clWakeOff() { try { if (clWake) clWake.release(); } catch (e) {} clWake = null; }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && CL.id) clWakeOn(); });
 function clCleanup() {
+  clWakeOff();
   clearInterval(CL.pingTimer); clearInterval(CL.tickTimer); CL.pingTimer = CL.tickTimer = null;
   try { if (CL.stream) CL.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
   try { if (CL.pc) CL.pc.close(); } catch (e) {}
@@ -1194,6 +1227,7 @@ async function clStart(force) {
     CL.id = j.id;
     await pc.setRemoteDescription({type: "answer", sdp: j.sdp});
     CL.t0 = Date.now();
+    clWakeOn();
     CL.pingTimer = setInterval(clPing, 3000);
     CL.tickTimer = setInterval(() => {
       const s = Math.floor((Date.now() - CL.t0) / 1000);
@@ -1220,6 +1254,7 @@ function clFinish(reason, deviceKnows) {
   if (id && !deviceKnows) fetch("/api/call/end?id=" + encodeURIComponent(id), {method: "POST"}).catch(() => {});
   clCleanup(); clStatus("Звонок завершён"); say("#clMsg", "звонок завершён: " + reason, true); clRender(); loadCall();
 }
+$("#logout").onclick = async () => { try { await _fetch("/api/logout", {method: "POST"}); } catch (e) {} location.href = "/login"; };
 $("#clCall").onclick = () => { if (clInCall()) clFinish("вы повесили трубку", false); else clStart(false); };
 $("#clMute").onclick = () => {
   CL.muted = !CL.muted;

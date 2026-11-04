@@ -172,7 +172,7 @@ class ServerService : Service() {
         Thread({
             try {
                 val factory = Https.socketFactory(applicationContext)
-                val s = WebServer(applicationContext, port)
+                val s = WebServer(applicationContext, port, secure = true)
                 s.makeSecure(factory, null)
                 s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                 synchronized(this) { httpsServer = s }

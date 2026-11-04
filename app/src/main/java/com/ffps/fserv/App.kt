@@ -10,6 +10,7 @@ class App : Application() {
         FLog.init(filesDir)
         installCrashHandler()
         Settings.init(this)
+        Sessions.init(java.io.File(filesDir, "sessions.json"))
         TaskStore.init(this)
         FLog.minLevel = Settings.logLevel
         FLog.addSecret(Settings.password)

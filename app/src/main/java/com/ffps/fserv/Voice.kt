@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import org.json.JSONObject
+import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -24,6 +25,10 @@ object Voice {
     private val waiting = ConcurrentHashMap<String, CountDownLatch>()
     private val lock = Any()
     private var counter = 0
+    private val startedAt = ConcurrentHashMap<String, Long>() // номер фразы → когда движок начал её произносить (для замера задержки)
+    @Volatile private var speaking = 0 // сколько фраз сейчас произносится
+    @Volatile private var lastUse = 0L // когда синтезатор в последний раз работал (речь или прогрев)
+    private val warming = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun init(ctx: Context) {
         app = ctx.applicationContext
@@ -55,8 +60,9 @@ object Voice {
                     return "синтезатор речи недоступен (на устройстве не установлен движок TextToSpeech)"
                 }
                 tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) {}
+                    override fun onStart(id: String?) { id?.let { startedAt[it] = System.currentTimeMillis() } }
                     override fun onDone(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
+                    override fun onStop(id: String?, interrupted: Boolean) { id?.let { waiting.remove(it)?.countDown() } }
                     @Deprecated("Deprecated in Java")
                     override fun onError(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
                     override fun onError(id: String?, code: Int) { id?.let { waiting.remove(it)?.countDown() } }
@@ -88,9 +94,22 @@ object Voice {
      * речи и обрывается по [cancel]). Возвращает текст ошибки или null.
      */
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
+        speaking++
+        try {
+            return speakInner(text, volumePct, cfg, cancel)
+        } finally {
+            speaking--
+            lastUse = System.currentTimeMillis()
+        }
+    }
+
+    private fun speakInner(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
+        val t0 = System.currentTimeMillis()
         ensure()?.let { return it }
         val t = tts ?: return "синтезатор не готов"
         apply(t, cfg)?.let { return it }
+        val prepMs = System.currentTimeMillis() - t0
+        var firstDelay = -1L
         if (volumePct != null) Audio.setVolume(app, volumePct)
         val max = try { TextToSpeech.getMaxSpeechInputLength() } catch (e: Throwable) { 3900 }
         val rnd = java.util.Random()
@@ -130,6 +149,7 @@ object Voice {
                 val latch = CountDownLatch(1)
                 waiting[id] = latch
                 val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC) }
+                val tCall = System.currentTimeMillis()
                 if (t.speak(part, TextToSpeech.QUEUE_FLUSH, params, id) != TextToSpeech.SUCCESS) {
                     waiting.remove(id)
                     return "синтезатор отказался говорить"
@@ -139,6 +159,11 @@ object Voice {
                     if (cancel()) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return null }
                     if (System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return "речь не закончилась за 5 минут" }
                 }
+                val st = startedAt.remove(id)
+                if (firstDelay < 0 && st != null) {
+                    firstDelay = st - tCall
+                    FLog.d("voice", "задержка речи: подготовка синтезатора $prepMs мс, от команды до начала звука $firstDelay мс")
+                }
             }
         }
         return null
@@ -146,6 +171,45 @@ object Voice {
 
     fun stop() {
         try { tts?.stop() } catch (e: Exception) {}
+    }
+
+    /**
+     * Прогрев: после долгого простоя движок речи (процесс Google TTS или его голос) выгружается, и первая фраза начинается с паузой
+     * в несколько секунд. Беззвучный синтез короткой фразы в файл удерживает движок и голос в памяти. Выполняется, только если
+     * синтезатор простаивал не меньше [idleMs] и сейчас ничего не говорит. Любой сбой (нет сети для сетевого голоса и т. п.) только пишется в лог.
+     */
+    fun warmIfIdle(idleMs: Long, reason: String) {
+        try {
+            if (!::app.isInitialized || speaking > 0) return
+            if (System.currentTimeMillis() - lastUse < idleMs) return
+            if (!warming.compareAndSet(false, true)) return
+            try { warm(reason) } finally { warming.set(false) }
+        } catch (e: Throwable) {
+            FLog.d("voice", "прогрев ($reason) не удался: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun warm(reason: String) {
+        val t0 = System.currentTimeMillis()
+        ensure()?.let { FLog.d("voice", "прогрев ($reason): $it"); return }
+        val t = tts ?: return
+        apply(t, Settings.voice())?.let { FLog.d("voice", "прогрев ($reason): $it"); return }
+        val f = File(app.cacheDir, "tts-warm.wav")
+        val id: String
+        synchronized(lock) { id = "w${++counter}" }
+        val latch = CountDownLatch(1)
+        waiting[id] = latch
+        if (t.synthesizeToFile("а", Bundle(), f, id) != TextToSpeech.SUCCESS) {
+            waiting.remove(id)
+            FLog.d("voice", "прогрев ($reason): синтезатор отказался работать")
+            return
+        }
+        val done = latch.await(20, TimeUnit.SECONDS)
+        if (!done) waiting.remove(id)
+        startedAt.remove(id)
+        f.delete()
+        lastUse = System.currentTimeMillis()
+        FLog.d("voice", "прогрев ($reason): ${lastUse - t0} мс" + if (done) "" else " (синтезатор не ответил за 20 с)")
     }
 
     fun info(cfg: JSONObject?): JSONObject {

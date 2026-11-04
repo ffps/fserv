@@ -86,6 +86,18 @@ object TaskEngine {
         }
     }
 
+    private fun hasVoiceStep(node: Any?): Boolean = when (node) {
+        is JSONArray -> (0 until node.length()).any { hasVoiceStep(node.opt(it)) }
+        is JSONObject -> node.has("say") || node.has("ask") || listOf("then", "else", "do", "background", "steps").any { hasVoiceStep(node.opt(it)) }
+        else -> false
+    }
+
+    /** Есть ли включённые задачи с речью (say, ask): ради них синтезатор прогревается (см. Voice.warmIfIdle). */
+    fun usesVoice(): Boolean {
+        val tasks = config().optJSONArray("tasks") ?: return false
+        return (0 until tasks.length()).any { i -> tasks.optJSONObject(i)?.let { it.optBoolean("enabled", true) && hasVoiceStep(it.opt("steps")) } == true }
+    }
+
     /** Если в задачах есть ask, держит модель распознавания речи в памяти; иначе позволяет выгрузить. Вызывать при старте и после правки задач. */
     fun refreshStt() {
         try {
@@ -234,6 +246,8 @@ object TaskEngine {
         val srcText = if (req.source == "cron") "по расписанию" else "вручную"
         log(run, "", "запуск $srcText${if (req.dry) " (пробный: без звука, камеры и Telegram)" else ""}, timeout ${Dur.human(timeout)}")
         FLog.i("task", "задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
+        // синтезатор мог выгрузиться за время простоя: прогреваем его, пока идут первые шаги задачи
+        if (!req.dry && hasVoiceStep(task.opt("steps"))) Thread { Voice.warmIfIdle(60_000, "старт задачи") }.also { it.isDaemon = true }.start()
         try {
             execSteps(run, task.optJSONArray("steps") ?: JSONArray(), "")
             info.status = "ok"

@@ -15,6 +15,7 @@ class Scheduler(private val ctx: Context) {
     private var exec: ScheduledExecutorService? = null
     private val parsed = HashMap<String, Cron>()
     private val bad = HashSet<String>()
+    private var lastWarmCheck = 0L
 
     @Synchronized
     fun start() {
@@ -50,6 +51,11 @@ class Scheduler(private val ctx: Context) {
             }
             return
         }
+        if (!Call.active && System.currentTimeMillis() - lastWarmCheck >= 60_000) {
+            lastWarmCheck = System.currentTimeMillis()
+            // если синтезатор простаивал 8 минут, прогреваем синтезатор, пока есть включённые задачи с речью
+            if (TaskEngine.usesVoice()) Thread { Voice.warmIfIdle(WARM_IDLE_MS, "таймер") }.also { it.isDaemon = true }.start()
+        }
         if (due("updateCheck", Settings.updateCheckCron, minute)) {
             Settings.setLastFired("updateCheck", minute)
             Thread { Updater.scheduledCheck() }.start()
@@ -74,5 +80,9 @@ class Scheduler(private val ctx: Context) {
         }
         val cal = Calendar.getInstance().apply { timeInMillis = minute * 60000 }
         return cron.matches(cal)
+    }
+
+    private companion object {
+        const val WARM_IDLE_MS = 8 * 60_000L // проверка раз в минуту: движок трогается не реже, чем раз в ~9 минут (пауза появлялась после 15 минут простоя)
     }
 }

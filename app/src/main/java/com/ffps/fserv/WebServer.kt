@@ -19,10 +19,11 @@ import java.util.TimeZone
  * Встроенный веб-сервер: страница управления, JSON API и киоск-страница.
  *
  * Без пароля доступны только /health (для мониторинга) и /kiosk с самого устройства (127.0.0.1).
- * Остальное требует HTTP Basic (логин admin, пароль из настроек).
+ * Остальное требует входа: форма /login (только пароль из настроек) и cookie-сессия на год; для скриптов принимается и HTTP Basic (логин admin).
  * Все записи идут методом POST с телом в UTF-8; ответы JSON с отступами.
  */
-class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
+class WebServer(private val ctx: Context, port: Int, private val secure: Boolean = false) : NanoHTTPD(port) {
+    private val cookieName = "fs_$port" // cookie не различают порты: у http- и https-сервера имена разные
     @Volatile private var sayStop = false
     @Volatile private var sttStop = false
 
@@ -47,15 +48,21 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         val post = s.method == Method.POST
 
         if (get && uri == "/health") return health()
+        if (get && uri == "/login") {
+            if (authorized(s)) return redirect("/")
+            return text(Response.Status.OK, "text/html", defaultHtml("login"))
+        }
+        if (post && uri == "/api/login") return login(s)
+        if (post && uri == "/api/logout") return logout(s)
 
         val ip = s.remoteIpAddress ?: ""
         val loopback = ip == "127.0.0.1" || ip == "::1" || ip == "0:0:0:0:0:0:0:1"
         if (get && uri == "/kiosk" && loopback) return page("kiosk", false)
 
-        if (!authorized(s)) return unauthorized(ip)
+        if (!authorized(s)) return unauthorized(s, uri, ip)
 
         return when {
-            get && uri == "/" -> page("index", false)
+            get && (uri == "/" || uri == "/phone") -> page("index", false) // /phone: та же страница, переходит в режим «только видеотелефон»
             get && uri == "/default" -> page("index", true) // встроенная страница, даже если подменена
             get && uri == "/kiosk" -> page("kiosk", false)
 
@@ -388,9 +395,19 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
 
     // ---------- авторизация ----------
 
+    private fun sessionToken(s: IHTTPSession): String? {
+        val c = s.headers["cookie"] ?: return null
+        for (part in c.split(';')) {
+            val kv = part.trim()
+            if (kv.startsWith("$cookieName=")) return kv.substring(cookieName.length + 1)
+        }
+        return null
+    }
+
     private fun authorized(s: IHTTPSession): Boolean {
         if (!Settings.isConfigured) return false // пока пароль не задан, доступа нет
-        val h = s.headers["authorization"] ?: return false
+        if (Sessions.valid(sessionToken(s))) return true
+        val h = s.headers["authorization"] ?: return false // для скриптов и мониторинга
         if (!h.startsWith("Basic ", ignoreCase = true)) return false
         val decoded = try {
             String(Base64.decode(h.substring(6).trim(), Base64.DEFAULT), Charsets.UTF_8)
@@ -406,16 +423,54 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         return userOk && passOk
     }
 
-    private fun unauthorized(ip: String): Response {
+    private fun cookie(value: String, maxAgeSec: Long) =
+        "$cookieName=$value; Max-Age=$maxAgeSec; Path=/; HttpOnly; SameSite=Lax" + if (secure) "; Secure" else ""
+
+    private fun redirect(to: String): Response {
+        val r = NanoHTTPD.newFixedLengthResponse(object : Response.IStatus {
+            override fun getRequestStatus() = 303
+            override fun getDescription() = "303 See Other"
+        }, "text/plain; charset=utf-8", "")
+        r.addHeader("Location", to)
+        r.addHeader("Cache-Control", "no-store")
+        return r
+    }
+
+    private fun login(s: IHTTPSession): Response {
+        val ip = s.remoteIpAddress ?: ""
+        val pw = try { JSONObject(body(s)).optString("password") } catch (e: JSONException) { "" }
+        if (!Settings.isConfigured) return fail(Response.Status.CONFLICT, "пароль не задан: задайте его в окне настроек на устройстве")
+        if (!MessageDigest.isEqual(pw.toByteArray(), Settings.password.toByteArray())) {
+            FLog.w("web", "неверный пароль при входе, клиент $ip")
+            Thread.sleep(800) // замедляет подбор пароля
+            return fail(Response.Status.UNAUTHORIZED, "неверный пароль")
+        }
+        val token = Sessions.create()
+        FLog.i("web", "вход в веб-интерфейс, клиент $ip")
+        val r = ok("вход выполнен")
+        r.addHeader("Set-Cookie", cookie(token, Sessions.MAX_AGE_SEC))
+        return r
+    }
+
+    private fun logout(s: IHTTPSession): Response {
+        Sessions.revoke(sessionToken(s))
+        FLog.i("web", "выход из веб-интерфейса, клиент ${s.remoteIpAddress ?: ""}")
+        val r = ok("выход выполнен")
+        r.addHeader("Set-Cookie", cookie("", 0))
+        return r
+    }
+
+    private fun unauthorized(s: IHTTPSession, uri: String, ip: String): Response {
+        // браузер, открывший страницу, идёт на форму входа; API получает 401 без запроса пароля браузером
+        val wantsPage = s.method == Method.GET && !uri.startsWith("/api") && (s.headers["accept"] ?: "").contains("text/html")
+        if (wantsPage) return redirect(if (uri == "/") "/login" else "/login?next=" + java.net.URLEncoder.encode(uri, "UTF-8"))
         val now = System.currentTimeMillis()
         if (now - lastAuthWarn > 10_000) {
             lastAuthWarn = now
-            FLog.w("web", "неверный или отсутствующий пароль, клиент $ip")
+            FLog.w("web", "нет входа или неверный пароль, клиент $ip, ${s.method} $uri")
         }
         Thread.sleep(600) // замедляет подбор пароля
-        val r = text(Response.Status.UNAUTHORIZED, "text/plain", "Нужен пароль (логин admin)")
-        r.addHeader("WWW-Authenticate", "Basic realm=\"fServe\", charset=\"UTF-8\"")
-        return r
+        return json(Response.Status.UNAUTHORIZED, obj("ok" to false, "error" to "нужен вход (пароль)", "login" to "/login"))
     }
 
     // ---------- обработчики ----------
@@ -530,7 +585,7 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
     }
 
     private fun apiIndex(): JSONObject = obj(
-        "GET /health" to "состояние для мониторинга, без пароля",
+        "GET /health" to "состояние для мониторинга, без пароля; остальное требует входа (cookie после /login) или HTTP Basic admin:пароль для скриптов",
         "GET /api" to "этот список методов",
         "GET /api/info" to "версия, устройство, время, батарея, путь к файлам, питание, лог",
         "GET /api/settings" to "настройки без секретов (токен и пароли не отдаются)",
@@ -603,7 +658,11 @@ class WebServer(private val ctx: Context, port: Int) : NanoHTTPD(port) {
         "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1); пароль и порт остаются",
         "POST /api/restart" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
         "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
+        "GET /login" to "страница входа (только пароль); без пароля открыта",
+        "POST /api/login" to "вход: тело {\"password\": …}; ответ ставит cookie-сессию на год; без пароля открыт",
+        "POST /api/logout" to "выход: завершает сессию и стирает cookie; без пароля открыт",
         "GET /" to "веб-интерфейс",
+        "GET /phone" to "тот же веб-интерфейс в режиме «только видеотелефон» на весь экран (для закладки на смартфоне; звонок работает по HTTPS)",
         "GET /default" to "встроенный веб-интерфейс, даже если страница подменена",
         "GET /kiosk" to "страница киоска"
     )

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fServe: вход</title>
+<style>
+  :root { --bg:#f5f6fa; --panel:#fff; --line:#e2e5ee; --text:#1c2030; --dim:#69708a; --acc:#d81b60; --acc-d:#ad1457; --bad:#c62828; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text); font:16px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; padding:16px; }
+  form { width:100%; max-width:340px; background:var(--panel); border:1px solid var(--line); border-top:4px solid var(--acc); border-radius:10px; padding:22px 20px 20px; box-shadow:0 1px 3px rgba(20,25,50,.06); }
+  h1 { margin:0 0 16px; font-size:20px; font-weight:650; display:flex; align-items:center; gap:10px; }
+  h1 svg { width:30px; height:30px; }
+  input[type=password] { width:100%; font:inherit; padding:10px 12px; border:1px solid #cdd2e0; border-radius:6px; }
+  input[type=password]:focus { outline:2px solid #fde7ef; border-color:var(--acc); }
+  button { width:100%; margin-top:12px; font:inherit; font-weight:500; padding:10px 12px; border:1px solid var(--acc); background:var(--acc); color:#fff; border-radius:6px; cursor:pointer; }
+  button:hover { background:var(--acc-d); border-color:var(--acc-d); }
+  button:disabled { opacity:.5; cursor:wait; }
+  .msg { min-height:1.4em; margin-top:10px; color:var(--bad); font-size:14px; }
+  .u { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<form id="f" autocomplete="on">
+  <h1><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><ellipse cx="60" cy="60" rx="36" ry="32" fill="none" stroke="#FFFFFF" stroke-width="8"/><ellipse cx="49" cy="56" rx="6" ry="10" fill="#FFFFFF"/><ellipse cx="71" cy="56" rx="6" ry="10" fill="#FFFFFF"/></svg>fServe</h1>
+  <!-- имя всегда admin и не запрашивается; скрытое поле нужно менеджерам паролей браузера -->
+  <input class="u" type="text" name="username" value="admin" autocomplete="username" tabindex="-1" aria-hidden="true">
+  <input id="pw" type="password" name="password" placeholder="Пароль" autocomplete="current-password" autofocus required>
+  <button id="go" type="submit">Войти</button>
+  <div class="msg" id="msg"></div>
+</form>
+<script>
+const q = new URLSearchParams(location.search).get("next") || "/";
+const next = q.startsWith("/") && !q.startsWith("//") && !q.startsWith("/login") ? q : "/";
+document.getElementById("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const go = document.getElementById("go"), msg = document.getElementById("msg");
+  go.disabled = true; msg.textContent = "";
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: document.getElementById("pw").value})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    location.replace(next);
+  } catch (err) {
+    msg.textContent = err.message; go.disabled = false; document.getElementById("pw").select();
+  }
+});
+</script>
+</body>
+</html>

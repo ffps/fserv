@@ -342,6 +342,7 @@ object Settings {
         if (patch.has("password") && patch.optString("password").isNotEmpty() && patch.optString("password") != password) {
             o.put("password", patch.optString("password"))
             FLog.addSecret(password)
+            Sessions.clear() // со сменой пароля все выполненные входы теряют силу
         }
         save()
         return Result(emptyList(), restart)
