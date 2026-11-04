@@ -1132,7 +1132,7 @@ function clRender() {
   const note = $("#clNote");
   if (!secure) {
     const port = (st && st.httpsPort) || 8443;
-    const url = "https://" + location.hostname + ":" + port + "/#call";
+    const url = "https://" + location.hostname + ":" + port + (PHONE ? "/phone" : "/#call");
     note.style.display = ""; note.innerHTML = 'Для видеозвонка нужен защищённый адрес: откройте <a href="' + esc(url) + '">' + esc(url) + '</a>. Браузер предупредит о сертификате (он самоподписанный): согласитесь продолжить, это нужно один раз.';
   } else { note.style.display = "none"; }
   const call = $("#clCall");
