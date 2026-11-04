@@ -80,6 +80,34 @@ object Settings {
     @get:Synchronized val updateRepo: String get() = o.optJSONObject("update")?.optString("repo", "ffps/fserv") ?: "ffps/fserv"
     @get:Synchronized val updateCheckCron: String get() = o.optJSONObject("update")?.optString("cron", "0 4 * * *") ?: "0 4 * * *"
 
+    // ---------- LLM и вкладка «Чат» ----------
+
+    val LLM_PROVIDERS = listOf("gemini", "groq")
+    private val LLM_DEFAULT_MODEL = mapOf("gemini" to "gemini-2.5-flash", "groq" to "llama-3.3-70b-versatile")
+
+    @get:Synchronized val llmProvider: String get() = o.optJSONObject("llm")?.optString("provider")?.takeIf { it in LLM_PROVIDERS } ?: "gemini"
+    @get:Synchronized val llmTimeoutSec: Int get() = (o.optJSONObject("llm")?.optInt("timeoutSec", 15) ?: 15).coerceIn(3, 60)
+
+    @Synchronized
+    fun llmKey(provider: String): String = o.optJSONObject("llm")?.optJSONObject(provider)?.optString("key") ?: ""
+
+    @Synchronized
+    fun llmModel(provider: String): String =
+        o.optJSONObject("llm")?.optJSONObject(provider)?.optString("model")?.trim()?.ifEmpty { null } ?: LLM_DEFAULT_MODEL.getValue(provider)
+
+    /** Вкладка «Чат»: rules — общие правила для модели (пусто = встроенные), topics — темы разговора (имя → что обсудить). */
+    @Synchronized
+    fun chat(): JSONObject = JSONObject((o.optJSONObject("chat") ?: JSONObject()).toString())
+
+    private fun llmPublic(): JSONObject {
+        val r = obj("provider" to llmProvider, "timeoutSec" to llmTimeoutSec)
+        for (p in LLM_PROVIDERS) {
+            val k = llmKey(p)
+            r.put(p, obj("keySet" to k.isNotEmpty(), "keyHint" to if (k.length > 8) k.take(3) + "…" + k.takeLast(3) else "", "model" to llmModel(p)))
+        }
+        return r
+    }
+
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
@@ -204,6 +232,8 @@ object Settings {
         "update" to obj("repo" to updateRepo, "cron" to updateCheckCron),
         "voice" to voice(),
         "zones" to zones(),
+        "llm" to llmPublic(),
+        "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
 
@@ -250,6 +280,27 @@ object Settings {
             }
             if (t.has("chatId") && t.optString("chatId").isNotBlank() && !Regex("""-?\d+|@[A-Za-z0-9_]{4,}""").matches(t.optString("chatId").trim())) {
                 errors.add("telegram.chatId: число (для группы со знаком минус) или @имя_канала")
+            }
+        }
+        patch.optJSONObject("llm")?.let { l ->
+            if (l.has("provider") && l.optString("provider") !in LLM_PROVIDERS) errors.add("llm.provider: gemini или groq")
+            if (l.has("timeoutSec") && l.optInt("timeoutSec", -1) !in 3..60) errors.add("llm.timeoutSec: от 3 до 60 секунд")
+            for (p in LLM_PROVIDERS) l.optJSONObject(p)?.let { x ->
+                if (x.optString("key").isNotEmpty() && !Regex("""\S{8,300}""").matches(x.optString("key").trim())) errors.add("llm.$p.key: ключ без пробелов, 8–300 знаков")
+                if (x.has("model") && x.optString("model").isNotBlank() && !Regex("""[\w.:/-]{1,80}""").matches(x.optString("model").trim())) errors.add("llm.$p.model: имя модели, например ${LLM_DEFAULT_MODEL.getValue(p)}")
+            }
+        }
+        patch.optJSONObject("chat")?.let { c ->
+            if (c.optString("rules").length > 4000) errors.add("chat.rules: не длиннее 4000 знаков")
+            val t = c.optJSONObject("topics")
+            if (c.has("topics") && t == null) errors.add("chat.topics: ожидается объект имя → текст")
+            if (t != null) {
+                if (t.length() > 30) errors.add("chat.topics: не больше 30 тем")
+                for (n in t.keys()) {
+                    if (!Regex("[A-Za-z_][A-Za-z0-9_]{0,30}").matches(n)) errors.add("chat.topics: имя «$n» — латинские буквы, цифры и _")
+                    val x = t.opt(n)
+                    if (x !is String || x.isBlank() || x.length > 1000) errors.add("chat.topics.$n: текст темы от 1 до 1000 знаков")
+                }
             }
         }
         patch.optJSONObject("update")?.let { u ->
@@ -307,6 +358,24 @@ object Settings {
             if (u.has("repo")) n.put("repo", u.optString("repo").trim())
             if (u.has("cron")) n.put("cron", u.optString("cron").trim())
             o.put("update", n)
+        }
+        patch.optJSONObject("llm")?.let { l ->
+            val n = JSONObject((o.optJSONObject("llm") ?: JSONObject()).toString())
+            if (l.has("provider")) n.put("provider", l.optString("provider"))
+            if (l.has("timeoutSec")) n.put("timeoutSec", l.optInt("timeoutSec"))
+            for (p in LLM_PROVIDERS) l.optJSONObject(p)?.let { x ->
+                val pn = n.optJSONObject(p) ?: JSONObject().also { n.put(p, it) }
+                if (x.has("model")) pn.put("model", x.optString("model").trim())
+                if (x.optString("key").isNotEmpty()) { pn.put("key", x.optString("key").trim()); FLog.addSecret(x.optString("key").trim()) } // пустой ключ — «не менять»
+            }
+            o.put("llm", n)
+        }
+        // темы и правила чата заменяются целиком: пропущенная тема считается удалённой
+        patch.optJSONObject("chat")?.let { c ->
+            val n = JSONObject()
+            n.put("rules", c.optString("rules").trim())
+            n.put("topics", JSONObject((c.optJSONObject("topics") ?: JSONObject()).toString()))
+            o.put("chat", n)
         }
         patch.optJSONObject("telegram")?.let { t ->
             val n = JSONObject((o.optJSONObject("telegram") ?: JSONObject()).toString())

@@ -103,6 +103,7 @@
   <a data-t="slides" href="#slides">Слайды</a>
   <a data-t="comm" href="#comm">Связь</a>
   <a data-t="call" href="#call">Звонок</a>
+  <a data-t="chat" href="#chat">Чат</a>
   <a data-t="logs" href="#logs">Журнал</a>
   <a data-t="system" href="#system">Система</a>
 </nav>
@@ -255,7 +256,7 @@
   </div>
   <div class="msg" id="sttMsg"></div>
   <div class="row" style="margin-top:6px">
-    <label>Проверка микрофона: ответ <select id="sttKind"><option value="yesno">да или нет</option><option value="number">число</option></select></label>
+    <label>Проверка микрофона: ответ <select id="sttKind"><option value="yesno">да или нет</option><option value="number">число</option><option value="free">свободная речь</option></select></label>
     <button class="ib add" id="sttTest" title="Слушать 10 секунд"></button>
   </div>
   <div class="msg" id="sttTMsg"></div>
@@ -291,6 +292,22 @@
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
   <div class="row" style="margin-top:10px"><button class="ib del" id="obClear" title="Очистить очередь"></button></div>
+  <h2 style="margin-top:22px">Языковая модель (LLM)</h2>
+  <div class="f">
+    <label for="llProv">Провайдер</label><select id="llProv"><option value="gemini">Gemini (Google)</option><option value="groq">Groq</option></select>
+    <label for="llGKey">Ключ Gemini</label><input id="llGKey" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+    <label for="llGModel">Модель Gemini</label><input id="llGModel" list="llGList" placeholder="gemini-2.5-flash"><datalist id="llGList"></datalist>
+    <label for="llQKey">Ключ Groq</label><input id="llQKey" type="password" autocomplete="new-password" placeholder="пусто = не менять">
+    <label for="llQModel">Модель Groq</label><input id="llQModel" list="llQList" placeholder="llama-3.3-70b-versatile"><datalist id="llQList"></datalist>
+    <label for="llTmo">Таймаут запроса, с</label><input id="llTmo" type="number" min="3" max="60" placeholder="15">
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="llSave">Сохранить</button>
+    <button class="btn sec" id="llTest">Проверить</button>
+    <button class="btn sec" id="llModels">Показать модели</button>
+  </div>
+  <div class="msg" id="llMsg"></div>
+  <p class="hint">Нужна для шага <code>chat</code> (разговор с ИИ). Работает выбранный провайдер; ключ у Gemini берётся в Google AI Studio, у Groq в консоли Groq. «Проверить» и «Показать модели» используют сохранённые настройки. Список моделей подставляется в подсказки поля «Модель». Запросы идут через прокси, если для LLM стоит галочка ниже. В модель уходит только текст разговора, звук не передаётся.</p>
   <h2 style="margin-top:22px">SOCKS5-прокси</h2>
   <div class="f">
     <label for="pxHost">Адрес</label><input id="pxHost" placeholder="хост или IP">
@@ -309,6 +326,32 @@
   </div>
   <div class="msg" id="pxuMsg"></div>
   <p class="hint">Галочки сохраняются сразу. Имя сайта передаётся прокси как есть, то есть DNS-запросы выполняет он. Пароль пустой = не менять. «Проверить» использует сохранённые настройки и обращается к своему сайту через прокси независимо от галочки; любой HTTP-ответ (даже 404) означает, что связь есть. Таймаут сетевых операций задаётся на вкладке «Настройки».</p>
+</section>
+
+<section id="chat">
+  <style>
+    .chlog { min-height:120px; max-height:50vh; overflow:auto; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:8px 0; }
+    .chl { margin:4px 0; } .chl.user b { color:var(--acc-d); } .chl.assistant b { color:var(--good); }
+    .chf { color:var(--bad); font-weight:600; font-size:13px; }
+    #chTopics td { padding:4px 6px; vertical-align:top; } #chTopics textarea { width:100%; }
+  </style>
+  <h2>Чат</h2>
+  <p class="hint">Правила и темы для шага <code>chat</code> (разговор с ИИ): <code>chat grandkids for=5m</code>. Модель и ключ задаются на вкладке «Связь».</p>
+  <h2 style="font-size:15px;margin-top:16px">Общие правила для модели</h2>
+  <textarea id="chRules" rows="6" style="font-family:inherit;font-size:14px;white-space:pre-wrap"></textarea>
+  <div class="row" style="margin-top:6px"><button class="btn sec sm" id="chDef" title="Подставить встроенные правила, чтобы изменить их">Вставить встроенные</button></div>
+  <p class="hint">Пусто = встроенные правила (они видны серым в пустом поле). К ним всегда добавляется формат ответа: реплика, признак тревоги и признак конца разговора.</p>
+  <h2 style="font-size:15px;margin-top:16px">Темы</h2>
+  <table><thead><tr><th style="width:30%">Имя</th><th>О чём поговорить</th><th></th></tr></thead><tbody id="chTopics"></tbody></table>
+  <div class="row" style="margin-top:10px"><button class="ib add" id="chAdd" title="Добавить тему">+</button><button class="btn" id="chSave">Сохранить</button></div>
+  <div class="msg" id="chMsg"></div>
+  <p class="hint">Имя темы пишется в шаге (латинские буквы, цифры, _), а текст объясняет модели, о чём заговорить. Например: «Предложи поболтать о внуках и спроси, как у них дела».</p>
+  <h2 style="margin-top:22px">Проверка разговора</h2>
+  <div class="row"><label>Тема <select id="chTopic"></select></label><button class="btn sec" id="chStart">Начать заново</button></div>
+  <div class="chlog" id="chLog"></div>
+  <div class="row"><input id="chInput" placeholder="Что отвечает человек" style="flex:1;min-width:200px"><button class="btn" id="chSend">Отправить</button></div>
+  <div class="msg" id="chTMsg"></div>
+  <p class="hint">Проверка без голоса: по тексту, с сохранёнными правилами и темами. Так можно подобрать формулировки, не разговаривая с устройством.</p>
 </section>
 
 <section id="camera">
@@ -576,7 +619,7 @@ const ICO = {
   rectDel: svg('<rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/><path d="M9 10l6 4M15 10l-6 4"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd" || b.id === "chAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -641,12 +684,106 @@ document.querySelectorAll("#tabs a").forEach(b => b.onclick = e => {
 });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
+// ---- LLM (вкладка «Связь») ----
+function llFill(l) {
+  $("#llProv").value = l.provider; $("#llTmo").value = l.timeoutSec;
+  $("#llGModel").value = l.gemini.model; $("#llQModel").value = l.groq.model;
+  $("#llGKey").value = ""; $("#llQKey").value = "";
+  $("#llGKey").placeholder = l.gemini.keySet ? "задан (" + l.gemini.keyHint + "), пусто = не менять" : "не задан";
+  $("#llQKey").placeholder = l.groq.keySet ? "задан (" + l.groq.keyHint + "), пусто = не менять" : "не задан";
+}
+$("#llSave").onclick = () => run("#llMsg", async () => {
+  const l = {provider: $("#llProv").value, timeoutSec: Number($("#llTmo").value || 15), gemini: {model: $("#llGModel").value.trim()}, groq: {model: $("#llQModel").value.trim()}};
+  if ($("#llGKey").value.trim()) l.gemini.key = $("#llGKey").value.trim();
+  if ($("#llQKey").value.trim()) l.groq.key = $("#llQKey").value.trim();
+  await post("/api/settings", JSON.stringify({llm: l})); loadComm(); return "сохранено";
+});
+$("#llTest").onclick = () => run("#llMsg", async () => { say("#llMsg", "запрос к модели…", true); return (await post("/api/llm/test")).json.message; });
+$("#llModels").onclick = () => run("#llMsg", async () => {
+  const p = $("#llProv").value;
+  say("#llMsg", "запрашиваю список моделей…", true);
+  const r = (await api("/api/llm/models?provider=" + p)).json;
+  $(p === "groq" ? "#llQList" : "#llGList").innerHTML = r.models.map(m => '<option value="' + esc(m) + '">').join("");
+  return "моделей: " + r.models.length + " (они подставляются в подсказки поля «Модель»; нажмите на поле)";
+});
+
+// ---- чат: правила, темы и проверка разговора без голоса ----
+let chHist = [], chEnded = false, chBusy = false;
+function chRows(topics) {
+  const names = Object.keys(topics);
+  $("#chTopics").innerHTML = names.map(n => chRow(n, topics[n])).join("");
+}
+function chRow(n, t) {
+  return '<tr><td><input class="chn" value="' + esc(n) + '" placeholder="grandkids" style="width:100%"></td><td><textarea class="cht" rows="2" style="font-family:inherit;font-size:14px;white-space:pre-wrap">' + esc(t) + '</textarea></td>' +
+    '<td><button class="ib del" data-ch="del" title="Удалить тему">' + ICO.del + "</button></td></tr>";
+}
+function chSelect(topics) {
+  const cur = $("#chTopic").value;
+  $("#chTopic").innerHTML = '<option value="">без темы (свободная беседа)</option>' + Object.keys(topics).map(n => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
+  $("#chTopic").value = cur in topics ? cur : "";
+}
+async function loadChat() {
+  try {
+    const c = (await api("/api/settings")).json.chat || {};
+    $("#chRules").value = c.rules || ""; $("#chRules").placeholder = c.defaultRules || "";
+    $("#chRules").dataset.def = c.defaultRules || "";
+    chRows(c.topics || {}); chSelect(c.topics || {});
+  } catch (e) { say("#chMsg", e.message, false); }
+}
+function chCollect() {
+  const topics = {};
+  document.querySelectorAll("#chTopics tr").forEach(tr => {
+    const n = tr.querySelector(".chn").value.trim(), t = tr.querySelector(".cht").value.trim();
+    if (!n && !t) return;
+    if (n in topics) throw new Error("тема «" + n + "» указана дважды");
+    topics[n] = t;
+  });
+  return topics;
+}
+$("#chAdd").onclick = () => { $("#chTopics").insertAdjacentHTML("beforeend", chRow("", "")); const r = $("#chTopics").lastElementChild; r.querySelector(".chn").focus(); };
+$("#chTopics").addEventListener("click", e => { const b = e.target.closest("[data-ch=del]"); if (b) b.closest("tr").remove(); });
+$("#chDef").onclick = () => { $("#chRules").value = $("#chRules").dataset.def || ""; };
+$("#chSave").onclick = () => run("#chMsg", async () => {
+  await post("/api/settings", JSON.stringify({chat: {rules: $("#chRules").value, topics: chCollect()}}));
+  await loadChat(); return "сохранено";
+});
+function chLine(role, text, flags) {
+  const d = document.createElement("div");
+  d.className = "chl " + role;
+  d.innerHTML = "<b>" + (role === "user" ? "Человек" : "Помощник") + ":</b> " + esc(text) + (flags && flags.alert ? ' <span class="chf">⚠ тревога</span>' : "") + (flags && flags.end ? ' <span class="chf">■ конец разговора</span>' : "");
+  $("#chLog").appendChild(d); $("#chLog").scrollTop = $("#chLog").scrollHeight;
+  return d;
+}
+async function chAsk() {
+  if (chBusy) return false;
+  chBusy = true; $("#chSend").disabled = true; $("#chStart").disabled = true; say("#chTMsg", "жду ответ модели…", true);
+  try {
+    const r = (await post("/api/chat/test", JSON.stringify({topic: $("#chTopic").value, history: chHist}))).json;
+    chHist.push({role: "assistant", text: r.reply}); chLine("assistant", r.reply, r);
+    if (r.end) chEnded = true;
+    say("#chTMsg", r.provider + ", " + r.model + ", " + r.ms + " мс" + (r.end ? ". Разговор закончен: начните заново." : ""), true);
+    return true;
+  } catch (e) { say("#chTMsg", e.message, false); return false; }
+  finally { chBusy = false; $("#chSend").disabled = false; $("#chStart").disabled = false; }
+}
+$("#chStart").onclick = () => { chHist = []; chEnded = false; $("#chLog").innerHTML = ""; chAsk(); };
+async function chSend() {
+  const text = $("#chInput").value.trim();
+  if (!text || chBusy) return;
+  if (chEnded) { say("#chTMsg", "разговор закончен: нажмите «Начать заново»", false); return; }
+  chHist.push({role: "user", text}); const line = chLine("user", text); $("#chInput").value = "";
+  if (!(await chAsk())) { chHist.pop(); line.remove(); $("#chInput").value = text; }
+}
+$("#chSend").onclick = chSend;
+$("#chInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); chSend(); } });
+
 // ---- связь ----
 async function loadComm() {
   try {
     const st = (await api("/api/settings")).json;
     $("#tgChat").value = st.telegram.chatId; $("#tgToken").value = "";
     $("#tgToken").placeholder = st.telegram.tokenSet ? "задан (" + st.telegram.tokenHint + "), пусто = не менять" : "не задан";
+    llFill(st.llm);
     const p = st.proxy;
     $("#pxHost").value = p.host; $("#pxPort").value = p.port; $("#pxUser").value = p.user; $("#pxPass").value = "";
     $("#pxPass").placeholder = p.passwordSet ? "задан, пусто = не менять" : "не задан";
@@ -820,6 +957,7 @@ function onTab() {
   if (current === "photos") loadPhotos(null);
   if (current === "slides") loadSlides();
   if (current === "call") loadCall();
+  if (current === "chat") loadChat();
 }
 
 // ---- состояние ----
@@ -1049,7 +1187,7 @@ $("#sttTest").onclick = () => {
   run("#sttTMsg", async () => {
     say("#sttTMsg", "готовлю распознавание…", true);
     const ph = setInterval(async () => { try { const t = (await api("/api/stt")).json; if (t.phase === "listening") say("#sttTMsg", "слушаю до 10 секунд, говорите!", true); else if (t.phase === "loading") say("#sttTMsg", "загружаю модель в память (несколько секунд)…", true); } catch (e) {} }, 700);
-    try { const r = await post("/api/stt/test?kind=" + $("#sttKind").value + "&listen=10"); const v = r.json.value; return r.json.message + (v === null || v === undefined ? ", значение не понято" : ", значение: " + v); }
+    try { const r = await post("/api/stt/test?kind=" + $("#sttKind").value + "&listen=10"); const v = r.json.value; if ($("#sttKind").value === "free") return r.json.message; return r.json.message + (v === null || v === undefined ? ", значение не понято" : ", значение: " + v); }
     finally { clearInterval(ph); setSttBtn(false); }
   });
 };

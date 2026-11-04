@@ -240,7 +240,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             post && uri == "/api/stt/stop" -> { sttStop = true; ok("остановлено") }
             post && uri == "/api/stt/test" -> {
                 val kind = q(s, "kind") ?: "yesno"
-                require(kind == "yesno" || kind == "number") { "kind: yesno или number" }
+                require(kind == "yesno" || kind == "number" || kind == "free") { "kind: yesno, number или free (свободная речь)" }
                 val sec = (q(s, "listen")?.toIntOrNull() ?: 10).coerceIn(2, 60)
                 sttStop = false
                 try {
@@ -249,6 +249,37 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 } catch (e: IllegalStateException) {
                     fail(Response.Status.CONFLICT, e.message ?: "распознавание недоступно")
                 }
+            }
+
+            post && uri == "/api/llm/test" -> try {
+                val r = Llm.ask("Ты проверка связи. " + Chat.FORMAT, listOf(Chat.Msg("user", "Скажи «слышу вас» и больше ничего.")))
+                FLog.i("llm", "проверка связи: ${r.provider}/${r.model}, ответ за ${r.ms} мс")
+                json(Response.Status.OK, obj("ok" to true, "message" to "${r.provider}, модель ${r.model}: ответ за ${r.ms} мс: «${r.reply.text}»"))
+            } catch (e: Llm.LlmError) {
+                FLog.w("llm", "проверка связи не удалась: ${e.message}")
+                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
+            }
+            get && uri == "/api/llm/models" -> try {
+                val p = q(s, "provider") ?: Settings.llmProvider
+                require(p in Settings.LLM_PROVIDERS) { "provider: gemini или groq" }
+                json(Response.Status.OK, obj("provider" to p, "models" to arr(Llm.models(p))))
+            } catch (e: Llm.LlmError) {
+                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
+            }
+            post && uri == "/api/chat/test" -> try {
+                // проверка разговора без голоса: тело {topic, history:[{role,text}]}; сервер ничего не хранит, историю держит страница
+                val b = JSONObject(body(s))
+                val chat = Settings.chat()
+                val topicName = b.optString("topic")
+                val topic = if (topicName.isEmpty()) "" else chat.optJSONObject("topics")?.optString(topicName)
+                require(topicName.isEmpty() || !topic.isNullOrEmpty()) { "темы «$topicName» нет (сохраните её на вкладке «Чат»)" }
+                val ha = b.optJSONArray("history") ?: JSONArray()
+                val hist = (0 until ha.length()).map { i -> ha.getJSONObject(i).let { Chat.Msg(if (it.optString("role") == "assistant") "assistant" else "user", it.optString("text")) } }
+                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic ?: ""), hist)
+                json(Response.Status.OK, obj("ok" to true, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
+            } catch (e: Llm.LlmError) {
+                FLog.w("llm", "проверка чата не удалась: ${e.message}")
+                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
             }
 
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
@@ -545,7 +576,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
     /** Проверка связи: запрос к каждому из трёх адресов; через прокси, если для адреса стоит галочка, иначе напрямую. Любой HTTP-ответ означает, что связь есть. */
     private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
-        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"), "stt" to ("Модель речи (alphacephei.com)" to "https://alphacephei.com/vosk/models/"))
+        val all = listOf("telegram" to ("Telegram" to "https://api.telegram.org/"), "llm" to ("LLM (Gemini, Groq)" to "https://generativelanguage.googleapis.com/"), "updates" to ("GitHub" to "https://api.github.com/"), "stt" to ("Модель речи (alphacephei.com)" to "https://alphacephei.com/vosk/models/"))
         require(name == null || all.any { it.first == name }) { "name: telegram, llm, updates или stt" }
         val targets = all.filter { name == null || it.first == name }.map { Triple(it.first, it.second.first, it.second.second) }
         val lines = ArrayList<String>()
@@ -611,6 +642,9 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /api/telegram/outbox" to "очередь неотправленных сообщений",
         "POST /api/telegram/outbox/clear" to "очистить очередь",
         "POST /api/proxy/test" to "проверить связь: запрос к Telegram, Gemini и GitHub (через прокси, если стоит галочка, иначе напрямую); ?name=telegram|llm|updates проверяет один адрес",
+        "POST /api/llm/test" to "проверка языковой модели (Gemini или Groq по настройкам): короткий запрос, ответ и время",
+        "GET /api/llm/models" to "доступные модели провайдера; ?provider=gemini|groq (нужен сохранённый ключ)",
+        "POST /api/chat/test" to "проверка разговора без голоса: тело {\"topic\": имя темы, \"history\": [{\"role\": \"user|assistant\", \"text\": …}]}; ответ {reply, alert, end, ms}",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
@@ -639,7 +673,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
         "POST /api/stt/upload" to "установить модель из zip, загруженного с компьютера (тело запроса — файл vosk-model-small-ru-0.22.zip)",
         "POST /api/stt/delete" to "удалить модель распознавания",
-        "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number&listen=10 (секунд); возвращает услышанное и значение",
+        "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number|free (свободная речь)&listen=10 (секунд); возвращает услышанное и значение",
         "POST /api/stt/stop" to "прервать проверку микрофона",
         "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",
         "POST /api/camera/start" to "включить камеру вручную",

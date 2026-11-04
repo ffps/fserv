@@ -219,7 +219,8 @@ object Stt {
         recs[kind]?.let { return it }
         val m = loadModel()
         val t0 = System.currentTimeMillis()
-        val r = Recognizer(m, RATE.toFloat(), JSONArray(Speech.grammar(kind)).toString())
+        // free — свободная речь (для chat): без словаря; yesno и number — только слова из словаря
+        val r = if (kind == "free") Recognizer(m, RATE.toFloat()) else Recognizer(m, RATE.toFloat(), JSONArray(Speech.grammar(kind)).toString())
         FLog.d("stt", "распознаватель ($kind) собран за ${System.currentTimeMillis() - t0} мс")
         recs[kind] = r
         return r
@@ -280,6 +281,7 @@ object Stt {
 
     private const val TARGET_PEAK = 20000
     private const val MAX_GAIN = 8f
+    private const val FREE_PAUSE_MS = 1400L // пауза, после которой свободная речь считается законченной
 
     /**
      * Слушает микрофон до ответа или [maxMs]; возвращает распознанный текст (пусто, если ничего не сказано).
@@ -308,6 +310,9 @@ object Stt {
             val end = System.currentTimeMillis() + maxMs
             var text = ""
             var gain = 1f
+            val free = kind == "free"
+            val parts = ArrayList<String>() // свободная речь: готовые куски фразы
+            var lastActive = 0L
             while (System.currentTimeMillis() < end && !cancel()) {
                 val n = ar.read(buf, 0, buf.size)
                 if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
@@ -322,10 +327,21 @@ object Stt {
                 if (g > maxGain) maxGain = g
                 if (rc.acceptWaveForm(buf, n)) {
                     val t = clean(JSONObject(rc.result).optString("text"))
-                    if (t.isNotEmpty()) { text = t; break }
+                    if (t.isNotEmpty()) {
+                        if (!free) { text = t; break }
+                        parts.add(t); lastActive = System.currentTimeMillis()
+                    }
+                } else if (free && JSONObject(rc.partialResult).optString("partial").isNotBlank()) {
+                    lastActive = System.currentTimeMillis() // человек ещё говорит
                 }
+                // свободная речь заканчивается после паузы, когда что-то уже сказано
+                if (free && parts.isNotEmpty() && System.currentTimeMillis() - lastActive > FREE_PAUSE_MS) break
             }
-            if (text.isEmpty()) text = clean(JSONObject(rc.finalResult).optString("text"))
+            if (free) {
+                val tail = clean(JSONObject(rc.finalResult).optString("text"))
+                if (tail.isNotEmpty()) parts.add(tail)
+                text = parts.joinToString(" ")
+            } else if (text.isEmpty()) text = clean(JSONObject(rc.finalResult).optString("text"))
             return text
         } finally {
             phase = ""
@@ -341,6 +357,6 @@ object Stt {
     /** Проверка из веб-интерфейса: слушает [maxMs] и возвращает услышанное и разобранное значение. */
     fun test(ctx: Context, kind: String, maxMs: Long, cancel: () -> Boolean): JSONObject {
         val heard = listen(ctx, kind, maxMs, cancel)
-        return obj("heard" to heard, "value" to Speech.parse(kind, heard))
+        return obj("heard" to heard, "value" to if (kind == "free") heard.ifEmpty { null } else Speech.parse(kind, heard))
     }
 }

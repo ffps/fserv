@@ -16,6 +16,7 @@ class App : Application() {
         FLog.addSecret(Settings.password)
         FLog.addSecret(Settings.telegramToken)
         for (px in Settings.allProxies()) FLog.addSecret(px.password)
+        for (p in Settings.LLM_PROVIDERS) FLog.addSecret(Settings.llmKey(p))
         Net.init()
         CameraEngine.init(this)
         Sounds.init(this)
