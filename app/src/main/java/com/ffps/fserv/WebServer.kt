@@ -257,14 +257,14 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 json(Response.Status.OK, obj("ok" to true, "message" to "${r.provider}, модель ${r.model}: ответ за ${r.ms} мс: «${r.reply.text}»"))
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "проверка связи не удалась: ${e.message}")
-                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
+                fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
             }
             get && uri == "/api/llm/models" -> try {
                 val p = q(s, "provider") ?: Settings.llmProvider
                 require(p in Settings.LLM_PROVIDERS) { "provider: gemini или groq" }
                 json(Response.Status.OK, obj("provider" to p, "models" to arr(Llm.models(p))))
             } catch (e: Llm.LlmError) {
-                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
+                fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
             }
             post && uri == "/api/chat/test" -> try {
                 // проверка разговора без голоса: тело {topic, history:[{role,text}]}; сервер ничего не хранит, историю держит страница
@@ -279,7 +279,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 json(Response.Status.OK, obj("ok" to true, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "проверка чата не удалась: ${e.message}")
-                fail(Response.Status.BAD_GATEWAY, e.message ?: "ошибка")
+                fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")
             }
 
             get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
