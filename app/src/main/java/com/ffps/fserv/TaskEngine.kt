@@ -81,6 +81,7 @@ object TaskEngine {
             is JSONArray -> for (i in 0 until node.length()) askKinds(node.opt(i), out)
             is JSONObject -> {
                 if (node.has("ask")) out.add(node.optString("kind", "yesno"))
+                if (node.has("chat")) out.add("free")
                 for (k in listOf("then", "else", "do", "background", "steps")) askKinds(node.opt(k), out)
             }
         }
@@ -88,7 +89,7 @@ object TaskEngine {
 
     private fun hasVoiceStep(node: Any?): Boolean = when (node) {
         is JSONArray -> (0 until node.length()).any { hasVoiceStep(node.opt(it)) }
-        is JSONObject -> node.has("say") || node.has("ask") || listOf("then", "else", "do", "background", "steps").any { hasVoiceStep(node.opt(it)) }
+        is JSONObject -> node.has("say") || node.has("ask") || node.has("chat") || listOf("then", "else", "do", "background", "steps").any { hasVoiceStep(node.opt(it)) }
         else -> false
     }
 
@@ -378,6 +379,7 @@ object TaskEngine {
                 }
             }
             s.has("ask") -> ask(r, s, p)
+            s.has("chat") -> chat(r, s, p)
             s.has("play") -> play(r, s, p)
             s.has("slide") -> slide(r, s, p)
             s.has("photo") -> photo(r, s, p)
@@ -572,6 +574,109 @@ object TaskEngine {
                 log(r, p, "ответ не получен, переменной $name нет")
                 return
             }
+        }
+    }
+
+    private fun say(r: Run, text: String, vol: Int?) {
+        Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
+        check(r)
+    }
+
+    /**
+     * Разговор с ИИ на заданную тему: модель говорит (синтезатор), человек отвечает (микрофон, свободная речь), по очереди.
+     * Заканчивается по for, turns, прощанию, тревоге или двум молчаниям подряд. Сбой модели или сети шаг ошибкой не считает:
+     * разговор просто заканчивается. assign получает краткий пересказ (пусто, если человек молчал), alert — была ли тревога.
+     */
+    private fun chat(r: Run, s: JSONObject, p: String) {
+        val topicName = s.optString("chat")
+        val nameSum = s.optString("assign")
+        val nameAlert = s.optString("alert")
+        val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else 5 * 60_000L
+        val turns = s.optInt("turns", 8)
+        log(r, p, "chat: тема «$topicName», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else ""))
+        if (r.info.dry) {
+            if (nameSum.isNotEmpty()) r.vars[nameSum] = r.assume[nameSum]?.toString() ?: ""
+            if (nameAlert.isNotEmpty()) r.vars[nameAlert] = r.assume[nameAlert] == true
+            val hint = listOfNotNull(if (nameSum.isNotEmpty()) "$nameSum:текст" else null, if (nameAlert.isNotEmpty()) "$nameAlert:true" else null).joinToString(",")
+            log(r, p, "пробный запуск: разговор не ведётся" + if (hint.isNotEmpty()) " (задайте assume=$hint, чтобы проверить ветки)" else "")
+            return
+        }
+        val cfg = r.root.optJSONObject("chat")
+        val topic = cfg?.optJSONObject("topics")?.optString(topicName).orEmpty()
+        if (topic.isEmpty()) throw StepError("темы «$topicName» нет: создайте её на вкладке «Чат»")
+        val rules = cfg?.optString("rules").orEmpty()
+        if (!Llm.configured()) throw StepError("не задан ключ ${Settings.llmProvider}: вкладка «Связь», раздел LLM")
+        Stt.check(r.ctx)?.let { throw StepError(it) }
+        Stt.prepareAsync("free")
+        val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+        val hist = ArrayList<Chat.Msg>()
+        val said = ArrayList<String>()
+        val end = System.currentTimeMillis() + forMs
+        var alert = false
+        var silences = 0
+        var n = 0
+        while (true) {
+            check(r)
+            val last = n + 1 >= turns || end - System.currentTimeMillis() < 45_000 || silences >= 2
+            val system = Chat.systemPrompt(rules, topic) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
+            val res = try {
+                Llm.ask(system, hist)
+            } catch (e: Llm.LlmError) {
+                FLog.w("llm", "разговор оборван: ${e.message}")
+                log(r, p, "модель недоступна, разговор закончен: ${e.message}")
+                if (n > 0) say(r, "Извините, пропала связь. Поговорим в другой раз.", vol)
+                break
+            }
+            val rep = res.reply
+            log(r, p, "модель (${res.ms} мс): «${rep.text}»" + (if (rep.alert) " [тревога]" else "") + (if (rep.end) " [конец]" else ""))
+            if (rep.text.isNotEmpty()) say(r, rep.text, vol)
+            hist.add(Chat.Msg("assistant", rep.text.ifEmpty { "…" }))
+            n++
+            if (rep.alert) {
+                alert = true
+                val lastSaid = said.lastOrNull() ?: ""
+                FLog.w("task", "«${r.title()}»: тревога в разговоре: «$lastSaid»")
+                Telegram.enqueue("<b>Тревога в разговоре с устройством.</b> Задача «${r.title()}». Человек сказал: «$lastSaid». Ответ помощника: «${rep.text}».")
+                break
+            }
+            if (rep.end || last) break
+            sleep(r, 150) // эхо синтезатора не должно попасть в микрофон
+            val heard = try {
+                Stt.listen(r.ctx, "free", minOf(30_000L, end - System.currentTimeMillis()).coerceAtLeast(3_000L)) { r.stopRequested() }
+            } catch (e: IllegalStateException) {
+                throw StepError(e.message ?: "распознавание речи недоступно")
+            }
+            check(r)
+            log(r, p, "услышано: «$heard»")
+            if (heard.isBlank()) {
+                silences++
+                hist.add(Chat.Msg("user", "(человек молчит и не ответил)"))
+            } else {
+                silences = 0
+                said.add(heard)
+                hist.add(Chat.Msg("user", heard))
+            }
+        }
+        if (nameAlert.isNotEmpty()) r.vars[nameAlert] = alert
+        if (nameSum.isNotEmpty()) {
+            val sum = if (said.isEmpty()) "" else summary(r, p, hist, said)
+            r.vars[nameSum] = sum
+            log(r, p, "$nameSum = «$sum»")
+        }
+    }
+
+    /** Краткий пересказ разговора для родственника; если модель недоступна, то слова самого человека. */
+    private fun summary(r: Run, p: String, hist: List<Chat.Msg>, said: List<String>): String {
+        val transcript = hist.joinToString("\n") { (if (it.role == "assistant") "Помощник: " else "Человек: ") + it.text }
+        return try {
+            Llm.ask(
+                "Ниже разговор голосового помощника с пожилым человеком. В одном-двух предложениях перескажи для его родственника, о чём человек говорил и как он себя чувствует. " +
+                    "Пиши по-русски, от третьего лица. " + Chat.FORMAT,
+                listOf(Chat.Msg("user", transcript))
+            ).reply.text.ifEmpty { said.joinToString(" / ") }
+        } catch (e: Llm.LlmError) {
+            log(r, p, "пересказ не получен (${e.message}), беру слова человека")
+            said.joinToString(" / ").take(500)
         }
     }
 

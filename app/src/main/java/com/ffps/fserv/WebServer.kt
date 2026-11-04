@@ -717,7 +717,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
         if (patch.has("camera")) applyCameraKeep()
-        if (patch.has("voice") || patch.has("zones")) { TaskStore.invalidate(); TaskEngine.refreshStt() }
+        if (patch.has("voice") || patch.has("zones") || patch.has("chat")) { TaskStore.invalidate(); TaskEngine.refreshStt() }
         if (r.restartRequired) {
             // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
             Thread {

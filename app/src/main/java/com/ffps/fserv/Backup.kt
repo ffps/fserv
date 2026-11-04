@@ -102,7 +102,7 @@ object Backup {
             if (total > Sounds.MAX_TOTAL + 10_000_000) return "архив слишком большой"
             if (sounds.sumOf { s -> zf.getEntry("sounds/$s").size } > Sounds.MAX_TOTAL) return "звуки вместе больше ${Sounds.MAX_TOTAL / 1048576} МБ"
             if (slides.sumOf { s -> zf.getEntry("slides/$s").size } > Slides.MAX_TOTAL) return "слайды вместе больше ${Slides.MAX_TOTAL / 1048576} МБ"
-            TaskSet.validateSet(tasks, settings.optJSONObject("zones"), { name -> slides.contains(name) }) { name -> sounds.contains(name) }?.let { return it }
+            TaskSet.validateSet(tasks, settings.optJSONObject("zones"), settings.optJSONObject("chat") ?: JSONObject(), { name -> slides.contains(name) }) { name -> sounds.contains(name) }?.let { return it }
         }
         return null
     }

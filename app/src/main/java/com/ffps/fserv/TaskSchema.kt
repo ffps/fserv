@@ -21,14 +21,14 @@ object TaskSchema {
 
     private class Ctx(
         val lines: IdentityHashMap<Any, Int>, val zones: Set<String>, val fileExists: (String) -> Boolean, val slideExists: (String) -> Boolean,
-        val taskVars: Set<String>, val photoVars: Set<String>
+        val taskVars: Set<String>, val photoVars: Set<String>, val topics: Set<String>?
     ) {
         var steps = 0
         var inBg = false
         fun err(node: Any?, msg: String): String = "строка ${lines[node] ?: 0}: $msg"
     }
 
-    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
+    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet(), extraTopics: Set<String>? = null): String? {
         fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
         val zones = HashSet<String>(extraZones)
         val tasks = root.optJSONArray("tasks") ?: JSONArray()
@@ -37,7 +37,7 @@ object TaskSchema {
             val vars = HashSet<String>()
             val photos = HashSet<String>()
             collectVars(t.opt("steps"), vars, photos)
-            task(t, Ctx(lines, zones, fileExists, slideExists, vars, photos))?.let { return it }
+            task(t, Ctx(lines, zones, fileExists, slideExists, vars, photos, extraTopics))?.let { return it }
         }
         return null
     }
@@ -119,6 +119,7 @@ object TaskSchema {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("chat")) for (k in listOf("assign", "alert")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
                 for (k in listOf("then", "else", "do", "background")) collectVars(steps.opt(k), vars, photos)
             }
@@ -159,7 +160,7 @@ object TaskSchema {
     private fun cond(text: Any?, c: Ctx, what: String): String? {
         if (text !is String) return "$what: ожидается условие, например not moved"
         val ids = try { Expr.idents(text) } catch (e: IllegalArgumentException) { return "$what «$text»: ${e.message}" }
-        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (её задаёт assign у watch, ask или photo)"
+        for (n in ids) if (n !in BUILTINS && n !in c.taskVars) return "$what: переменной «$n» нет (её задаёт assign у watch, ask, chat, telegram или photo)"
         return null
     }
 
@@ -167,7 +168,7 @@ object TaskSchema {
         val a = Script.ACTIONS.first { s.has(it) }
         fun e(msg: String) = c.err(s, msg)
         if (c.inBg) {
-            if (a in setOf("watch", "background", "stop_background", "photo", "stop", "ask")) return e("$a: внутри background не допускается (камера, микрофон и остановка задачи принадлежат основному ходу)")
+            if (a in setOf("watch", "background", "stop_background", "photo", "stop", "ask", "chat")) return e("$a: внутри background не допускается (камера, микрофон и остановка задачи принадлежат основному ходу)")
             if ((a == "say" || a == "play") && s.has("wait")) return e("$a: внутри background параметр wait не нужен (блок и так идёт в фоне)")
         }
         val v = s.opt(a)
@@ -189,6 +190,22 @@ object TaskSchema {
                 }
                 if (s.has("retries") && !(s.opt("retries") is Number && s.optInt("retries", -1) in 0..5)) return e("ask: retries — число от 0 до 5 (сколько раз переспросить)")
                 if (s.has("again")) phrases(s.opt("again"), "ask: again", c)?.let { return e(it) }
+                volume(s)?.let { return e(it) }
+            }
+            "chat" -> {
+                if (v !is String || !VAR_RE.matches(v)) return e("chat: нужно имя темы с вкладки «Чат», например chat walk")
+                if (c.topics != null && v !in c.topics) return e("chat: темы «$v» нет (создайте её на вкладке «Чат»; есть: ${c.topics.joinToString(", ").ifEmpty { "нет" }})")
+                if (s.has("for")) {
+                    val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
+                    if (d.minMs < 30_000 || d.maxMs > 30 * 60_000) return e("chat: for — от 30s до 30m (сколько длится разговор самое большее)")
+                }
+                if (s.has("turns") && !(s.opt("turns") is Number && s.optInt("turns", -1) in 1..30)) return e("chat: turns — число от 1 до 30 (сколько реплик ИИ самое большее)")
+                for (k in listOf("assign", "alert")) if (s.has(k)) {
+                    val n = s.opt(k)
+                    if (n !is String || !VAR_RE.matches(n)) return e("chat: $k — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("chat: имя «$n» занято встроенной подстановкой")
+                }
+                if (s.has("assign") && s.opt("assign") == s.opt("alert")) return e("chat: assign и alert должны называться по-разному")
                 volume(s)?.let { return e(it) }
             }
             "log", "telegram", "stop" -> {

@@ -77,7 +77,7 @@ object TaskStore {
     fun load(): TaskSet.Loaded {
         // кэш живёт до изменения файлов и не дольше 5 секунд: проверка ссылается на звуки, которые тоже меняются
         cache?.let { if (cacheGen == gen && System.currentTimeMillis() - cacheAt < 5000) return it }
-        val l = TaskSet.parseSet(files(), Settings.voice(), Settings.zones(), { Slides.exists(it) }) { Sounds.exists(it) }
+        val l = TaskSet.parseSet(files(), Settings.voice(), Settings.zones(), Settings.chat(), { Slides.exists(it) }) { Sounds.exists(it) }
         cache = l; cacheGen = gen; cacheAt = System.currentTimeMillis()
         return l
     }
@@ -129,7 +129,8 @@ object TaskStore {
         if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
         if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
         val zones = Settings.zones().keys().asSequence().toSet()
-        Script.validate(text, newId, zones, { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
+        val topics = Settings.chat().optJSONObject("topics")?.keys()?.asSequence()?.toSet() ?: emptySet()
+        Script.validate(text, newId, zones, topics, { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
         if (originalId == newId && file(newId).readText() == text) return null
         archive()
         writeAtomic(file(newId), text)
