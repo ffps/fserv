@@ -41,6 +41,7 @@ class Scheduler(private val ctx: Context) {
 
     private fun tick() {
         TaskEngine.tick(System.currentTimeMillis())
+        Load.tick()
         val minute = System.currentTimeMillis() / 60000
         if (due("reboot", Settings.rebootCron, minute)) {
             Settings.setLastFired("reboot", minute)

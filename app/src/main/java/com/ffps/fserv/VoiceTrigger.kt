@@ -28,6 +28,18 @@ object VoiceTrigger {
     @Volatile var holding = false
         private set
 
+    private var listenAcc = 0L // сколько миллисекунд (по elapsedRealtime) слушатель уже слушал
+    @Volatile private var listenSince = 0L // с какого момента слушает сейчас (0 — не слушает)
+
+    /** Сколько всего миллисекунд слушатель слушал микрофон (для записи о нагрузке). */
+    @Synchronized fun listenMs(): Long = listenAcc + (if (listenSince > 0) android.os.SystemClock.elapsedRealtime() - listenSince else 0L)
+
+    @Synchronized private fun listening(on: Boolean) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (on) { if (listenSince == 0L) listenSince = now }
+        else if (listenSince > 0) { listenAcc += now - listenSince; listenSince = 0L }
+    }
+
     @Volatile private var state = "off"
     @Volatile private var stateText = "выключено"
 
@@ -131,7 +143,8 @@ object VoiceTrigger {
                 lastErr = ""
                 setState("listening", "слушаю команды (фраз: ${phrases.size})")
                 rec!!.reset()
-                readLoop(a, rec!!, phrases, key)
+                listening(true)
+                try { readLoop(a, rec!!, phrases, key) } finally { listening(false) }
                 closeAudio()
             } catch (e: InterruptedException) {
                 closeAudio(); closeRec()
