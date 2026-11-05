@@ -125,6 +125,9 @@ object Settings {
     /** Период обновления погоды, минут; 0 — погода выключена (не запрашивается, не показывается на киоске, не попадает в чат). */
     @get:Synchronized val weatherEveryMin: Int get() = (o.optJSONObject("weather")?.optInt("everyMin", 60) ?: 60).coerceIn(0, 1440)
 
+    /** Часы прослушивания голосовых команд («8..22»); пусто — не слушать. Фразы заданы настройкой voice в задачах. */
+    @get:Synchronized val listenHours: String get() = o.optJSONObject("listen")?.optString("hours")?.trim() ?: ""
+
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
@@ -252,6 +255,7 @@ object Settings {
         "zones" to zones(),
         "llm" to llmPublic(),
         "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
+        "listen" to obj("hours" to listenHours),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
@@ -317,6 +321,9 @@ object Settings {
             if (w.has("city") && w.optString("city").length > 80) errors.add("weather.city: не длиннее 80 знаков")
             if (w.has("city") && WeatherText.parseCoords(w.optString("city")) == null && Regex("""[-\d.,;\s]+""").matches(w.optString("city")) && w.optString("city").isNotBlank()) errors.add("weather.city: координаты вида 56.84, 60.61 (широта от -90 до 90, долгота от -180 до 180)")
             if (w.has("everyMin") && w.optInt("everyMin", -1) !in 0..1440) errors.add("weather.everyMin: минуты от 0 до 1440 (0 — выключено)")
+        }
+        patch.optJSONObject("listen")?.let { l ->
+            if (l.has("hours")) try { VoiceCmd.parseWindow(l.optString("hours")) } catch (e: IllegalArgumentException) { errors.add("listen.hours: ${e.message}") }
         }
         patch.optJSONObject("chat")?.let { c ->
             if (c.optString("rules").length > 4000) errors.add("chat.rules: не длиннее 4000 знаков")
@@ -406,6 +413,11 @@ object Settings {
             if (w.has("everyMin")) n.put("everyMin", w.optInt("everyMin"))
             o.put("weather", n)
             weatherChanged = true
+        }
+        patch.optJSONObject("listen")?.let { l ->
+            val n = JSONObject((o.optJSONObject("listen") ?: JSONObject()).toString())
+            if (l.has("hours")) n.put("hours", l.optString("hours").trim())
+            o.put("listen", n)
         }
         // темы и правила чата заменяются целиком: пропущенная тема считается удалённой
         patch.optJSONObject("chat")?.let { c ->

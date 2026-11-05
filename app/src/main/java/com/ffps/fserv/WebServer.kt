@@ -227,7 +227,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
 
 
-            get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx))
+            get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx).put("listen", VoiceTrigger.status()))
             post && uri == "/api/stt/download" -> {
                 val err = Stt.downloadAsync()
                 if (err == null) ok("скачивание запущено") else fail(Response.Status.CONFLICT, err)

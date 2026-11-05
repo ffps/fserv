@@ -87,6 +87,10 @@ object TaskSchema {
             if (t.opt("cron") !is String) return c.err(t, "task $id: cron пишется в кавычках, например cron=\"0 8 * * *\"")
             try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: cron: ${e.message}") }
         }
+        if (t.has("voice")) {
+            if (t.opt("voice") !is String) return c.err(t, "task $id: voice пишется в кавычках, например voice=\"Кузя, поболтай со мной|Кузя, ты здесь\"")
+            try { VoiceCmd.parsePhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: voice: ${e.message}") }
+        }
         for (k in listOf("late_ok", "timeout")) if (t.has(k)) {
             try { Dur.parse(t.opt(k), k) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: ${e.message}") }
         }

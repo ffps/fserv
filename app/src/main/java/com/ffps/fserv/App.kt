@@ -28,6 +28,7 @@ class App : Application() {
         TaskEngine.init(this)
         Telegram.init(this)
         Weather.start()
+        VoiceTrigger.start(this)
         FLog.i("app", "start v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) sdk=${Build.VERSION.SDK_INT} ${Build.MANUFACTURER} ${Build.MODEL}")
     }
 

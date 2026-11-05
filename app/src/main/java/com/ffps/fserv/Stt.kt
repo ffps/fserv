@@ -19,7 +19,7 @@ import java.util.zip.ZipInputStream
  */
 object Stt {
     const val MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip"
-    private const val RATE = 16000
+    const val RATE = 16000
 
     @Volatile var state = "none" // none | downloading | unpacking | ready | error
     @Volatile var done = 0L
@@ -226,6 +226,22 @@ object Stt {
         return r
     }
 
+    /**
+     * Распознаватель с грамматикой [phrases] (плюс «[unk]» для всего остального) для слушателя голосовых команд. Модель общая с шагами ask и chat;
+     * пока слушатель её держит ([voiceHold]), она не выгружается по простою. Закрывает распознаватель вызывающий.
+     */
+    fun newRecognizer(phrases: List<String>): Recognizer {
+        val m = loadModel()
+        val g = JSONArray().also { a -> phrases.forEach { a.put(it) }; a.put("[unk]") }
+        return Recognizer(m, RATE.toFloat(), g.toString())
+    }
+
+    /** Сколько шагов сейчас слушают микрофон (ask, chat, проверка): слушатель голосовых команд на это время отпускает его. */
+    val micUsers = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** Слушатель голосовых команд держит модель в памяти: простой её не выгружает. */
+    @Volatile var voiceHold = false
+
     /** Условия слушания выполнены? Текст ошибки или null. Вызывается до вопроса, чтобы не спрашивать зря. */
     fun check(ctx: Context): String? = when {
         !hasPermission(ctx) -> "нет разрешения на микрофон: на устройстве нажмите Allow microphone в окне настроек"
@@ -268,7 +284,7 @@ object Stt {
     @Synchronized
     fun touch() {
         idle?.cancel(); idle = null
-        if (pinned || model == null) return
+        if (pinned || voiceHold || model == null) return
         val t = object : java.util.TimerTask() { override fun run() { if (!pinned) { release(); FLog.d("stt", "модель выгружена из памяти (простой)") } } }
         idle = t
         timer.schedule(t, IDLE_MS)
@@ -289,6 +305,16 @@ object Stt {
      * приходят как IllegalStateException с понятным текстом. Тихий звук усиливается программно (до ×8, без перегруза).
      */
     fun listen(ctx: Context, kind: String, maxMs: Long, cancel0: () -> Boolean): String {
+        micUsers.incrementAndGet()
+        try {
+            VoiceTrigger.waitReleased(2000) // слушатель голосовых команд отпускает микрофон
+            return listenInner(ctx, kind, maxMs, cancel0)
+        } finally {
+            micUsers.decrementAndGet()
+        }
+    }
+
+    private fun listenInner(ctx: Context, kind: String, maxMs: Long, cancel0: () -> Boolean): String {
         if (Call.active) throw IllegalStateException("микрофон занят звонком")
         val cancel = { cancel0() || Call.active } // начавшийся звонок прерывает слушание: микрофон нужен ему
         check(ctx)?.let { throw IllegalStateException(it) }

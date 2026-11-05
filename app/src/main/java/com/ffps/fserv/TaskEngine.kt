@@ -153,6 +153,40 @@ object TaskEngine {
         return null
     }
 
+    /**
+     * Фразы запуска голосом: пары (id задачи, нормализованная фраза) у включённых задач с настройкой voice.
+     * Если одна фраза у двух задач, достаётся первой по списку (вторая попадает в журнал один раз).
+     */
+    fun voicePhrases(): List<Pair<String, String>> {
+        val tasks = config().optJSONArray("tasks") ?: return emptyList()
+        val out = ArrayList<Pair<String, String>>()
+        for (i in 0 until tasks.length()) {
+            val t = tasks.optJSONObject(i) ?: continue
+            if (!t.optBoolean("enabled", true) || !t.has("voice")) continue
+            val id = t.optString("id")
+            val list = try { VoiceCmd.parsePhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { continue }
+            for (p in list) {
+                val prev = out.firstOrNull { it.second == p }
+                if (prev == null) out.add(id to p)
+                else if (voiceDupWarned.add("$id:$p")) FLog.w("task", "фраза «$p» есть у задач «${prev.first}» и «$id»: сработает «${prev.first}»")
+            }
+        }
+        return out
+    }
+
+    private val voiceDupWarned = HashSet<String>()
+
+    /** Ставит задачу в очередь по голосовой команде. Возвращает текст причины, если не запущена, или null. */
+    fun runByVoice(id: String, phrase: String): String? {
+        val root = config()
+        val task = findTask(root, id) ?: return "задачи «$id» нет"
+        if (current?.info?.id == id || queue.any { it.taskId == id }) return "задача «$id» уже выполняется или стоит в очереди"
+        FLog.i("task", "голосовая команда «$phrase»: запускаю «${task.optString("title").ifEmpty { id }}»")
+        enqueue(Req(id, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4), task)
+        start()
+        return null
+    }
+
     /** Задача с настройкой preempt=true (для id call по умолчанию так) встаёт в очереди первой и прерывает выполняющуюся задачу, если та не preempt. */
     private fun isPreempt(task: JSONObject?): Boolean =
         task != null && (if (task.has("preempt")) task.optBoolean("preempt") else task.optString("id") == "call")
@@ -244,7 +278,7 @@ object TaskEngine {
         val run = Run(app, root, task, info, req.assume, timeout)
         current = run
         record(info)
-        val srcText = if (req.source == "cron") "по расписанию" else "вручную"
+        val srcText = when (req.source) { "cron" -> "по расписанию"; "voice" -> "по голосовой команде"; else -> "вручную" }
         log(run, "", "запуск $srcText${if (req.dry) " (пробный: без звука, камеры и Telegram)" else ""}, timeout ${Dur.human(timeout)}")
         FLog.i("task", "задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
         // синтезатор мог выгрузиться за время простоя: прогреваем его, пока идут первые шаги задачи
@@ -271,7 +305,7 @@ object TaskEngine {
         log(run, "", "итог: ${info.status}${if (info.message.isNotEmpty()) ", " + info.message else ""}")
         val endMsg = "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}"
         if (info.status == "error" || info.status == "timeout") FLog.e("task", endMsg) else FLog.i("task", endMsg)
-        if (!req.dry && req.source == "cron" && (info.status == "error" || info.status == "timeout")) {
+        if (!req.dry && (req.source == "cron" || req.source == "voice") && (info.status == "error" || info.status == "timeout")) {
             Telegram.enqueue("fServe: задача «$title» не выполнена: ${info.message}")
         }
     }
@@ -826,7 +860,7 @@ object TaskEngine {
                 tasks.put(
                     obj(
                         "id" to id, "title" to t.optString("title"), "enabled" to t.optBoolean("enabled", true),
-                        "cron" to cronExpr.ifEmpty { null }, "next" to next?.let { Util.iso(it) },
+                        "cron" to cronExpr.ifEmpty { null }, "voice" to t.optString("voice").ifEmpty { null }, "next" to next?.let { Util.iso(it) },
                         "running" to (current?.info?.id == id), "queued" to queue.any { it.taskId == id }
                     )
                 )
