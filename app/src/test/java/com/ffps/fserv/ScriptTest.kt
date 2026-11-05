@@ -103,7 +103,7 @@ class ScriptTest {
         expect("task wake\n  say \"a\"", "у task нет настройки «wake»")
         expect(task("watch 5s zone=nope"), "зона «nope»")
         expect(task("say \"a\" volume=1 volume=2"), "дважды")
-        expect(task("chat \"?\""), "имя темы")
+        expect(task("chat walk"), "в кавычках")
         expect(task("background\n    watch 5s"), "внутри background")
         expect("task\n  say \"a\"\n  cron=\"0 9 * * *\"", "в строке task или сразу под ней")
         expect("task crn=1\n  say \"a\"", "у task нет настройки «crn»")
@@ -264,31 +264,37 @@ class ScriptTest {
     }
 
     @Test fun chatStep() {
-        val topics = setOf("walk", "weather")
-        fun v(vararg steps: String) = Script.validate(task(*steps), "x", emptySet(), topics)
-        assertNull(v("chat walk"))
-        assertNull(v("chat weather for=5m turns=8 assign=talk alert=sos volume=70", "if sos", "  say \"тревога\"", "telegram \"Поговорили: {talk}\""))
-        assertNull(Script.validate(task("chat anything"))) // без списка тем имя не проверяется
-        assertTrue(v("chat unknown")!!.contains("темы «unknown» нет"))
-        assertTrue(v("chat")!!.contains("имя темы"))
-        assertTrue(v("chat walk for=10s")!!.contains("for"))
-        assertTrue(v("chat walk for=1h")!!.contains("for"))
-        assertTrue(v("chat walk turns=0")!!.contains("turns"))
-        assertTrue(v("chat walk turns=31")!!.contains("turns"))
-        assertTrue(v("chat walk assign=time")!!.contains("занято"))
-        assertTrue(v("chat walk assign=a alert=a")!!.contains("по-разному"))
-        assertTrue(v("chat walk volume=101")!!.contains("volume"))
-        assertTrue(v("chat walk loop")!!.contains("нет параметра"))
-        assertTrue(v("background", "  chat walk")!!.contains("внутри background"))
+        fun v(vararg steps: String) = Script.validate(task(*steps), "x")
+        assertNull(v("chat \"Поговорить о внуках\""))
+        assertNull(v("chat \"Поговорить о погоде\" for=5m turns=8 assign=talk alert=sos volume=70", "if sos", "  say \"тревога\"", "telegram \"Поговорили: {talk}\""))
+        assertNull(v("chat \"Человек просит: {phrase}. Сегодня {weekday}, {time}.\" for=2m")) // подстановки во встроенных переменных
+        assertNull(v("ask \"Какое давление?\" assign=bp kind=number", "chat \"Давление {bp}, обсудите\""))
+        assertTrue(v("chat walk")!!.contains("в кавычках"))      // старый вид с именем темы
+        assertTrue(v("chat walk")!!.contains("больше не используются"))
+        assertTrue(v("chat")!!.contains("текст темы"))
+        assertTrue(v("chat \"\"")!!.contains("непустой"))
+        assertTrue(v("chat \"${"а".repeat(1001)}\"")!!.contains("1000"))
+        assertTrue(v("chat \"О {nope}\"")!!.contains("nope"))
+        assertTrue(v("chat \"Тема {pause:2s}\"")!!.contains("pause"))
+        assertTrue(v("chat \"Т\" for=10s")!!.contains("for"))
+        assertTrue(v("chat \"Т\" for=1h")!!.contains("for"))
+        assertTrue(v("chat \"Т\" turns=0")!!.contains("turns"))
+        assertTrue(v("chat \"Т\" turns=31")!!.contains("turns"))
+        assertTrue(v("chat \"Т\" assign=time")!!.contains("занято"))
+        assertTrue(v("chat \"Т\" assign=phrase")!!.contains("занято"))
+        assertTrue(v("chat \"Т\" assign=a alert=a")!!.contains("по-разному"))
+        assertTrue(v("chat \"Т\" volume=101")!!.contains("volume"))
+        assertTrue(v("chat \"Т\" loop")!!.contains("нет параметра"))
+        assertTrue(v("background", "  chat \"Т\"")!!.contains("внутри background"))
         assertTrue(v("say \"{talk}\"")!!.contains("talk"))
-        val p = Script.parse(task("chat walk for=5m turns=8 assign=talk")).root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
-        assertEquals("walk", p.getString("chat"))
+        val p = Script.parse(task("chat \"Поговорить о внуках\" for=5m turns=8 assign=talk")).root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
+        assertEquals("Поговорить о внуках", p.getString("chat"))
         assertEquals(8, p.getInt("turns"))
-        // набор задач: темы берутся из настроек «Чат»
-        val chat = JSONObject("""{"rules":"","topics":{"walk":"прогулка"}}""")
-        val ok = TaskSet.parseSet(mapOf("a.txt" to task("chat walk"), "b.txt" to task("chat nope")), null, null, chat) { true }
+        // набор задач: правила чата берутся из настроек, тем больше нет
+        val chat = JSONObject("""{"rules":"мои правила"}""")
+        val ok = TaskSet.parseSet(mapOf("a.txt" to task("chat \"Поговорить\""), "b.txt" to task("chat nope")), null, null, chat) { true }
         assertEquals(setOf("b"), ok.errors.keys)
-        assertEquals("прогулка", ok.root.getJSONObject("chat").getJSONObject("topics").getString("walk"))
+        assertEquals("мои правила", ok.root.getJSONObject("chat").getString("rules"))
     }
 
     @Test fun slideStep() {
@@ -306,7 +312,7 @@ class ScriptTest {
         expect(task("slide off for=5s"), "параметров")
         expect(task("slide"), "slide")
         expect(task("slide a.png hide=5s"), "у slide нет параметра")
-        val e = Script.validate(task("slide missing.png"), "x", emptySet(), null, { false })
+        val e = Script.validate(task("slide missing.png"), "x", emptySet(), { false })
         assertNotNull(e); assertTrue(e!!.contains("Слайды"))
     }
 }

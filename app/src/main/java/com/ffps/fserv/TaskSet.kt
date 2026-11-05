@@ -14,7 +14,7 @@ object TaskSet {
     fun checkId(id: String): String? =
         if (ID_RE.matches(id)) null else "id задачи: латинские буквы, цифры, _ и - (до 40 знаков), начинаться с буквы или цифры, например wakeup"
 
-    /** Разбор набора файлов (имя файла → текст): чистая логика, без обращения к диску. [voice], [zones] и [chat] (правила и темы разговора) — настройки приложения. */
+    /** Разбор набора файлов (имя файла → текст): чистая логика, без обращения к диску. [voice], [zones] и [chat] (правила разговора) — настройки приложения. */
     fun parseSet(files: Map<String, String>, voice: JSONObject? = null, zones: JSONObject? = null, chat: JSONObject? = null, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean): Loaded {
         val root = JSONObject()
         root.put("version", 1)
@@ -22,7 +22,6 @@ object TaskSet {
         if (zones != null && zones.length() > 0) root.put("zones", zones)
         if (chat != null && chat.length() > 0) root.put("chat", chat)
         val zoneNames = zones?.keys()?.asSequence()?.toSet() ?: emptySet()
-        val topicNames: Set<String>? = if (chat == null) null else (chat.optJSONObject("topics")?.keys()?.asSequence()?.toSet() ?: emptySet())
         val errors = LinkedHashMap<String, String>()
         val tasks = JSONArray()
         for (name in files.keys.sorted()) {
@@ -30,7 +29,7 @@ object TaskSet {
             if (!name.endsWith(".txt")) continue
             if (!ID_RE.matches(id)) { errors[id] = checkId(id)!!; continue }
             val text = files.getValue(name)
-            val err = Script.validate(text, id, zoneNames, topicNames, slideExists, fileExists)
+            val err = Script.validate(text, id, zoneNames, slideExists, fileExists)
             if (err != null) errors[id] = err
             else tasks.put(Script.parse(text, id).root.getJSONArray("tasks").getJSONObject(0))
         }

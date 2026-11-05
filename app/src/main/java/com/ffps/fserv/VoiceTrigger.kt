@@ -55,8 +55,8 @@ object VoiceTrigger {
     /** Для вкладки «Звук»: что делает слушатель и какие фразы слушает. */
     fun status(): JSONObject {
         val ph = JSONArray()
-        for ((task, phrase) in TaskEngine.voicePhrases()) ph.put(obj("task" to task, "phrase" to phrase))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "phrases" to ph)
+        for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to e.full))
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "phrases" to ph)
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -122,13 +122,13 @@ object VoiceTrigger {
                     continue
                 }
                 val phrases = TaskEngine.voicePhrases()
-                val key = phrases.joinToString("|") { it.second }
+                val key = phrases.joinToString("|") { it.full }
                 if (rec == null || key != recKey) {
                     rec?.let { try { it.close() } catch (e: Throwable) {} }
                     rec = null
                     setState("loading", "готовлю распознавание команд…")
                     val t0 = System.currentTimeMillis()
-                    rec = Stt.newRecognizer(phrases.map { it.second })
+                    rec = Stt.newRecognizer(phrases.map { it.full })
                     recKey = key
                     Stt.voiceHold = true
                     FLog.d("voice-cmd", "распознаватель команд собран за ${System.currentTimeMillis() - t0} мс, фраз: ${phrases.size}")
@@ -160,8 +160,8 @@ object VoiceTrigger {
     }
 
     /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. */
-    private fun readLoop(a: AudioRecord, r: Recognizer, phrases: List<Pair<String, String>>, key: String) {
-        val list = phrases.map { it.second }
+    private fun readLoop(a: AudioRecord, r: Recognizer, phrases: List<TaskEngine.VoiceEntry>, key: String) {
+        val list = phrases.map { it.full }
         val buf = ShortArray(Stt.RATE / 10)
         var gain = 1f
         var muted = false
@@ -171,7 +171,7 @@ object VoiceTrigger {
             if (Stt.micUsers.get() > 0 || Call.active) return
             if (++chunks % 10 == 0L) {
                 if (blocker() != null) return
-                if (TaskEngine.voicePhrases().joinToString("|") { it.second } != key) return
+                if (TaskEngine.voicePhrases().joinToString("|") { it.full } != key) return
             }
             val n = a.read(buf, 0, buf.size)
             if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
@@ -195,8 +195,8 @@ object VoiceTrigger {
             val now = System.currentTimeMillis()
             if (phrase != null && now - lastTrigger > COOLDOWN_MS) {
                 lastTrigger = now
-                val id = phrases.first { it.second == phrase }.first
-                TaskEngine.runByVoice(id, phrase)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
+                val entry = phrases.first { it.full == phrase }
+                TaskEngine.runByVoice(entry, heard)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
                 r.reset()
             }
         }

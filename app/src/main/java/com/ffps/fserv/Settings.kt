@@ -101,9 +101,9 @@ object Settings {
     fun llmModel(preset: String): String =
         o.optJSONObject("llm")?.optJSONObject(preset)?.optString("model")?.trim()?.ifEmpty { null } ?: LLM_DEFAULT_MODEL.getValue(preset)
 
-    /** Вкладка «Чат»: rules — общие правила для модели (пусто = встроенные), topics — темы разговора (имя → что обсудить). */
+    /** Вкладка «Чат»: rules — общие правила для модели (пусто = встроенные). Тема разговора задаётся прямо в шаге chat. */
     @Synchronized
-    fun chat(): JSONObject = JSONObject((o.optJSONObject("chat") ?: JSONObject()).toString())
+    fun chat(): JSONObject = JSONObject().put("rules", o.optJSONObject("chat")?.optString("rules") ?: "")
 
     private fun llmPublic(): JSONObject {
         val r = obj("preset" to llmPreset, "timeoutSec" to llmTimeoutSec)
@@ -127,6 +127,9 @@ object Settings {
 
     /** Часы прослушивания голосовых команд («8..22»); пусто — не слушать. Фразы заданы настройкой voice в задачах. */
     @get:Synchronized val listenHours: String get() = o.optJSONObject("listen")?.optString("hours")?.trim() ?: ""
+
+    /** Имя помощника (префикс): варианты через «|»; добавляется в начало фраз голосовых команд, кроме фраз «=…». Пусто — без префикса. */
+    @get:Synchronized val listenPrefix: String get() = o.optJSONObject("listen")?.optString("prefix")?.trim() ?: ""
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
@@ -255,7 +258,7 @@ object Settings {
         "zones" to zones(),
         "llm" to llmPublic(),
         "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
-        "listen" to obj("hours" to listenHours),
+        "listen" to obj("hours" to listenHours, "prefix" to listenPrefix),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
@@ -324,19 +327,10 @@ object Settings {
         }
         patch.optJSONObject("listen")?.let { l ->
             if (l.has("hours")) try { VoiceCmd.parseWindow(l.optString("hours")) } catch (e: IllegalArgumentException) { errors.add("listen.hours: ${e.message}") }
+            if (l.has("prefix")) try { VoiceCmd.expandPrefixes(l.optString("prefix")) } catch (e: IllegalArgumentException) { errors.add("listen.prefix: ${e.message}") }
         }
         patch.optJSONObject("chat")?.let { c ->
             if (c.optString("rules").length > 4000) errors.add("chat.rules: не длиннее 4000 знаков")
-            val t = c.optJSONObject("topics")
-            if (c.has("topics") && t == null) errors.add("chat.topics: ожидается объект имя → текст")
-            if (t != null) {
-                if (t.length() > 30) errors.add("chat.topics: не больше 30 тем")
-                for (n in t.keys()) {
-                    if (!Regex("[A-Za-z_][A-Za-z0-9_]{0,30}").matches(n)) errors.add("chat.topics: имя «$n» — латинские буквы, цифры и _")
-                    val x = t.opt(n)
-                    if (x !is String || x.isBlank() || x.length > 1000) errors.add("chat.topics.$n: текст темы от 1 до 1000 знаков")
-                }
-            }
         }
         patch.optJSONObject("update")?.let { u ->
             if (u.has("repo") && !Regex("""[\w.-]+/[\w.-]+""").matches(u.optString("repo").trim())) errors.add("update.repo: ожидается владелец/репозиторий")
@@ -417,14 +411,11 @@ object Settings {
         patch.optJSONObject("listen")?.let { l ->
             val n = JSONObject((o.optJSONObject("listen") ?: JSONObject()).toString())
             if (l.has("hours")) n.put("hours", l.optString("hours").trim())
+            if (l.has("prefix")) n.put("prefix", l.optString("prefix").trim())
             o.put("listen", n)
         }
-        // темы и правила чата заменяются целиком: пропущенная тема считается удалённой
         patch.optJSONObject("chat")?.let { c ->
-            val n = JSONObject()
-            n.put("rules", c.optString("rules").trim())
-            n.put("topics", JSONObject((c.optJSONObject("topics") ?: JSONObject()).toString()))
-            o.put("chat", n)
+            o.put("chat", JSONObject().put("rules", c.optString("rules").trim()))
         }
         patch.optJSONObject("telegram")?.let { t ->
             val n = JSONObject((o.optJSONObject("telegram") ?: JSONObject()).toString())

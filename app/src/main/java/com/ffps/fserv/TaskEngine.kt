@@ -42,7 +42,11 @@ object TaskEngine {
 
     private class Req(
         val taskId: String, val source: String, val dry: Boolean, val assume: Map<String, Any?>,
-        val scheduledAt: Long, val allowLateMs: Long
+        val scheduledAt: Long, val allowLateMs: Long,
+        /** Услышанная фраза запуска голосом (подстановка {phrase}); пусто при другом запуске. */
+        val phrase: String = "",
+        /** Пометка для журнала (что именно услышано, если не точно фраза). */
+        val note: String = ""
     )
 
     private class Run(val ctx: Context, val root: JSONObject, val task: JSONObject, val info: RunInfo, val assume: Map<String, Any?>, deadlineMs: Long) {
@@ -59,6 +63,8 @@ object TaskEngine {
         /** Слот, в потоке которого сейчас выполняется код (null в основном ходе задачи). */
         val slotOf = ThreadLocal<Slot?>()
         val voice: JSONObject? = root.optJSONObject("voice")
+        /** Подстановка {phrase}: что человек сказал после имени помощника (запуск голосом) или assume=phrase:… в пробном запуске. */
+        @Volatile var phrase = ""
         fun stopRequested(): Boolean = cancelled || System.currentTimeMillis() > deadline || slotOf.get()?.stop == true
         fun title(): String = task.optString("title").ifEmpty { task.optString("id") }
     }
@@ -153,36 +159,59 @@ object TaskEngine {
         return null
     }
 
+    /** Фраза запуска голосом: [full] — что слушается (с префиксом), [rest] — то же без префикса (подстановка {phrase}). */
+    class VoiceEntry(val task: String, val full: String, val rest: String)
+
+    private var vpKey = ""
+    private var vpVal: List<VoiceEntry> = emptyList()
+    private var vpWarned = ""
+
     /**
-     * Фразы запуска голосом: пары (id задачи, нормализованная фраза) у включённых задач с настройкой voice.
-     * Если одна фраза у двух задач, достаётся первой по списку (вторая попадает в журнал один раз).
+     * Фразы запуска голосом у включённых задач с настройкой voice, развёрнутые из шаблонов и дополненные префиксом из настроек.
+     * Если префикс в настройках неверен, слушаются только фразы «=…». Одна фраза у двух задач достаётся первой по списку
+     * (вторая попадает в журнал один раз). Результат кэшируется, пока не меняются задачи и настройки.
      */
-    fun voicePhrases(): List<Pair<String, String>> {
+    @Synchronized
+    fun voicePhrases(): List<VoiceEntry> {
         val tasks = config().optJSONArray("tasks") ?: return emptyList()
-        val out = ArrayList<Pair<String, String>>()
+        val prefixText = Settings.listenPrefix
+        val key = StringBuilder(prefixText).append('\u0001')
+        for (i in 0 until tasks.length()) {
+            val t = tasks.optJSONObject(i) ?: continue
+            if (t.optBoolean("enabled", true) && t.has("voice")) key.append(t.optString("id")).append('\u0002').append(t.optString("voice")).append('\u0003')
+        }
+        val k = key.toString()
+        if (k == vpKey) return vpVal
+        val prefixes = try { VoiceCmd.expandPrefixes(prefixText) } catch (e: IllegalArgumentException) {
+            if (vpWarned != prefixText) { vpWarned = prefixText; FLog.w("task", "префикс голосовых команд неверен (${e.message}): слушаются только фразы «=…»") }
+            null
+        }
+        val out = ArrayList<VoiceEntry>()
         for (i in 0 until tasks.length()) {
             val t = tasks.optJSONObject(i) ?: continue
             if (!t.optBoolean("enabled", true) || !t.has("voice")) continue
             val id = t.optString("id")
-            val list = try { VoiceCmd.parsePhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { continue }
-            for (p in list) {
-                val prev = out.firstOrNull { it.second == p }
-                if (prev == null) out.add(id to p)
-                else if (voiceDupWarned.add("$id:$p")) FLog.w("task", "фраза «$p» есть у задач «${prev.first}» и «$id»: сработает «${prev.first}»")
+            val list = try { VoiceCmd.expandPhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { continue }
+            val pairs = if (prefixes == null) list.filter { it.raw }.map { it.text to it.text } else VoiceCmd.fullPhrases(list, prefixes)
+            for ((full, rest) in pairs) {
+                val prev = out.firstOrNull { it.full == full }
+                if (prev == null) out.add(VoiceEntry(id, full, rest))
+                else if (prev.task != id && voiceDupWarned.add("$id:$full")) FLog.w("task", "фраза «$full» есть у задач «${prev.task}» и «$id»: сработает «${prev.task}»")
             }
         }
+        vpKey = k; vpVal = out
         return out
     }
 
     private val voiceDupWarned = HashSet<String>()
 
-    /** Ставит задачу в очередь по голосовой команде. Возвращает текст причины, если не запущена, или null. */
-    fun runByVoice(id: String, phrase: String): String? {
+    /** Ставит задачу в очередь по голосовой команде ([heard] — что услышано целиком). Возвращает текст причины, если не запущена, или null. */
+    fun runByVoice(e: VoiceEntry, heard: String): String? {
         val root = config()
-        val task = findTask(root, id) ?: return "задачи «$id» нет"
-        if (current?.info?.id == id || queue.any { it.taskId == id }) return "задача «$id» уже выполняется или стоит в очереди"
-        FLog.i("task", "голосовая команда «$phrase»: запускаю «${task.optString("title").ifEmpty { id }}»")
-        enqueue(Req(id, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4), task)
+        val task = findTask(root, e.task) ?: return "задачи «${e.task}» нет"
+        if (current?.info?.id == e.task || queue.any { it.taskId == e.task }) return "задача «${e.task}» уже выполняется или стоит в очереди"
+        val note = if (VoiceCmd.words(heard).joinToString(" ") != e.full) " (услышано: «$heard»)" else ""
+        enqueue(Req(e.task, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4, e.rest, note), task)
         start()
         return null
     }
@@ -276,9 +305,10 @@ object TaskEngine {
         val timeout = try { if (task.has("timeout")) Dur.parse(task.opt("timeout"), "timeout").sample(Random()) else 60 * 60_000L } catch (e: IllegalArgumentException) { 60 * 60_000L }
         val info = RunInfo(req.taskId, title, req.source, req.dry)
         val run = Run(app, root, task, info, req.assume, timeout)
+        run.phrase = if (req.dry) req.assume["phrase"]?.toString() ?: "" else req.phrase
         current = run
         record(info)
-        val srcText = when (req.source) { "cron" -> "по расписанию"; "voice" -> "по голосовой команде"; else -> "вручную" }
+        val srcText = when (req.source) { "cron" -> "по расписанию"; "voice" -> "по голосовой команде «${req.phrase}»${req.note}"; else -> "вручную" }
         log(run, "", "запуск $srcText${if (req.dry) " (пробный: без звука, камеры и Telegram)" else ""}, timeout ${Dur.human(timeout)}")
         FLog.i("task", "задача «$title» запущена $srcText${if (req.dry) " (пробный запуск)" else ""}")
         // синтезатор мог выгрузиться за время простоя: прогреваем его, пока идут первые шаги задачи
@@ -364,6 +394,7 @@ object TaskEngine {
             "date" -> "${cal.get(Calendar.DAY_OF_MONTH)} ${MONTHS[cal.get(Calendar.MONTH)]}"
             "weekday" -> DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]
             "task" -> r.title()
+            "phrase" -> r.phrase
             else -> when (val v = r.vars[n]) {
                 null -> ""
                 true -> "да"
@@ -622,12 +653,12 @@ object TaskEngine {
      * разговор просто заканчивается. assign получает краткий пересказ (пусто, если человек молчал), alert — была ли тревога.
      */
     private fun chat(r: Run, s: JSONObject, p: String) {
-        val topicName = s.optString("chat")
+        val topic = fill(r, s.optString("chat")).trim()
         val nameSum = s.optString("assign")
         val nameAlert = s.optString("alert")
         val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else 5 * 60_000L
         val turns = s.optInt("turns", 8)
-        log(r, p, "chat: тема «$topicName», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else ""))
+        log(r, p, "chat: тема «${topic.take(120)}», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else ""))
         if (r.info.dry) {
             if (nameSum.isNotEmpty()) r.vars[nameSum] = r.assume[nameSum]?.toString() ?: ""
             if (nameAlert.isNotEmpty()) r.vars[nameAlert] = r.assume[nameAlert] == true
@@ -636,8 +667,7 @@ object TaskEngine {
             return
         }
         val cfg = r.root.optJSONObject("chat")
-        val topic = cfg?.optJSONObject("topics")?.optString(topicName).orEmpty()
-        if (topic.isEmpty()) throw StepError("темы «$topicName» нет: создайте её на вкладке «Чат»")
+        if (topic.isEmpty()) throw StepError("тема разговора пуста (после подстановок): напишите её в шаге chat")
         val rules = cfg?.optString("rules").orEmpty()
         Llm.problem()?.let { throw StepError(it) }
         Stt.check(r.ctx)?.let { throw StepError(it) }

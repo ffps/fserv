@@ -266,10 +266,12 @@
   <div class="f">
     <label for="vcHours">Слушать команды, часы</label>
     <input id="vcHours" placeholder="например 8..22 (пусто = не слушать)">
+    <label for="vcPrefix">Префикс (имя помощника)</label>
+    <input id="vcPrefix" placeholder="например Кузя или Кузя|Кузьма (пусто = без префикса)">
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="vcSave">Сохранить</button></div>
   <div class="msg" id="vcMsg"></div>
-  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="Кузя, поболтай со мной|Кузя, ты здесь"</code>). Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона.</p>
+  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Задачи</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -342,25 +344,20 @@
     .chlog { min-height:120px; max-height:50vh; overflow:auto; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:8px 0; }
     .chl { margin:4px 0; } .chl.user b { color:var(--acc-d); } .chl.assistant b { color:var(--good); }
     .chf { color:var(--bad); font-weight:600; font-size:13px; }
-    #chTopics td { padding:4px 6px; vertical-align:top; } #chTopics textarea { width:100%; }
   </style>
   <h2>Чат</h2>
-  <p class="hint">Правила и темы для шага <code>chat</code> (разговор с ИИ): <code>chat grandkids for=5m</code>. Модель и ключ задаются на вкладке «Связь».</p>
+  <p class="hint">Общие правила для шага <code>chat</code> (разговор с ИИ). Тема разговора пишется прямо в шаге, можно с подстановками: <code>chat "Поговорить о внуках" for=5m</code> или <code>chat "Человек просит: {phrase}. Поддержи разговор" for=5m</code>. Модель и ключ задаются на вкладке «Связь».</p>
   <h2 style="font-size:15px;margin-top:16px">Общие правила для модели</h2>
   <textarea id="chRules" rows="6" style="font-family:inherit;font-size:14px;white-space:pre-wrap"></textarea>
-  <div class="row" style="margin-top:6px"><button class="btn sec sm" id="chDef" title="Подставить встроенные правила, чтобы изменить их">Вставить встроенные</button></div>
-  <p class="hint">Пусто = встроенные правила (они видны серым в пустом поле). К ним всегда добавляется формат ответа: реплика, признак тревоги и признак конца разговора.</p>
-  <h2 style="font-size:15px;margin-top:16px">Темы</h2>
-  <table><thead><tr><th style="width:30%">Имя</th><th>О чём поговорить</th><th></th></tr></thead><tbody id="chTopics"></tbody></table>
-  <div class="row" style="margin-top:10px"><button class="ib add" id="chAdd" title="Добавить тему">+</button><button class="btn" id="chSave">Сохранить</button></div>
+  <div class="row" style="margin-top:6px"><button class="btn sec sm" id="chDef" title="Подставить встроенные правила, чтобы изменить их">Вставить встроенные</button><button class="btn" id="chSave">Сохранить</button></div>
   <div class="msg" id="chMsg"></div>
-  <p class="hint">Имя темы пишется в шаге (латинские буквы, цифры, _), а текст объясняет модели, о чём заговорить. Например: «Предложи поболтать о внуках и спроси, как у них дела».</p>
+  <p class="hint">Пусто = встроенные правила (они видны серым в пустом поле). К ним всегда добавляется формат ответа (реплика, признак тревоги и признак конца разговора), а также текущие дата, время и погода. Тема в шаге объясняет модели, о чём заговорить, например «Предложи поболтать о внуках и спроси, как у них дела».</p>
   <h2 style="margin-top:22px">Проверка разговора</h2>
-  <div class="row"><label>Тема <select id="chTopic"></select></label><button class="btn sec" id="chStart">Начать заново</button></div>
+  <div class="row"><input id="chTopic" placeholder="Тема, как в шаге chat (можно пусто — свободная беседа)" style="flex:1;min-width:200px"><button class="btn sec" id="chStart">Начать заново</button></div>
   <div class="chlog" id="chLog"></div>
   <div class="row"><input id="chInput" placeholder="Что отвечает человек" style="flex:1;min-width:200px"><button class="btn" id="chSend">Отправить</button></div>
   <div class="msg" id="chTMsg"></div>
-  <p class="hint">Проверка без голоса: по тексту, с сохранёнными правилами и темами. Так можно подобрать формулировки, не разговаривая с устройством.</p>
+  <p class="hint">Проверка без голоса: по тексту, с сохранёнными правилами и темой из поля выше (подстановки вроде <code>{phrase}</code> здесь не работают, напишите готовый текст). Так можно подобрать формулировки, не разговаривая с устройством.</p>
 </section>
 
 <section id="camera">
@@ -584,7 +581,7 @@ document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
 track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
-track("vcSave", ["vcHours"]);
+track("vcSave", ["vcHours", "vcPrefix"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -633,7 +630,7 @@ const ICO = {
   rectDel: svg('<rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/><path d="M9 10l6 4M15 10l-6 4"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd" || b.id === "chAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -731,44 +728,18 @@ $("#llModels").onclick = () => run("#llMsg", async () => {
   m.addEventListener("blur", () => { if (m.value === "" && prev) m.value = prev; prev = ""; });
 })();
 
-// ---- чат: правила, темы и проверка разговора без голоса ----
+// ---- чат: правила и проверка разговора без голоса ----
 let chHist = [], chEnded = false, chBusy = false;
-function chRows(topics) {
-  const names = Object.keys(topics);
-  $("#chTopics").innerHTML = names.map(n => chRow(n, topics[n])).join("");
-}
-function chRow(n, t) {
-  return '<tr><td><input class="chn" value="' + esc(n) + '" placeholder="grandkids" style="width:100%"></td><td><textarea class="cht" rows="2" style="font-family:inherit;font-size:14px;white-space:pre-wrap">' + esc(t) + '</textarea></td>' +
-    '<td><button class="ib del" data-ch="del" title="Удалить тему">' + ICO.del + "</button></td></tr>";
-}
-function chSelect(topics) {
-  const cur = $("#chTopic").value;
-  $("#chTopic").innerHTML = '<option value="">без темы (свободная беседа)</option>' + Object.keys(topics).map(n => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
-  $("#chTopic").value = cur in topics ? cur : "";
-}
 async function loadChat() {
   try {
     const c = (await api("/api/settings")).json.chat || {};
     $("#chRules").value = c.rules || ""; $("#chRules").placeholder = c.defaultRules || "";
     $("#chRules").dataset.def = c.defaultRules || "";
-    chRows(c.topics || {}); chSelect(c.topics || {});
   } catch (e) { say("#chMsg", e.message, false); }
 }
-function chCollect() {
-  const topics = {};
-  document.querySelectorAll("#chTopics tr").forEach(tr => {
-    const n = tr.querySelector(".chn").value.trim(), t = tr.querySelector(".cht").value.trim();
-    if (!n && !t) return;
-    if (n in topics) throw new Error("тема «" + n + "» указана дважды");
-    topics[n] = t;
-  });
-  return topics;
-}
-$("#chAdd").onclick = () => { $("#chTopics").insertAdjacentHTML("beforeend", chRow("", "")); const r = $("#chTopics").lastElementChild; r.querySelector(".chn").focus(); };
-$("#chTopics").addEventListener("click", e => { const b = e.target.closest("[data-ch=del]"); if (b) b.closest("tr").remove(); });
 $("#chDef").onclick = () => { $("#chRules").value = $("#chRules").dataset.def || ""; };
 $("#chSave").onclick = () => run("#chMsg", async () => {
-  await post("/api/settings", JSON.stringify({chat: {rules: $("#chRules").value, topics: chCollect()}}));
+  await post("/api/settings", JSON.stringify({chat: {rules: $("#chRules").value}}));
   await loadChat(); return "сохранено";
 });
 function chLine(role, text, flags) {
@@ -1189,8 +1160,8 @@ async function loadStt() {
     $("#sttInfo").innerHTML = kvRow("Модель", st) + (t.error ? kvRow("Ошибка", t.error) : "") + kvRow("Микрофон", t.permission ? "разрешён" : "нет разрешения: нажмите Allow microphone на устройстве");
     const L = t.listen;
     if (L) {
-      $("#vcInfo").innerHTML = kvRow("Состояние", L.text) + kvRow("Фразы", L.phrases.length ? L.phrases.map(x => x.task + ": «" + x.phrase + "»").join("; ") : "нет (добавьте voice= в задачу)");
-      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; rebase("vcSave"); }
+      $("#vcInfo").innerHTML = kvRow("Состояние", L.text) + kvRowHtml("Фразы", L.phrases.length ? L.phrases.slice(0, 40).map(x => esc(x.task) + ": «" + esc(x.phrase) + "»").join("<br>") + (L.phrases.length > 40 ? "<br>… и ещё " + (L.phrases.length - 40) : "") : "нет (добавьте voice= в задачу)");
+      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; rebase("vcSave"); }
     }
     $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
     $("#sttUpload").disabled = t.state === "downloading" || t.state === "unpacking";
@@ -1201,7 +1172,7 @@ async function loadStt() {
   } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
 $("#vcSave").onclick = () => run("#vcMsg", async () => {
-  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim()}}));
+  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim()}}));
   await loadStt();
   return $("#vcHours").value.trim() ? "сохранено" : "сохранено: слушание выключено";
 }, "vcSave");

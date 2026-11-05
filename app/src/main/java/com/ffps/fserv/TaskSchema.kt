@@ -10,7 +10,7 @@ import java.util.IdentityHashMap
  * отвергает уже [Script]; здесь проверяются значения, ссылки на переменные, зоны и файлы. Без зависимостей от Android.
  */
 object TaskSchema {
-    val BUILTINS = setOf("time", "date", "weekday", "task")
+    val BUILTINS = setOf("time", "date", "weekday", "task", "phrase")
     val SYSTEM_SOUNDS = setOf("system:alarm", "system:notification", "system:ringtone")
 
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
@@ -21,14 +21,14 @@ object TaskSchema {
 
     private class Ctx(
         val lines: IdentityHashMap<Any, Int>, val zones: Set<String>, val fileExists: (String) -> Boolean, val slideExists: (String) -> Boolean,
-        val taskVars: Set<String>, val photoVars: Set<String>, val topics: Set<String>?
+        val taskVars: Set<String>, val photoVars: Set<String>
     ) {
         var steps = 0
         var inBg = false
         fun err(node: Any?, msg: String): String = "строка ${lines[node] ?: 0}: $msg"
     }
 
-    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet(), extraTopics: Set<String>? = null): String? {
+    fun validate(root: JSONObject, lines: IdentityHashMap<Any, Int>, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }, extraZones: Set<String> = emptySet()): String? {
         fun err(node: Any?, msg: String) = "строка ${lines[node] ?: 0}: $msg"
         val zones = HashSet<String>(extraZones)
         val tasks = root.optJSONArray("tasks") ?: JSONArray()
@@ -37,7 +37,7 @@ object TaskSchema {
             val vars = HashSet<String>()
             val photos = HashSet<String>()
             collectVars(t.opt("steps"), vars, photos)
-            task(t, Ctx(lines, zones, fileExists, slideExists, vars, photos, extraTopics))?.let { return it }
+            task(t, Ctx(lines, zones, fileExists, slideExists, vars, photos))?.let { return it }
         }
         return null
     }
@@ -88,8 +88,8 @@ object TaskSchema {
             try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: cron: ${e.message}") }
         }
         if (t.has("voice")) {
-            if (t.opt("voice") !is String) return c.err(t, "task $id: voice пишется в кавычках, например voice=\"Кузя, поболтай со мной|Кузя, ты здесь\"")
-            try { VoiceCmd.parsePhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: voice: ${e.message}") }
+            if (t.opt("voice") !is String) return c.err(t, "task $id: voice пишется в кавычках, например voice=\"поболтай со мной|ты здесь\"")
+            try { VoiceCmd.expandPhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: voice: ${e.message}") }
         }
         for (k in listOf("late_ok", "timeout")) if (t.has(k)) {
             try { Dur.parse(t.opt(k), k) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: ${e.message}") }
@@ -197,8 +197,10 @@ object TaskSchema {
                 volume(s)?.let { return e(it) }
             }
             "chat" -> {
-                if (v !is String || !VAR_RE.matches(v)) return e("chat: нужно имя темы с вкладки «Чат», например chat walk")
-                if (c.topics != null && v !in c.topics) return e("chat: темы «$v» нет (создайте её на вкладке «Чат»; есть: ${c.topics.joinToString(", ").ifEmpty { "нет" }})")
+                if (v !is String || v.isBlank()) return e("chat: нужен непустой текст темы, например chat \"Поговорить о погоде\"")
+                if (v.length > 1000) return e("chat: тема не длиннее 1000 знаков")
+                tpl(v, c)?.let { return e("chat: $it") }
+                if (PAUSE_RE.containsMatchIn(v)) return e("chat: {pause:…} допускается только в say")
                 if (s.has("for")) {
                     val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
                     if (d.minMs < 30_000 || d.maxMs > 30 * 60_000) return e("chat: for — от 30s до 30m (сколько длится разговор самое большее)")

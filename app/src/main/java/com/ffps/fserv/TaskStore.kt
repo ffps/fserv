@@ -129,8 +129,7 @@ object TaskStore {
         if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
         if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
         val zones = Settings.zones().keys().asSequence().toSet()
-        val topics = Settings.chat().optJSONObject("topics")?.keys()?.asSequence()?.toSet() ?: emptySet()
-        Script.validate(text, newId, zones, topics, { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
+        Script.validate(text, newId, zones, { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
         if (originalId == newId && file(newId).readText() == text) return null
         archive()
         writeAtomic(file(newId), text)

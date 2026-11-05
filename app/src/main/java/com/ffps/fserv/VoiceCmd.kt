@@ -2,33 +2,135 @@ package com.ffps.fserv
 
 /**
  * Запуск задач голосом: чистая логика без обращения к микрофону и настройкам (покрыта юнит-тестами).
- * Фразы задаются настройкой `voice="фраза1|фраза2"` в задаче, часы прослушивания — настройкой «Слушать команды, часы» (вкладка «Звук»).
+ * Фразы задаются настройкой `voice="фраза1|фраза2"` в задаче, имя помощника (префикс) и часы прослушивания — на вкладке «Звук».
+ *
+ * Шаблон фразы (подмножество JSGF): `(а|б)` — обязательный выбор, `[а|б]` — необязательная часть, `|` вне скобок разделяет фразы,
+ * `=` в начале фразы — слушать её без префикса. Шаблон разворачивается в обычный список фраз: Vosk принимает только его.
  */
 object VoiceCmd {
-    private const val MAX_PHRASE = 80
+    private const val MAX_PHRASE = 80      // длина одной развёрнутой фразы
+    private const val MAX_EXPANSION = 500  // сколько фраз может дать настройка одной задачи (и один префикс)
+    private const val MAX_SOURCE = 600     // длина текста настройки
+
+    /** Развёрнутая фраза: [text] — слова через пробел; [raw] — слушать без префикса (запись «=…»). */
+    class Phrase(val text: String, val raw: Boolean)
 
     /** Слова текста: нижний регистр, «ё» как «е», всё, кроме букв и цифр, — разделитель. */
     fun words(s: String): List<String> =
         s.lowercase().replace('ё', 'е').split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
 
     /**
-     * Разбор настройки voice: фразы через «|». Возвращает нормализованные фразы (слова через пробел).
-     * IllegalArgumentException с понятной причиной, если фраза пуста, слишком коротка, содержит не русские буквы или повторяется.
+     * Разбор настройки voice: фразы через «|» (шаблоны разворачиваются). Одинаковые варианты сливаются.
+     * IllegalArgumentException с понятной причиной: пустая или слишком короткая фраза, не русские буквы, неверные скобки, слишком много вариантов.
      */
-    fun parsePhrases(s: String): List<String> {
-        val out = ArrayList<String>()
-        for (raw in s.split('|')) {
-            val p = raw.trim()
+    fun expandPhrases(s: String): List<Phrase> {
+        if (s.length > MAX_SOURCE) throw IllegalArgumentException("текст voice длиннее $MAX_SOURCE знаков")
+        val out = LinkedHashMap<String, Phrase>()
+        for (part in splitTop(s)) {
+            var p = part.trim()
+            val raw = p.startsWith("=")
+            if (raw) p = p.substring(1).trim()
             if (p.isEmpty()) throw IllegalArgumentException("пустая фраза (фразы разделяются знаком |)")
-            if (p.length > MAX_PHRASE) throw IllegalArgumentException("фраза «${p.take(20)}…» длиннее $MAX_PHRASE знаков")
-            val w = words(p)
-            if (w.isEmpty() || w.any { x -> x.any { it !in 'а'..'я' } }) throw IllegalArgumentException("фразу «$p» пишите русскими буквами, числа словами (распознаются только слова из словаря русской модели)")
-            val n = w.joinToString(" ")
-            if (n.replace(" ", "").length < 4) throw IllegalArgumentException("фраза «$p» слишком короткая: нужно хотя бы 4 буквы, лучше два-три слова, иначе будут ложные срабатывания")
-            if (n in out) throw IllegalArgumentException("фраза «$p» повторяется")
-            out.add(n)
+            for (v in expand(p)) {
+                checkVariant(v, p, 4)
+                out.putIfAbsent("$raw:$v", Phrase(v, raw))
+                if (out.size > MAX_EXPANSION) throw IllegalArgumentException("настройка voice даёт больше $MAX_EXPANSION вариантов фраз: упростите шаблоны")
+            }
+        }
+        return out.values.toList()
+    }
+
+    /** Разбор префикса (имени помощника): варианты через «|», допустимы шаблоны. Пусто — без префикса. */
+    fun expandPrefixes(s: String): List<String> {
+        if (s.isBlank()) return emptyList()
+        if (s.length > MAX_SOURCE) throw IllegalArgumentException("префикс длиннее $MAX_SOURCE знаков")
+        val out = LinkedHashSet<String>()
+        for (v in expand(s.trim())) {
+            checkVariant(v, s.trim(), 3)
+            out.add(v)
+        }
+        return out.toList()
+    }
+
+    /** Полные фразы для распознавания: пары (полная фраза, фраза без префикса). Фразы «=…» и все фразы при пустом списке префиксов идут как есть. */
+    fun fullPhrases(phrases: List<Phrase>, prefixes: List<String>): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        for (p in phrases) {
+            if (p.raw || prefixes.isEmpty()) out.add(p.text to p.text)
+            else for (pf in prefixes) out.add("$pf ${p.text}" to p.text)
         }
         return out
+    }
+
+    private fun checkVariant(v: String, src: String, minLetters: Int) {
+        if (v.isEmpty()) throw IllegalArgumentException("в «$src» есть вариант без слов: проверьте скобки [ ] и ( )")
+        if (v.any { it != ' ' && it !in 'а'..'я' }) throw IllegalArgumentException("«$v» пишите русскими буквами, числа словами (распознаются только слова из словаря русской модели)")
+        if (v.length > MAX_PHRASE) throw IllegalArgumentException("фраза «${v.take(20)}…» длиннее $MAX_PHRASE знаков")
+        if (v.replace(" ", "").length < minLetters) throw IllegalArgumentException("«$v» слишком короткая: нужно хотя бы $minLetters буквы" + if (minLetters == 4) ", лучше два-три слова, иначе будут ложные срабатывания" else "")
+    }
+
+    /** Режет [s] по «|» вне скобок. */
+    private fun splitTop(s: String): List<String> {
+        val parts = ArrayList<String>()
+        var depth = 0
+        var start = 0
+        for ((i, c) in s.withIndex()) when (c) {
+            '(', '[' -> depth++
+            ')', ']' -> { depth--; if (depth < 0) throw IllegalArgumentException("лишняя скобка «$c» в «$s»") }
+            '|' -> if (depth == 0) { parts.add(s.substring(start, i)); start = i + 1 }
+        }
+        if (depth != 0) throw IllegalArgumentException("не закрыта скобка в «$s»")
+        parts.add(s.substring(start))
+        return parts
+    }
+
+    /** Все варианты шаблона (слова нормализованы, через пробел). */
+    private fun expand(src: String): List<String> {
+        val p = intArrayOf(0)
+        return parseAlts(src, p, null)
+    }
+
+    private fun parseAlts(s: String, p: IntArray, close: Char?): List<String> {
+        val alts = LinkedHashSet<String>()
+        var cur: List<String> = listOf("")
+        fun flush() {
+            alts.addAll(cur)
+            if (alts.size > MAX_EXPANSION) throw IllegalArgumentException("шаблон даёт больше $MAX_EXPANSION вариантов фразы: упростите его")
+        }
+        while (p[0] < s.length) {
+            val c = s[p[0]]
+            when (c) {
+                '|' -> { flush(); cur = listOf(""); p[0]++ }
+                '(', '[' -> {
+                    p[0]++
+                    var g = parseAlts(s, p, if (c == '(') ')' else ']')
+                    if (c == '[') g = g + ""
+                    cur = product(cur, g)
+                }
+                ')', ']' -> {
+                    if (c != close) throw IllegalArgumentException(if (close == null) "лишняя скобка «$c» в «$s»" else "скобки «(» и «[» перепутаны в «$s»")
+                    p[0]++
+                    flush()
+                    return alts.toList()
+                }
+                else -> {
+                    val st = p[0]
+                    while (p[0] < s.length && s[p[0]] !in "()[]|") p[0]++
+                    val w = words(s.substring(st, p[0])).joinToString(" ")
+                    if (w.isNotEmpty()) cur = cur.map { if (it.isEmpty()) w else "$it $w" }
+                }
+            }
+        }
+        if (close != null) throw IllegalArgumentException("не закрыта скобка «${if (close == ')') '(' else '['}» в «$s»")
+        flush()
+        return alts.toList()
+    }
+
+    private fun product(a: List<String>, b: List<String>): List<String> {
+        if (a.size.toLong() * b.size > MAX_EXPANSION) throw IllegalArgumentException("шаблон даёт больше $MAX_EXPANSION вариантов фразы: упростите его")
+        val out = LinkedHashSet<String>()
+        for (x in a) for (y in b) out.add(if (x.isEmpty()) y else if (y.isEmpty()) x else "$x $y")
+        return out.toList()
     }
 
     /** Какая из [phrases] (нормализованных) произнесена: её слова идут в услышанном подряд. Более длинная фраза предпочтительнее; null, если ни одной. */

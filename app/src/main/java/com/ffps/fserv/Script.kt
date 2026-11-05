@@ -77,13 +77,13 @@ object Script {
     fun parse(text: String, id: String = "task"): Parsed = Parser(text, id).run()
 
     /** Полная проверка файла задачи [id]: разбор и схема. [zones] — имена зон из настроек (вкладка «Камера»). Текст ошибки начинается с «строка N: » либо null. */
-    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), topics: Set<String>? = null, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): String? =
-        check(text, id, zones, topics, slideExists, fileExists).first
+    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): String? =
+        check(text, id, zones, slideExists, fileExists).first
 
     /** Как [validate], но возвращает ещё и номер строки ошибки (0, если ошибки нет или у неё нет строки). */
-    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), topics: Set<String>? = null, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
+    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
         val p = try { parse(text, id) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
-        val err = TaskSchema.validate(p.root, p.lines, slideExists, fileExists, zones, topics) ?: return null to 0
+        val err = TaskSchema.validate(p.root, p.lines, slideExists, fileExists, zones) ?: return null to 0
         val n = Regex("""^строка (\d+): """).find(err)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         return err to n
     }
@@ -246,7 +246,11 @@ object Script {
                     if (pv == null) fail(l.no, "play: нужно имя файла или системный звук, например play system:alarm")
                     s.put("play", unwrap(pv))
                 }
-                "chat" -> s.put("chat", unwrap(pv ?: fail(l.no, "chat: нужно имя темы с вкладки «Чат», например chat walk for=5m")))
+                "chat" -> {
+                    if (pv == null) fail(l.no, "chat: нужен текст темы в кавычках, например chat \"Поговорить о погоде\" for=5m")
+                    if (pv !is Q) fail(l.no, "chat: тему нужно написать текстом в кавычках, например chat \"Поговорить о погоде\" for=5m (имена тем с вкладки «Чат» больше не используются)")
+                    s.put("chat", pv.s)
+                }
                 "slide" -> s.put("slide", unwrap(pv ?: fail(l.no, "slide: нужно имя файла со вкладки «Слайды» или off, например slide hello.svg for=5s")))
                 "delay" -> s.put("delay", unwrap(pv ?: fail(l.no, "delay: нужна длительность, например delay 10s")))
                 "photo" -> s.put("photo", true)

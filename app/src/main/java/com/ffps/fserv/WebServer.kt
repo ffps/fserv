@@ -281,12 +281,10 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 // проверка разговора без голоса: тело {topic, history:[{role,text}]}; сервер ничего не хранит, историю держит страница
                 val b = JSONObject(body(s))
                 val chat = Settings.chat()
-                val topicName = b.optString("topic")
-                val topic = if (topicName.isEmpty()) "" else chat.optJSONObject("topics")?.optString(topicName)
-                require(topicName.isEmpty() || !topic.isNullOrEmpty()) { "темы «$topicName» нет (сохраните её на вкладке «Чат»)" }
+                val topic = b.optString("topic").trim()
                 val ha = b.optJSONArray("history") ?: JSONArray()
                 val hist = (0 until ha.length()).map { i -> ha.getJSONObject(i).let { Chat.Msg(if (it.optString("role") == "assistant") "assistant" else "user", it.optString("text")) } }
-                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic ?: "", Weather.chatContext()), hist)
+                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic, Weather.chatContext()), hist)
                 json(Response.Status.OK, obj("ok" to true, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "проверка чата не удалась: ${e.message}")
@@ -659,7 +657,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /api/llm/models" to "доступные модели пресета; ?preset=groq|gemini|custom (нужен сохранённый адрес и ключ)",
         "GET /api/weather" to "текущая погода для киоска и чата (с самого устройства доступна без входа)",
         "POST /api/weather/check" to "найти место по городу; ?city=Екатеринбург или ?city=56.84,60.61",
-        "POST /api/chat/test" to "проверка разговора без голоса: тело {\"topic\": имя темы, \"history\": [{\"role\": \"user|assistant\", \"text\": …}]}; ответ {reply, alert, end, ms}",
+        "POST /api/chat/test" to "проверка разговора без голоса: тело {\"topic\": текст темы, \"history\": [{\"role\": \"user|assistant\", \"text\": …}]}; ответ {reply, alert, end, ms}",
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
