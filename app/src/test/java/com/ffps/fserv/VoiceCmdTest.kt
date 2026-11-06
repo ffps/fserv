@@ -65,6 +65,26 @@ class VoiceCmdTest {
         assertEquals(listOf("на помощь" to "на помощь", "поболтай со мной" to "поболтай со мной"), VoiceCmd.fullPhrases(p, emptyList()))
     }
 
+    @Test fun wildcardTail() {
+        val p = VoiceCmd.expandPhrases("расскажи про *|*|привет")
+        assertEquals(listOf(true, true, false), p.map { it.wild })
+        assertEquals(listOf("расскажи про", "", "привет"), p.map { it.text })
+        val f = VoiceCmd.fullEntries(p, listOf("кузя", "кузьма"))
+        assertEquals(listOf("кузя расскажи про", "кузьма расскажи про", "кузя", "кузьма", "кузя привет", "кузьма привет"), f.map { it.full })
+        assertEquals(listOf(true, true, true, true, false, false), f.map { it.wild })
+        assertEquals("", f[2].rest)
+        assertEquals("расскажи про", f[0].rest)
+        // без префикса «*» без начала слушать нельзя, обычные фразы остаются
+        assertEquals(listOf("расскажи про", "привет"), VoiceCmd.fullEntries(p, emptyList()).map { it.full })
+        // «=*» тоже нельзя; «=расскажи *» можно (без префикса)
+        assertEquals(listOf("расскажи"), VoiceCmd.fullEntries(VoiceCmd.expandPhrases("=расскажи *"), listOf("кузя")).map { it.full })
+        assertTrue(bad("=*").contains("любую речь"))
+        // шаблоны в начале хвостовой фразы разворачиваются
+        assertEquals(listOf("расскажи про", "расскажи"), VoiceCmd.expandPhrases("расскажи [про] *").filter { it.text.isNotEmpty() }.map { it.text }.sortedByDescending { it.length })
+        assertTrue(bad("рас*скажи").contains("только в самом конце"))
+        assertTrue(bad("(а|б*) вот").contains("только в самом конце"))
+    }
+
     @Test fun parsePhrasesErrors() {
         assertTrue(bad("привет всем||ещё фраза").contains("пустая"))
         assertTrue(bad("").contains("пустая"))

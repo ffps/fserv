@@ -6,14 +6,21 @@ package com.ffps.fserv
  *
  * Шаблон фразы (подмножество JSGF): `(а|б)` — обязательный выбор, `[а|б]` — необязательная часть, `|` вне скобок разделяет фразы,
  * `=` в начале фразы — слушать её без префикса. Шаблон разворачивается в обычный список фраз: Vosk принимает только его.
+ * `*` в конце фразы — «и дальше что угодно» (свободный хвост): слушается только начало, хвост распознаётся вторым проходом.
  */
 object VoiceCmd {
     private const val MAX_PHRASE = 80      // длина одной развёрнутой фразы
     private const val MAX_EXPANSION = 500  // сколько фраз может дать настройка одной задачи (и один префикс)
     private const val MAX_SOURCE = 600     // длина текста настройки
 
-    /** Развёрнутая фраза: [text] — слова через пробел; [raw] — слушать без префикса (запись «=…»). */
-    class Phrase(val text: String, val raw: Boolean)
+    /**
+     * Развёрнутая фраза: [text] — слова через пробел (пусто у «*» без начала); [raw] — слушать без префикса (запись «=…»);
+     * [wild] — после неё идёт свободный хвост (запись «…*»).
+     */
+    class Phrase(val text: String, val raw: Boolean, val wild: Boolean = false)
+
+    /** Фраза для распознавания: [full] — что слушается (с префиксом), [rest] — то же без префикса, [wild] — есть свободный хвост. */
+    class Full(val full: String, val rest: String, val wild: Boolean)
 
     /** Слова текста: нижний регистр, «ё» как «е», всё, кроме букв и цифр, — разделитель. */
     fun words(s: String): List<String> =
@@ -30,10 +37,15 @@ object VoiceCmd {
             var p = part.trim()
             val raw = p.startsWith("=")
             if (raw) p = p.substring(1).trim()
-            if (p.isEmpty()) throw IllegalArgumentException("пустая фраза (фразы разделяются знаком |)")
-            for (v in expand(p)) {
-                checkVariant(v, p, 4)
-                out.putIfAbsent("$raw:$v", Phrase(v, raw))
+            val wild = p.endsWith("*")
+            if (wild) p = p.dropLast(1).trim()
+            if (p.contains('*')) throw IllegalArgumentException("знак * допустим только в самом конце фразы («расскажи про *»), а не в «${part.trim()}»")
+            if (p.isEmpty() && !wild) throw IllegalArgumentException("пустая фраза (фразы разделяются знаком |)")
+            if (p.isEmpty() && raw) throw IllegalArgumentException("«=*» слушало бы любую речь подряд: уберите «=», тогда хвост слушается после имени помощника (префикса)")
+            val variants = if (p.isEmpty()) listOf("") else expand(p)
+            for (v in variants) {
+                if (v.isNotEmpty() || !wild) checkVariant(v, p, 4)
+                out.putIfAbsent("$raw:$wild:$v", Phrase(v, raw, wild))
                 if (out.size > MAX_EXPANSION) throw IllegalArgumentException("настройка voice даёт больше $MAX_EXPANSION вариантов фраз: упростите шаблоны")
             }
         }
@@ -52,15 +64,23 @@ object VoiceCmd {
         return out.toList()
     }
 
-    /** Полные фразы для распознавания: пары (полная фраза, фраза без префикса). Фразы «=…» и все фразы при пустом списке префиксов идут как есть. */
-    fun fullPhrases(phrases: List<Phrase>, prefixes: List<String>): List<Pair<String, String>> {
-        val out = ArrayList<Pair<String, String>>()
+    /**
+     * Фразы для распознавания. Фразы «=…» и все фразы при пустом списке префиксов идут как есть. Фраза «*» без начала слушается
+     * как одно имя помощника (префикс) и потому без префикса пропускается: слушать «что угодно» нельзя.
+     */
+    fun fullEntries(phrases: List<Phrase>, prefixes: List<String>): List<Full> {
+        val out = ArrayList<Full>()
         for (p in phrases) {
-            if (p.raw || prefixes.isEmpty()) out.add(p.text to p.text)
-            else for (pf in prefixes) out.add("$pf ${p.text}" to p.text)
+            if (p.text.isEmpty()) { if (!p.raw) for (pf in prefixes) out.add(Full(pf, "", true)); continue }
+            if (p.raw || prefixes.isEmpty()) out.add(Full(p.text, p.text, p.wild))
+            else for (pf in prefixes) out.add(Full("$pf ${p.text}", p.text, p.wild))
         }
         return out
     }
+
+    /** Пары (полная фраза, фраза без префикса) — то же, что [fullEntries], без признака хвоста. */
+    fun fullPhrases(phrases: List<Phrase>, prefixes: List<String>): List<Pair<String, String>> =
+        fullEntries(phrases, prefixes).map { it.full to it.rest }
 
     private fun checkVariant(v: String, src: String, minLetters: Int) {
         if (v.isEmpty()) throw IllegalArgumentException("в «$src» есть вариант без слов: проверьте скобки [ ] и ( )")

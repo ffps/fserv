@@ -236,6 +236,9 @@ object Stt {
         return Recognizer(m, RATE.toFloat(), g.toString())
     }
 
+    /** Новый распознаватель свободной речи с метками времени слов (второй проход для хвоста команды). Закрывает вызывающий; время в нём идёт от начала поданного звука. */
+    fun newFreeRecognizer(): Recognizer = Recognizer(loadModel(), RATE.toFloat()).also { it.setWords(true) }
+
     /** Сколько шагов сейчас слушают микрофон (ask, chat, проверка): слушатель голосовых команд на это время отпускает его. */
     val micUsers = java.util.concurrent.atomic.AtomicInteger(0)
 

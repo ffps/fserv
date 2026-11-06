@@ -54,8 +54,8 @@
   .f input[type=text], .f input[type=number], .f input[type=password], .f input:not([type]), .f select { width:100%; }
   code { background:var(--code); padding:1px 5px; border-radius:4px; }
   a { color:var(--acc-d); }
-  .cw { position:relative; padding-top:34px; }
-  .cp { position:absolute; top:0; right:0; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.9); border:1px solid #cdd2e0; border-radius:6px; color:var(--dim); cursor:pointer; z-index:2; }
+  .cw { position:relative; }
+  .cp { position:absolute; top:-34px; right:0; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.9); border:1px solid #cdd2e0; border-radius:6px; color:var(--dim); cursor:pointer; z-index:2; }
   .cp:hover { color:var(--acc); border-color:var(--acc); background:var(--acc-soft); }
   .cp svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .cp.done { color:var(--good); border-color:var(--good); } .cp.fail { color:var(--bad); border-color:var(--bad); }
@@ -201,8 +201,6 @@
 
   <div id="tkEditor" style="display:none;margin-top:14px">
     <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="ib add" id="tkClose" title="Закрыть"></button><button class="ib add pri" id="tkSave" title="Сохранить задачу"></button></div>
-    <div class="msg" id="tkSMsg"></div>
-    <p class="hint" id="tkIdHint" style="margin:0">id (латиница, цифры, _ и -) служит именем файла tasks/id.txt; если его изменить и сохранить, файл будет переименован.</p>
     <textarea id="tkText" rows="22" spellcheck="false" wrap="off"></textarea>
     <div class="row" style="margin-top:8px">
       <button class="btn sec" id="tkDry">Пробный запуск</button>
@@ -211,7 +209,7 @@
     <p class="hint" id="tkRunInfo"></p>
     <pre id="tkLog" style="max-height:300px">—</pre>
   </div>
-  <p class="hint">Запускать (значок ▶ в списке) можно только сохранённую задачу; во время работы значок меняется на ■ — остановить. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Полное описание языка: <a href="https://github.com/ffps/fserv/blob/main/script.md" target="_blank" rel="noopener">script.md</a>. Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
+  <p class="hint">Запускать (значок ▶ в списке) можно только сохранённую задачу; во время работы значок меняется на ■ — остановить. Пробный запуск проходит по шагам и пишет их в журнал, но ничего не произносит, не включает камеру и не пишет в Telegram; паузы пропускаются. Результат watch в нём задаётся полем справа (например, <code>moved:true</code>), по умолчанию «движения нет». Id задачи (латиница, цифры, _ и -) служит именем файла tasks/id.txt; если его изменить и сохранить, файл будет переименован. Полное описание языка: <a href="https://github.com/ffps/fserv/blob/main/script.md" target="_blank" rel="noopener">script.md</a>. Расписание выключенной задачи не работает, но запустить её вручную можно.</p>
 
   <details style="margin-top:22px"><summary>История версий</summary>
     <div class="row" style="margin-top:8px">
@@ -273,10 +271,12 @@
     <input id="vcPrefix" placeholder="например Кузя или Кузя|Кузьма (пусто = без префикса)">
     <label for="vcLevel">Порог громкости, % (0 — слушать всегда)</label>
     <input id="vcLevel" type="number" min="0" max="50" step="0.1" placeholder="0">
+    <label for="vcTail">Длина хвоста после команды «*», с</label>
+    <input id="vcTail" type="number" min="2" max="15" step="1" placeholder="8">
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="vcSave">Сохранить</button></div>
   <div class="msg" id="vcMsg"></div>
-  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона. <b>Порог громкости</b> (0–50, % полной шкалы микрофона) экономит процессор: тишина распознавателю не отдаётся, а звук громче порога включает распознавание (вместе с секундой до и после). 0 — слушать всегда. Подберите порог по строке «Громкость сейчас»: сначала в тишине (запомните фон), затем при команде с обычного расстояния; порог ставят выше фона и ниже голоса, обычно 1–3. Слишком высокий порог пропустит тихую речь.</p>
+  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Знак <code>*</code> в конце фразы означает «и дальше что угодно»: <code>voice="*"</code> — любая речь после имени помощника, <code>voice="расскажи про *"</code> — после этих слов; сказанное целиком (вместе с хвостом) попадает в <code>{phrase}</code>, например в <code>chat "{phrase}"</code>. Хвост распознаётся вторым проходом (свободная речь, не дольше «длины хвоста»), короче двух слов он не считается; точная фраза из другой задачи важнее «*». Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона. <b>Порог громкости</b> (0–50, % полной шкалы микрофона) экономит процессор: тишина распознавателю не отдаётся, а звук громче порога включает распознавание (вместе с секундой до и после). 0 — слушать всегда. Подберите порог по строке «Громкость сейчас»: сначала в тишине (запомните фон), затем при команде с обычного расстояния; порог ставят выше фона и ниже голоса, обычно 1–3. Слишком высокий порог пропустит тихую речь.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Задачи</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -586,7 +586,7 @@ document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
 track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
-track("vcSave", ["vcHours", "vcPrefix", "vcLevel"]);
+track("vcSave", ["vcHours", "vcPrefix", "vcLevel", "vcTail"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -1055,7 +1055,7 @@ function showTask(text, orig, id) {
   $("#tkText").value = tkShown; $("#tkText").markLine(0); syncEditors();
   $("#tkEditor").style.display = "";
   $("#tkDry").disabled = !orig;
-  say("#tkSMsg", ""); renderTasks();
+  say("#tkMsg", ""); renderTasks();
 }
 function closeEditor() { tkOpen = false; tkOrig = ""; $("#tkEditor").style.display = "none"; renderTasks(); }
 function tkDirty() { return tkOpen && ($("#tkText").value !== tkShown || $("#tkId").value.trim() !== tkIdShown); }
@@ -1068,15 +1068,15 @@ function newId() { let n = 1; const ids = (cfgObj.tasks || []).map(t => t.id); w
 $("#tkAdd").onclick = () => {
   if (!confirmDiscard()) return;
   showTask('task "Новая задача" enabled=false cron="0 9 * * *" timeout=30m\n  log "привет из {task}"\n', "", newId());
-  say("#tkSMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
+  say("#tkMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
 };
 $("#tkExample").onclick = () => {
   if (!confirmDiscard()) return;
   showTask(EXAMPLE_TASK, "", (cfgObj.tasks || []).some(x => x.id === "wakeup") ? newId() : "wakeup");
-  say("#tkSMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
+  say("#tkMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
 };
 $("#tkClose").onclick = () => { if (confirmDiscard()) closeEditor(); };
-$("#tkSave").onclick = () => run("#tkSMsg", async () => {
+$("#tkSave").onclick = () => run("#tkMsg", async () => {
   const text = $("#tkText").value, id = $("#tkId").value.trim();
   if (!id) throw new Error("введите id задачи (имя файла), например wakeup");
   await post("/api/tasks/save?id=" + encodeURIComponent(tkOrig) + "&new=" + encodeURIComponent(id), text);
@@ -1134,7 +1134,7 @@ document.addEventListener("click", e => {
     });
   }
 });
-$("#tkDry").onclick = () => run("#tkSMsg", async () => {
+$("#tkDry").onclick = () => run("#tkMsg", async () => {
   if (tkDirty()) throw new Error("есть несохранённые изменения: сначала сохраните задачу");
   const r = await post("/api/tasks/run?id=" + encodeURIComponent(tkOrig) + "&dry=1&assume=" + encodeURIComponent($("#tkAssume").value.trim())); setTimeout(loadTasks, 400); return r.json.message;
 });
@@ -1185,7 +1185,7 @@ async function loadStt() {
       $("#vcPhS").textContent = "Показать все фразы (" + ph.length + ")";
       const body = Object.keys(tasks).map(t => "<h4>" + esc(t) + ": " + tasks[t].length + "</h4>" + tasks[t].map(f => esc(f)).join("<br>")).join("");
       if ($("#vcPhB").dataset.h !== body) { $("#vcPhB").innerHTML = body; $("#vcPhB").dataset.h = body; }
-      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; $("#vcLevel").value = L.level; rebase("vcSave"); }
+      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; $("#vcLevel").value = L.level; $("#vcTail").value = L.tail; rebase("vcSave"); }
     }
     $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
     $("#sttUpload").disabled = t.state === "downloading" || t.state === "unpacking";
@@ -1196,7 +1196,7 @@ async function loadStt() {
   } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
 $("#vcSave").onclick = () => run("#vcMsg", async () => {
-  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim(), level: Number($("#vcLevel").value) || 0}}));
+  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim(), level: Number($("#vcLevel").value) || 0, tail: Number($("#vcTail").value) || 8}}));
   await loadStt();
   return $("#vcHours").value.trim() ? "сохранено" : "сохранено: слушание выключено";
 }, "vcSave");

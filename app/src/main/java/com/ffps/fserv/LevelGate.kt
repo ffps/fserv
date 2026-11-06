@@ -44,3 +44,52 @@ class LevelGate(private val hang: Int = 12, private val pre: Int = 2) {
     /** Забыть всё (после паузы слушателя, речи синтезатора и т. п.). */
     fun reset() { ring.clear(); left = 0; closedNow = false }
 }
+
+/**
+ * Звук текущей реплики (всё, что слушатель отдал распознавателю после его последнего завершения) для второго прохода: после начала команды
+ * со свободным хвостом («масяня, расскажи про *») хвост нужно распознать другой моделью, а звук к этому моменту уже ушёл первой.
+ * Лежит только в памяти и не дольше реплики. Куски по [chunkSec] секунд; тишина и речь различаются по пику куска относительно фона.
+ * Чистая логика без Android (покрыта юнит-тестами).
+ */
+class Utterance(private val maxChunks: Int = 250, val chunkSec: Double = 0.1) {
+    private val chunks = ArrayDeque<ShortArray>()
+    private val peaks = ArrayDeque<Int>()
+
+    val size: Int get() = chunks.size
+
+    fun add(c: ShortArray) {
+        var p = 0
+        for (v in c) { val a = Math.abs(v.toInt()); if (a > p) p = a }
+        chunks.addLast(c.copyOf()); peaks.addLast(p)
+        while (chunks.size > maxChunks) { chunks.removeFirst(); peaks.removeFirst() }
+    }
+
+    fun clear() { chunks.clear(); peaks.clear() }
+
+    fun all(): List<ShortArray> = chunks.toList()
+
+    /** Порог «это речь»: заметно выше фона (фон — низкий дециль пиков). */
+    private fun limit(): Int {
+        if (peaks.isEmpty()) return Int.MAX_VALUE
+        val s = peaks.sorted()
+        return s[s.size / 10] * 3 + 150
+    }
+
+    /** Номер первого куска с речью или -1. */
+    fun firstLoud(): Int { val l = limit(); return peaks.indexOfFirst { it > l } }
+
+    /** Есть ли речь в кусках с номера [from]. */
+    fun loudAfter(from: Int): Boolean { val l = limit(); for (i in maxOf(from, 0) until peaks.size) if (peaks[i] > l) return true; return false }
+
+    /** Сколько последних кусков подряд тихие. */
+    fun trailingSilence(): Int { val l = limit(); var n = 0; var i = peaks.size - 1; while (i >= 0 && peaks[i] <= l) { n++; i-- }; return n }
+
+    /** Выбрасывает тишину до начала речи, оставляя [pre] кусков до неё. Возвращает false, если речи нет. */
+    fun trimToSpeech(pre: Int = 2): Boolean {
+        val f = firstLoud()
+        if (f < 0) return false
+        val drop = maxOf(0, f - pre)
+        repeat(drop) { chunks.removeFirst(); peaks.removeFirst() }
+        return true
+    }
+}

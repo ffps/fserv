@@ -160,7 +160,7 @@ object TaskEngine {
     }
 
     /** Фраза запуска голосом: [full] — что слушается (с префиксом), [rest] — то же без префикса (подстановка {phrase}). */
-    class VoiceEntry(val task: String, val full: String, val rest: String)
+    class VoiceEntry(val task: String, val full: String, val rest: String, val wild: Boolean = false)
 
     private var vpKey = ""
     private var vpVal: List<VoiceEntry> = emptyList()
@@ -192,11 +192,11 @@ object TaskEngine {
             if (!t.optBoolean("enabled", true) || !t.has("voice")) continue
             val id = t.optString("id")
             val list = try { VoiceCmd.expandPhrases(t.optString("voice")) } catch (e: IllegalArgumentException) { continue }
-            val pairs = if (prefixes == null) list.filter { it.raw }.map { it.text to it.text } else VoiceCmd.fullPhrases(list, prefixes)
-            for ((full, rest) in pairs) {
-                val prev = out.firstOrNull { it.full == full }
-                if (prev == null) out.add(VoiceEntry(id, full, rest))
-                else if (prev.task != id && voiceDupWarned.add("$id:$full")) FLog.w("task", "фраза «$full» есть у задач «${prev.task}» и «$id»: сработает «${prev.task}»")
+            val fulls = if (prefixes == null) list.filter { it.raw && it.text.isNotEmpty() }.map { VoiceCmd.Full(it.text, it.text, it.wild) } else VoiceCmd.fullEntries(list, prefixes)
+            for (f in fulls) {
+                val prev = out.firstOrNull { it.full == f.full }
+                if (prev == null) out.add(VoiceEntry(id, f.full, f.rest, f.wild))
+                else if (prev.task != id && voiceDupWarned.add("$id:${f.full}")) FLog.w("task", "фраза «${f.full}» есть у задач «${prev.task}» и «$id»: сработает «${prev.task}»")
             }
         }
         vpKey = k; vpVal = out
@@ -205,13 +205,18 @@ object TaskEngine {
 
     private val voiceDupWarned = HashSet<String>()
 
-    /** Ставит задачу в очередь по голосовой команде ([heard] — что услышано целиком). Возвращает текст причины, если не запущена, или null. */
-    fun runByVoice(e: VoiceEntry, heard: String): String? {
+    /**
+     * Ставит задачу в очередь по голосовой команде ([heard] — что услышано целиком; [tail] — свободный хвост после фразы со знаком «*»).
+     * Возвращает текст причины, если не запущена, или null.
+     */
+    fun runByVoice(e: VoiceEntry, heard: String, tail: String = ""): String? {
         val root = config()
         val task = findTask(root, e.task) ?: return "задачи «${e.task}» нет"
         if (current?.info?.id == e.task || queue.any { it.taskId == e.task }) return "задача «${e.task}» уже выполняется или стоит в очереди"
-        val note = if (VoiceCmd.words(heard).joinToString(" ") != e.full) " (услышано: «$heard»)" else ""
-        enqueue(Req(e.task, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4, e.rest, note), task)
+        val spoken = if (e.wild) "$heard $tail".trim() else heard
+        val note = if (e.wild || VoiceCmd.words(heard).joinToString(" ") != e.full) " (услышано: «$spoken»)" else ""
+        val phrase = if (e.wild) "${e.rest} $tail".trim() else e.rest
+        enqueue(Req(e.task, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4, phrase, note), task)
         start()
         return null
     }

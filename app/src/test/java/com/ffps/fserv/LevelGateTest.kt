@@ -62,4 +62,38 @@ class LevelGateTest {
         assertFalse(g.isOpen)
         assertEquals(listOf(5), g.push(c(5), 500, 100).map { it[0].toInt() })
     }
+
+    private fun u(vararg peaks: Int): Utterance { val x = Utterance(); for (p in peaks) x.add(ShortArray(4) { p.toShort() }); return x }
+
+    @Test fun utteranceFindsSpeech() {
+        val x = u(50, 60, 55, 5000, 6000, 5500, 40, 45)
+        assertEquals(3, x.firstLoud())
+        assertTrue(x.loudAfter(5))
+        assertFalse(x.loudAfter(6))
+        assertEquals(2, x.trailingSilence())
+    }
+
+    @Test fun utteranceTrimKeepsPreRoll() {
+        val x = u(50, 60, 55, 50, 5000, 6000, 40)
+        assertTrue(x.trimToSpeech(2))
+        assertEquals(5, x.size)
+        assertEquals(2, x.firstLoud())
+        assertEquals(5, x.all().size)
+    }
+
+    @Test fun utteranceNoSpeechAndCap() {
+        assertFalse(u(50, 52, 49, 51).trimToSpeech())
+        assertEquals(-1, u(50, 52, 49, 51).firstLoud())
+        val x = Utterance(3)
+        for (p in 1..5) x.add(ShortArray(2) { p.toShort() })
+        assertEquals(listOf(3, 4, 5), x.all().map { it[0].toInt() })
+        x.clear(); assertEquals(0, x.size); assertEquals(-1, x.firstLoud())
+    }
+
+    @Test fun utteranceCopiesChunks() {
+        val x = Utterance()
+        val b = ShortArray(2) { 9 }
+        x.add(b); b.fill(1)
+        assertEquals(9, x.all()[0][0].toInt())
+    }
 }

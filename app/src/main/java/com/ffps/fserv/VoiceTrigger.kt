@@ -55,8 +55,8 @@ object VoiceTrigger {
     /** Для вкладки «Звук»: что делает слушатель и какие фразы слушает. */
     fun status(): JSONObject {
         val ph = JSONArray()
-        for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to e.full))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
+        for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to (e.full + if (e.wild) " *" else "")))
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -122,18 +122,16 @@ object VoiceTrigger {
                     continue
                 }
                 val phrases = TaskEngine.voicePhrases()
-                val key = phrases.joinToString("|") { it.full }
+                val key = keyOf(phrases)
                 if (rec == null || key != recKey) {
                     rec?.let { try { it.close() } catch (e: Throwable) {} }
                     rec = null
                     setState("loading", "готовлю распознавание команд…")
                     val t0 = System.currentTimeMillis()
-                    rec = Stt.newRecognizer(phrases.map { it.full })
+                    rec = Stt.newRecognizer(phrases.map { it.full }).also { it.setWords(true) } // метки времени слов нужны, чтобы найти начало хвоста
                     recKey = key
                     Stt.voiceHold = true
                     FLog.d("voice-cmd", "распознаватель команд собран за ${System.currentTimeMillis() - t0} мс, фраз: ${phrases.size}")
-                    for ((task, list) in phrases.groupBy { it.task })
-                        FLog.d("voice-cmd", "задача «$task»: фраз ${list.size}: " + list.joinToString("; ") { it.full }.let { if (it.length > 3000) it.take(3000) + "…" else it })
                 }
                 val minBuf = AudioRecord.getMinBufferSize(Stt.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 val a = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, Stt.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, Stt.RATE))
@@ -170,11 +168,24 @@ object VoiceTrigger {
 
     private fun threshold(): Int = (Settings.listenLevel * 327.68).toInt()
 
+    /** Ключ набора фраз: меняется, когда изменились сами фразы или признак хвоста. */
+    private fun keyOf(p: List<TaskEngine.VoiceEntry>): String = p.joinToString("|") { it.full + if (it.wild) "*" else "" }
+
+    private const val CH = 0.1              // секунд в одном куске звука
+    private const val END_SILENCE = 10      // столько кусков тишины (1 с) после речи — хвост закончен
+    private const val NO_SPEECH_SEC = 3.0   // если после команды столько секунд молчат, хвоста нет
+    private const val MIN_TAIL_WORDS = 2    // короче хвост считается случайным шумом
+    private const val TAIL_BEFORE_SEC = 0.25 // слово, начавшееся не раньше чем за столько до конца команды, относится к хвосту
+
+    private fun norm(w: String) = w.lowercase().replace('ё', 'е')
+
     /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. Тише порога громкости звук не отдаётся. */
     private fun readLoop(a: AudioRecord, r: Recognizer, phrases: List<TaskEngine.VoiceEntry>, key: String) {
         val list = phrases.map { it.full }
+        val hasWild = phrases.any { it.wild }
         val buf = ShortArray(Stt.RATE / 10)
         val gate = LevelGate()
+        val utt = Utterance()
         var thr = threshold()
         var gain = 1f
         var muted = false
@@ -182,35 +193,15 @@ object VoiceTrigger {
         var winMax = 0
         var lastTrigger = 0L
 
-        fun onFinal() {
-            val heard = JSONObject(r.result).optString("text").replace("[unk]", " ").trim().replace(Regex("\\s+"), " ")
-            if (heard.isEmpty()) return
-            val phrase = VoiceCmd.match(heard, list)
-            FLog.d("voice-cmd", "услышано «$heard»" + if (phrase == null) ", это не команда" else " → «$phrase»")
-            val now = System.currentTimeMillis()
-            if (phrase != null && now - lastTrigger > COOLDOWN_MS) {
-                lastTrigger = now
-                val entry = phrases.first { it.full == phrase }
-                TaskEngine.runByVoice(entry, heard)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
-                r.reset()
-                gate.reset()
-            }
-        }
-
-        while (true) {
-            if (Stt.micUsers.get() > 0 || Call.active) return
-            if (++chunks % 10 == 0L) {
-                if (blocker() != null) return
-                if (TaskEngine.voicePhrases().joinToString("|") { it.full } != key) return
-                thr = threshold()
-            }
+        /** Очередной кусок с усилением и его сырой пик; null — пока ничего нет или говорит синтезатор. */
+        fun readChunk(): Pair<ShortArray, Int>? {
             val n = a.read(buf, 0, buf.size)
             if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
-            if (n == 0) continue
+            if (n == 0) return null
             // пока говорит синтезатор (и недолго после) звук выбрасывается, а начатая фраза сбрасывается
             if (Voice.msSinceSpeech() < ECHO_MS) {
-                if (!muted) { r.reset(); gate.reset(); muted = true }
-                continue
+                if (!muted) { r.reset(); gate.reset(); utt.clear(); muted = true }
+                return null
             }
             muted = false
             var peak = 0
@@ -220,12 +211,97 @@ object VoiceTrigger {
             if (peak > 150) gain = gain * 0.9f + (TARGET_PEAK.toFloat() / peak).coerceIn(1f, MAX_GAIN) * 0.1f
             val g = if (peak > 0) minOf(gain, 32000f / peak) else gain
             if (g > 1.05f) for (i in 0 until n) buf[i] = (buf[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+            return (if (n == buf.size) buf else buf.copyOf(n)) to peak
+        }
+
+        /** Второй проход: звук реплики через модель свободной речи; слова с метками времени от начала звука. */
+        fun transcribe(audio: List<ShortArray>): List<Triple<String, Double, Double>> {
+            val fr = Stt.newFreeRecognizer()
+            try {
+                val out = ArrayList<Triple<String, Double, Double>>()
+                fun take(js: String) {
+                    val arr = JSONObject(js).optJSONArray("result") ?: return
+                    for (i in 0 until arr.length()) { val w = arr.getJSONObject(i); out.add(Triple(norm(w.optString("word")), w.optDouble("start"), w.optDouble("end"))) }
+                }
+                for (c in audio) if (fr.acceptWaveForm(c, c.size)) take(fr.result)
+                take(fr.finalResult)
+                return out
+            } finally {
+                try { fr.close() } catch (e: Throwable) {}
+            }
+        }
+
+        /** Дослушивает реплику после начала команды со знаком «*» и возвращает хвост; null — хвоста нет или он слишком короткий. */
+        fun captureTail(j: JSONObject, e: TaskEngine.VoiceEntry): String? {
+            val tailSec = Settings.listenTail
+            val arr = j.optJSONArray("result")
+            val words = ArrayList<Triple<String, Double, Double>>()
+            if (arr != null) for (i in 0 until arr.length()) { val w = arr.getJSONObject(i); words.add(Triple(norm(w.optString("word")), w.optDouble("start"), w.optDouble("end"))) }
+            val real = words.filter { it.first != "[unk]" }
+            val hw = e.full.split(' ').map { norm(it) }
+            var headEnd = -1.0
+            for (i in 0..real.size - hw.size) if (hw.indices.all { real[i + it].first == hw[it] }) { headEnd = real[i + hw.size - 1].third; break }
+            if (headEnd < 0 || words.isEmpty()) { FLog.d("voice-cmd", "хвост «${e.full} *»: нет меток времени слов, не запускаю"); return null }
+            if (!utt.trimToSpeech(2)) { FLog.d("voice-cmd", "хвост «${e.full} *»: в звуке нет речи, не запускаю"); return null }
+            val headEndSec = utt.firstLoud() * CH + (headEnd - words[0].second) // конец команды в секундах от начала звука
+            val headEndChunk = Math.ceil(headEndSec / CH).toInt()
+            val deadline = System.currentTimeMillis() + ((tailSec + NO_SPEECH_SEC + 3) * 1000).toLong()
+            while (true) {
+                if (Stt.micUsers.get() > 0 || Call.active || muted) return null
+                val after = (utt.size - headEndChunk) * CH
+                val spoke = utt.loudAfter(headEndChunk + 1)
+                if (spoke && utt.trailingSilence() >= END_SILENCE) break // сказал и замолчал
+                if (!spoke && after >= NO_SPEECH_SEC) break              // после команды молчат
+                if (after >= tailSec + 0.5) break                        // предел длины хвоста
+                if (System.currentTimeMillis() > deadline) break
+                val c = readChunk() ?: continue
+                utt.add(c.first)
+            }
+            val t0 = System.currentTimeMillis()
+            val ws = transcribe(utt.all())
+            val tail = ws.filter { it.second >= headEndSec - TAIL_BEFORE_SEC && it.second <= headEndSec + tailSec }.map { it.first }.toMutableList()
+            if (tail.isNotEmpty() && tail[0] == hw.last()) tail.removeAt(0) // обрывок последнего слова самой команды
+            FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: ${utt.size * CH} с звука распознано за ${System.currentTimeMillis() - t0} мс, предел $tailSec с")
+            if (tail.size < MIN_TAIL_WORDS) { FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю"); return null }
+            return tail.joinToString(" ")
+        }
+
+        /** Разбирает завершённую реплику (JSON результата первого распознавателя). */
+        fun handle(json: String) {
+            val j = JSONObject(json)
+            val heard = j.optString("text").replace("[unk]", " ").trim().replace(Regex("\\s+"), " ")
+            if (heard.isEmpty()) return
+            val phrase = VoiceCmd.match(heard, list)
+            FLog.d("voice-cmd", "услышано «$heard»" + if (phrase == null) ", это не команда" else " → «$phrase»")
+            if (phrase == null) return
+            if (System.currentTimeMillis() - lastTrigger <= COOLDOWN_MS) return
+            val entry = phrases.first { it.full == phrase }
+            val tail = if (entry.wild) (captureTail(j, entry) ?: return) else ""
+            lastTrigger = System.currentTimeMillis()
+            TaskEngine.runByVoice(entry, heard, tail)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
+        }
+
+        fun resetAll() { r.reset(); gate.reset(); utt.clear() }
+
+        while (true) {
+            if (Stt.micUsers.get() > 0 || Call.active) return
+            if (++chunks % 10 == 0L) {
+                if (blocker() != null) return
+                if (keyOf(TaskEngine.voicePhrases()) != key) return
+                thr = threshold()
+            }
+            val c = readChunk() ?: continue
             totalChunks++
-            val feed = gate.push(if (n == buf.size) buf else buf.copyOf(n), peak, thr)
+            val feed = gate.push(c.first, c.second, thr)
             if (feed.isEmpty()) continue
             fedChunks += feed.size
-            for (f in feed) if (r.acceptWaveForm(f, f.size)) onFinal()
-            if (gate.closedNow) r.reset() // тишина после фразы без завершения: брошенное не копим
+            for (f in feed) {
+                if (hasWild) utt.add(f)
+                if (r.acceptWaveForm(f, f.size)) { handle(r.result); resetAll() }
+            }
+            // слишком долгая реплика без паузы: завершаем принудительно, чтобы не копить звук без конца
+            if (hasWild && utt.size >= (Settings.listenTail + 5) * 10) { handle(r.finalResult); resetAll() }
+            if (gate.closedNow) resetAll() // тишина после фразы без завершения: брошенное не копим
         }
     }
 }
