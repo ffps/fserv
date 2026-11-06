@@ -191,12 +191,16 @@ class ScriptTest {
         val f = listOf("../script.md", "script.md").map { java.io.File(it) }.firstOrNull { it.isFile } ?: return
         val blocks = Regex("```\\n(.*?)```", RegexOption.DOT_MATCHES_ALL).findAll(f.readText()).map { it.groupValues[1] }.toList()
         val zones = setOf("bed", "door", "room") // имена зон, которые в примерах считаются созданными на вкладке «Камера»
+        // блоки вида «имя = [...]» это файл общих списков: они разбираются отдельно, а их имена доступны примерам задач
+        val listBlocks = blocks.filter { b -> b.lines().firstOrNull { it.isNotEmpty() && !it.startsWith("#") }?.let { Regex("""^[A-Za-z_]\w*\s*=\s*\[""").containsMatchIn(it) } == true }
+        val lists = LinkedHashMap<String, String>()
+        for (b in listBlocks) { assertNull("пример списков из script.md не проходит проверку:\n$b", Lists.check(b)); lists.putAll(Lists.parse(b)) }
         var checked = 0
         for (b in blocks) {
             val top = b.lines().filter { it.isNotEmpty() && !it.startsWith(" ") && !it.startsWith("#") }
             if (top.isEmpty()) continue
             val isTask = top.all { it == "task" || it.startsWith("task ") }
-            if (isTask) assertNull("пример задачи из script.md не проходит проверку:\n$b", Script.validate(b, "x", zones))
+            if (isTask) assertNull("пример задачи из script.md не проходит проверку:\n$b", Script.validate(b, "x", zones, lists))
             else continue
             checked++
         }
@@ -341,7 +345,7 @@ class ScriptTest {
         expect(task("slide off for=5s"), "параметров")
         expect(task("slide"), "slide")
         expect(task("slide a.png hide=5s"), "у slide нет параметра")
-        val e = Script.validate(task("slide missing.png"), "x", emptySet(), { false })
+        val e = Script.validate(task("slide missing.png"), "x", emptySet(), slideExists = { false })
         assertNotNull(e); assertTrue(e!!.contains("Слайды"))
     }
 }

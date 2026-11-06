@@ -99,4 +99,11 @@ class ChatTest {
         assertEquals(listOf("gemini-2.5-pro", "gemini-3.1-flash-lite"), Chat.parseModels(gemini))
         assertEquals(emptyList<String>(), Chat.parseModels("""{"data":[]}"""))
     }
+
+    @Test fun formatDigitsAndLastReply() {
+        assertTrue(Chat.FORMAT.contains("цифрами"))
+        assertFalse(Chat.FORMAT.contains("пиши словами"))
+        assertTrue(Chat.LAST.contains("НЕ задавай"))
+        assertTrue(Chat.LAST.contains("end=true"))
+    }
 }

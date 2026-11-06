@@ -708,7 +708,7 @@ object TaskEngine {
         while (true) {
             check(r)
             val last = n + 1 >= turns || end - System.currentTimeMillis() < 45_000 || silences >= 2
-            val system = Chat.systemPrompt(rules, if (fromUser) "" else topic, Weather.chatContext(), hist.isEmpty()) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
+            val system = Chat.systemPrompt(rules, if (fromUser) "" else topic, Weather.chatContext(), hist.isEmpty()) + if (last) Chat.LAST else ""
             val res = try {
                 Llm.ask(system, hist)
             } catch (e: Llm.LlmError) {

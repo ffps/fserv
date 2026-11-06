@@ -74,15 +74,27 @@ object Script {
     // ---------------- публичный вход ----------------
 
     /** Разбирает текст в дерево. Бросает [ScriptError] с номером строки. */
-    fun parse(text: String, id: String = "task"): Parsed = Parser(text, id).run()
+    fun parse(text: String, id: String = "task", lists: Map<String, String> = emptyMap()): Parsed = Parser(text, id, lists).run()
+
+    /** Проверка списка из lists.txt, записанного одной строкой (`["a", b]`): бросает [ScriptError] с номером строки [no]; возвращает число элементов. */
+    fun listLiteral(lit: String, no: Int): Int {
+        val p = Parser("", "lists", emptyMap())
+        val c = Cursor(lit, no, p)
+        if (lit.isEmpty() || lit[0] != '[') p.fail(no, "значение должно быть списком в квадратных скобках")
+        val v = c.list()
+        c.skip()
+        if (c.i < lit.length) p.fail(no, "после закрывающей скобки ] лишний текст")
+        if (v.any { it is List<*> }) p.fail(no, "вложенные списки не допускаются")
+        return v.size
+    }
 
     /** Полная проверка файла задачи [id]: разбор и схема. [zones] — имена зон из настроек (вкладка «Камера»). Текст ошибки начинается с «строка N: » либо null. */
-    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): String? =
-        check(text, id, zones, slideExists, fileExists).first
+    fun validate(text: String, id: String = "task", zones: Set<String> = emptySet(), lists: Map<String, String> = emptyMap(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): String? =
+        check(text, id, zones, lists, slideExists, fileExists).first
 
     /** Как [validate], но возвращает ещё и номер строки ошибки (0, если ошибки нет или у неё нет строки). */
-    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
-        val p = try { parse(text, id) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
+    fun check(text: String, id: String = "task", zones: Set<String> = emptySet(), lists: Map<String, String> = emptyMap(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean = { true }): Pair<String?, Int> {
+        val p = try { parse(text, id, lists) } catch (e: ScriptError) { return "строка ${e.line}: ${e.message}" to e.line }
         val err = TaskSchema.validate(p.root, p.lines, slideExists, fileExists, zones) ?: return null to 0
         val n = Regex("""^строка (\d+): """).find(err)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         return err to n
@@ -91,7 +103,7 @@ object Script {
     // ---------------- разбор ----------------
 
     /** Файл одной задачи с этим id. */
-    private class Parser(val text: String, val taskId: String) {
+    private class Parser(val text: String, val taskId: String, val lists: Map<String, String> = emptyMap()) {
         val raw = text.replace("\r\n", "\n").replace('\r', '\n').split("\n")
         val lines = ArrayList<Line>()
         var pos = 0
@@ -354,6 +366,7 @@ object Script {
             val c = s[i]
             if (c == '"') return Q(quoted(inList))
             if (c == '[') return list()
+            if (c == '@') return listRef(inList)
             val st = i
             while (i < s.length) {
                 val ch = s[i]
@@ -365,6 +378,17 @@ object Script {
             }
             if (i == st) p.fail(no, "ожидалось значение")
             return typed(s.substring(st, i))
+        }
+
+        /** Ссылка `@имя` на общий список из lists.txt: подставляется весь список. */
+        private fun listRef(inList: Boolean): List<Any?> {
+            if (inList) p.fail(no, "ссылка @имя внутри списка не допускается: пишите её вместо всего списка (slide @имя)")
+            val m = Regex("@([A-Za-z_][A-Za-z0-9_]*)").matchAt(s, i) ?: p.fail(no, "после @ нужно имя списка, например @mascots")
+            val name = m.groupValues[1]
+            i += m.value.length
+            if (i < s.length && s[i] != ' ') p.fail(no, "после @$name нужен пробел")
+            val lit = p.lists[name] ?: p.fail(no, "общий список @$name не найден: опишите его в файле lists.txt (вкладка «Задачи», «Общие списки»)")
+            return Cursor(lit, no, p).list()
         }
 
         fun quoted(inList: Boolean): String {

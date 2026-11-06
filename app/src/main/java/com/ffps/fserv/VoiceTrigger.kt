@@ -56,7 +56,7 @@ object VoiceTrigger {
     fun status(): JSONObject {
         val ph = JSONArray()
         for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to (e.full + if (e.wild) " *" else "")))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "ack" to Settings.listenAck, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "ack" to Settings.listenAck, "miss" to Settings.listenMiss, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -176,7 +176,8 @@ object VoiceTrigger {
     private const val END_SILENCE = 10      // столько кусков тишины (1 с) после речи — хвост закончен
     private const val NO_SPEECH_SEC = 3.0   // если после команды столько секунд молчат, хвоста нет
     private const val MIN_TAIL_WORDS = 2    // короче хвост считается случайным шумом
-    private const val CUT_BACK = 6          // второй проход начинается за столько кусков (0,6 с) до конца команды
+    private const val CUT_BACK = 4          // второй проход начинается за столько кусков (0,4 с) до конца команды
+    private const val TAIL_SILENCE_FEED = 3 // тишины в конце хвоста второму проходу достаточно этого числа кусков (0,3 с): конец реплики мы ждём сами
     private const val TAIL_BEFORE_SEC = 0.25 // слово, начавшееся не раньше чем за столько до конца команды, относится к хвосту
 
     internal fun norm(w: String) = w.lowercase().replace('ё', 'е')
@@ -255,6 +256,12 @@ object VoiceTrigger {
         val name = Settings.listenAck
         if (name.isEmpty() || !Sounds.exists(name)) return
         Thread({ Audio.play(app, name, null, 0L, 0L, null, false) { false }?.let { FLog.w("voice-cmd", "звук отклика не сыграл: $it") } }, "voice-ack").apply { isDaemon = true; start() }
+    }
+
+    /** Говорит [text] (фраза «не расслышала»): человек сказал что-то после команды, но разобрать это не удалось. Пусто — молчит. Синтезатор занимает слушателя, пока говорит. */
+    private fun say(text: String) {
+        if (text.isEmpty()) return
+        Voice.speak(text, null, Settings.voice()) { false }?.let { FLog.w("voice-cmd", "фраза «не расслышала» не сказана: $it") }
     }
 
     /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. Тише порога громкости звук не отдаётся. */
@@ -345,6 +352,7 @@ object VoiceTrigger {
             }
             var ok = false
             var spoke = false
+            val pending = ArrayList<ShortArray>()
             try {
                 val deadline = System.currentTimeMillis() + ((tailSec + NO_SPEECH_SEC + 3) * 1000).toLong()
                 while (true) {
@@ -357,7 +365,10 @@ object VoiceTrigger {
                     if (System.currentTimeMillis() > deadline) break
                     val c = readChunk() ?: continue
                     utt.add(c.first)
-                    dec.feed(c.first)
+                    // длинную тишину в конце реплики второму проходу не отдаём (она нужна только нам, чтобы понять, что человек договорил);
+                    // если речь продолжилась, отложенная тишина уходит в разбор перед новым звуком, и время слов не сбивается
+                    val ts = utt.trailingSilence()
+                    if (ts <= TAIL_SILENCE_FEED) { pending.forEach { dec.feed(it) }; pending.clear(); dec.feed(c.first) } else pending.add(c.first)
                 }
                 ok = true
             } finally {
@@ -375,7 +386,12 @@ object VoiceTrigger {
             FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс" +
                 (if (early != null) " (разбор начат заранее)" else "") + ", скорость разбора ×$speed реального времени, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
                 (if (!done) ", не уложились во время" else "") + (dec.error?.let { ", сбой: ${it.message}" } ?: ""))
-            if (tail.size < MIN_TAIL_WORDS) { FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю"); return null }
+            if (tail.size < MIN_TAIL_WORDS) {
+                FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю; слова второго прохода (с, от начала разбора; конец команды на ${"%.2f".format(shift)} с): " +
+                    (if (got.isEmpty()) "нет" else got.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" }))
+                if (spoke) say(Settings.listenMiss)
+                return null
+            }
             return tail.joinToString(" ")
         }
 

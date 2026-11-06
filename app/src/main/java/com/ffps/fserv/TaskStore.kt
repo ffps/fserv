@@ -21,6 +21,7 @@ object TaskStore {
 
     private lateinit var dir: File
     private lateinit var histDir: File
+    private lateinit var listsFile: File
     @Volatile private var gen = 0
     private var cache: TaskSet.Loaded? = null
     private var cacheGen = -1
@@ -29,6 +30,44 @@ object TaskStore {
     fun init(ctx: Context) {
         dir = File(ctx.filesDir, "tasks").also { it.mkdirs() }
         histDir = File(ctx.filesDir, "tasks-history").also { it.mkdirs() }
+        listsFile = File(ctx.filesDir, "lists.txt")
+    }
+
+    /** Текст файла общих списков (lists.txt); пусто, если его нет. */
+    @Synchronized
+    fun listsText(): String = if (listsFile.isFile) listsFile.readText() else ""
+
+    /** Таблица общих списков имя → литерал; пустая, если файл испорчен вручную (тогда задачи со ссылками покажут ошибку). */
+    @Synchronized
+    fun listsTable(): Map<String, String> = try { Lists.parse(listsText()) } catch (e: Script.ScriptError) { emptyMap() }
+
+    /** Ошибка в сохранённом файле списков или null. */
+    @Synchronized
+    fun listsError(): String? = Lists.check(listsText())
+
+    /**
+     * Сохраняет общие списки. Файл должен разбираться, и все задачи, которые были исправны, должны остаться исправными
+     * (нельзя удалить или переименовать список, на который ссылается задача). Пустой текст удаляет файл. Возвращает текст ошибки или null.
+     */
+    @Synchronized
+    fun saveLists(text: String): String? {
+        val table = try { Lists.parse(text) } catch (e: Script.ScriptError) { return "строка ${e.line}: ${e.message}" }
+        val before = load().errors.keys
+        val l = TaskSet.parseSet(files(), null, Settings.zones(), Settings.chat(), table, { Slides.exists(it) }) { Sounds.exists(it) }
+        l.errors.entries.firstOrNull { it.key !in before }?.let { return "задача «${it.key}» перестала бы работать: ${it.value}" }
+        setLists(text)
+        return null
+    }
+
+    /** Записывает файл списков как есть (после проверки, из копии или сброса); null или пустой текст удаляют его. */
+    @Synchronized
+    fun setLists(text: String?) {
+        if (text == null || text.isBlank()) listsFile.delete()
+        else {
+            if (listsFile.isFile) try { listsFile.copyTo(File(listsFile.parentFile, "lists.txt.bak"), overwrite = true) } catch (e: Exception) { /* запасная копия не обязательна */ }
+            writeAtomic(listsFile, text)
+        }
+        touch()
     }
 
     private fun file(id: String) = File(dir, "$id.txt")
@@ -51,10 +90,11 @@ object TaskStore {
 
     private fun fileUsers(step: String, names: List<String>): Map<String, List<String>> {
         val res = HashMap<String, MutableList<String>>()
+        val table = listsTable()
         for ((file, text) in files()) {
             val id = file.removeSuffix(".txt")
             for (raw in text.lines()) {
-                val l = raw.trim()
+                val l = Lists.inline(raw.trim(), table) // ссылки @имя раскрываются: файлы из общих списков тоже считаются используемыми
                 if (!l.startsWith("$step ")) continue
                 for (n in names) {
                     if (Regex("(^|[\\s\\[\",])" + Regex.escape(n) + "($|[\\s\\]\",])").containsMatchIn(l.removePrefix("$step "))) {
@@ -77,7 +117,7 @@ object TaskStore {
     fun load(): TaskSet.Loaded {
         // кэш живёт до изменения файлов и не дольше 5 секунд: проверка ссылается на звуки, которые тоже меняются
         cache?.let { if (cacheGen == gen && System.currentTimeMillis() - cacheAt < 5000) return it }
-        val l = TaskSet.parseSet(files(), Settings.voice(), Settings.zones(), Settings.chat(), { Slides.exists(it) }) { Sounds.exists(it) }
+        val l = TaskSet.parseSet(files(), Settings.voice(), Settings.zones(), Settings.chat(), listsTable(), { Slides.exists(it) }) { Sounds.exists(it) }
         cache = l; cacheGen = gen; cacheAt = System.currentTimeMillis()
         return l
     }
@@ -93,7 +133,7 @@ object TaskStore {
         for (id in ids()) {
             tasks.put(obj("id" to id, "title" to (byId[id]?.optString("title") ?: titleGuess(taskText(id) ?: "")), "text" to (taskText(id) ?: ""), "error" to l.errors[id]))
         }
-        return obj("tasks" to tasks)
+        return obj("tasks" to tasks, "lists" to listsText(), "listsError" to listsError())
     }
 
     /** Название для списка, если задача не читается: из заголовка `task "Название"`/`title=`. */
@@ -129,7 +169,7 @@ object TaskStore {
         if (originalId.isNotEmpty() && !file(originalId).isFile) return "задачи «$originalId» уже нет (её удалили или переименовали), обновите страницу"
         if (newId != originalId && file(newId).exists()) return "задача с id «$newId» уже есть"
         val zones = Settings.zones().keys().asSequence().toSet()
-        Script.validate(text, newId, zones, { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
+        Script.validate(text, newId, zones, listsTable(), { Slides.exists(it) }) { Sounds.exists(it) }?.let { return it }
         if (originalId == newId && file(newId).readText() == text) return null
         archive()
         writeAtomic(file(newId), text)

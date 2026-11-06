@@ -335,6 +335,11 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 if (t == null) fail(Response.Status.NOT_FOUND, "задачи нет") else text(Response.Status.OK, "text/plain", t)
             }
             post && uri == "/api/tasks/save" -> saveTaskReq(q(s, "id") ?: "", q(s, "new") ?: "", body(s))
+            post && uri == "/api/lists/save" -> {
+                val err = TaskStore.saveLists(body(s))
+                if (err != null) fail(Response.Status.BAD_REQUEST, err)
+                else { TaskEngine.refreshStt(); FLog.i("web", "общие списки сохранены"); ok("списки сохранены") }
+            }
             post && uri == "/api/tasks/delete" -> {
                 val id = q(s, "id") ?: ""
                 val err = TaskStore.deleteTask(id)
@@ -639,6 +644,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /api/tasks/text" to "текст одной задачи; ?id=",
         "POST /api/tasks/save" to "сохранить задачу (тело: её текст); ?id=прежний_id (пусто для новой)&new=id (имя файла tasks/<id>.txt; другой id переименовывает)",
         "POST /api/tasks/delete" to "удалить задачу; ?id=",
+        "POST /api/lists/save" to "сохранить общие списки (lists.txt; тело: текст файла; читаются в GET /api/tasks/list, поля lists и listsError)",
         "POST /api/tasks/history/clear" to "удалить всю историю версий задач",
         "GET /api/tasks/history" to "сохранённые версии набора задач",
         "POST /api/tasks/restore" to "восстановить версию набора задач; ?name=…",

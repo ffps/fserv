@@ -15,7 +15,7 @@ object TaskSet {
         if (ID_RE.matches(id)) null else "id задачи: латинские буквы, цифры, _ и - (до 40 знаков), начинаться с буквы или цифры, например wakeup"
 
     /** Разбор набора файлов (имя файла → текст): чистая логика, без обращения к диску. [voice], [zones] и [chat] (правила разговора) — настройки приложения. */
-    fun parseSet(files: Map<String, String>, voice: JSONObject? = null, zones: JSONObject? = null, chat: JSONObject? = null, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean): Loaded {
+    fun parseSet(files: Map<String, String>, voice: JSONObject? = null, zones: JSONObject? = null, chat: JSONObject? = null, lists: Map<String, String> = emptyMap(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean): Loaded {
         val root = JSONObject()
         root.put("version", 1)
         if (voice != null && voice.length() > 0) root.put("voice", voice)
@@ -29,18 +29,18 @@ object TaskSet {
             if (!name.endsWith(".txt")) continue
             if (!ID_RE.matches(id)) { errors[id] = checkId(id)!!; continue }
             val text = files.getValue(name)
-            val err = Script.validate(text, id, zoneNames, slideExists, fileExists)
+            val err = Script.validate(text, id, zoneNames, lists, slideExists, fileExists)
             if (err != null) errors[id] = err
-            else tasks.put(Script.parse(text, id).root.getJSONArray("tasks").getJSONObject(0))
+            else tasks.put(Script.parse(text, id, lists).root.getJSONArray("tasks").getJSONObject(0))
         }
         root.put("tasks", tasks)
         return Loaded(root, errors)
     }
 
     /** Проверка набора из архива: null или «файл: строка N: …». */
-    fun validateSet(files: Map<String, String>, zones: JSONObject? = null, chat: JSONObject? = null, slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean): String? {
+    fun validateSet(files: Map<String, String>, zones: JSONObject? = null, chat: JSONObject? = null, lists: Map<String, String> = emptyMap(), slideExists: (String) -> Boolean = { true }, fileExists: (String) -> Boolean): String? {
         for (n in files.keys) if (!n.endsWith(".txt") || !ID_RE.matches(n.removeSuffix(".txt"))) return "tasks/$n: недопустимое имя файла"
-        val l = parseSet(files, null, zones, chat, slideExists, fileExists)
+        val l = parseSet(files, null, zones, chat, lists, slideExists, fileExists)
         l.errors.entries.firstOrNull()?.let { return "tasks/${it.key}.txt: ${it.value}" }
         return null
     }

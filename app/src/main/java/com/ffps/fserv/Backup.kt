@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 /**
  * Резервная копия настроек одним zip-файлом, восстановление из неё и сброс к исходному состоянию.
  *
- * Состав архива: settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt; голос и зоны лежат в settings.json),
+ * Состав архива: lists.txt (общие списки, если есть), settings.json (настройки приложения, включая токен бота и пароли), tasks/ (по файлу на задачу: tasks/<id>.txt; голос и зоны лежат в settings.json),
  * sounds/ (загруженные звуки), slides/ (слайды), pages/ (заменённые страницы index.html и kiosk.html). Очереди, журналы и логи в копию не входят.
  * Восстановление сначала целиком проверяет архив и только потом что-либо удаляет.
  */
@@ -42,6 +42,7 @@ object Backup {
         ZipOutputStream(out).use { z ->
             z.put("settings.json", Settings.exportJson().toString(2).toByteArray(Charsets.UTF_8))
             for ((n, t) in TaskStore.files()) z.put("tasks/$n", t.toByteArray(Charsets.UTF_8))
+            TaskStore.listsText().takeIf { it.isNotBlank() }?.let { z.put("lists.txt", it.toByteArray(Charsets.UTF_8)) }
             for (n in Sounds.names()) {
                 z.putNextEntry(ZipEntry("sounds/$n"))
                 Sounds.file(n).inputStream().use { it.copyTo(z) }
@@ -75,12 +76,14 @@ object Backup {
             val slides = HashSet<String>()
             var settings: JSONObject? = null
             val tasks = LinkedHashMap<String, String>()
+            var lists = ""
             for (e in entries) {
                 val n = e.name
                 if (n.contains("..") || n.startsWith("/") || n.contains("\\")) return "недопустимое имя в архиве: $n"
                 total += maxOf(e.size, 0)
                 when {
                     n == "settings.json" -> settings = try { JSONObject(readText(zf, e)) } catch (x: Exception) { return "settings.json: ${x.message}" }
+                    n == "lists.txt" -> lists = try { readText(zf, e) } catch (x: IllegalArgumentException) { return x.message }
                     n.startsWith("tasks/") && n.count { it == '/' } == 1 -> tasks[n.removePrefix("tasks/")] = try { readText(zf, e) } catch (x: IllegalArgumentException) { return x.message }
                     n.startsWith("sounds/") && n.count { it == '/' } == 1 -> {
                         val name = n.removePrefix("sounds/")
@@ -102,7 +105,8 @@ object Backup {
             if (total > Sounds.MAX_TOTAL + 10_000_000) return "архив слишком большой"
             if (sounds.sumOf { s -> zf.getEntry("sounds/$s").size } > Sounds.MAX_TOTAL) return "звуки вместе больше ${Sounds.MAX_TOTAL / 1048576} МБ"
             if (slides.sumOf { s -> zf.getEntry("slides/$s").size } > Slides.MAX_TOTAL) return "слайды вместе больше ${Slides.MAX_TOTAL / 1048576} МБ"
-            TaskSet.validateSet(tasks, settings.optJSONObject("zones"), settings.optJSONObject("chat") ?: JSONObject(), { name -> slides.contains(name) }) { name -> sounds.contains(name) }?.let { return it }
+            val table = try { Lists.parse(lists) } catch (x: Script.ScriptError) { return "lists.txt: строка ${x.line}: ${x.message}" }
+            TaskSet.validateSet(tasks, settings.optJSONObject("zones"), settings.optJSONObject("chat") ?: JSONObject(), table, { name -> slides.contains(name) }) { name -> sounds.contains(name) }?.let { return it }
         }
         return null
     }
@@ -123,6 +127,7 @@ object Backup {
             val settings = JSONObject(readText(zf, zf.getEntry("settings.json")))
             val tasks = zf.entries().asSequence().filter { !it.isDirectory && it.name.startsWith("tasks/") }
                 .associate { it.name.removePrefix("tasks/") to readText(zf, it) }
+            val lists = zf.getEntry("lists.txt")?.let { readText(zf, it) }
             wipe(ctx)
             for (e in zf.entries().asSequence().filter { !it.isDirectory }) {
                 when {
@@ -134,6 +139,7 @@ object Backup {
                     }
                 }
             }
+            TaskStore.setLists(lists)
             TaskStore.replaceAll(tasks)
             Settings.replaceAll(settings)
             Sessions.clear() // пароль в копии может быть другим
@@ -145,6 +151,7 @@ object Backup {
     fun reset(ctx: Context) {
         wipe(ctx)
         TaskStore.replaceAll(null)
+        TaskStore.setLists(null)
         Settings.resetUser()
         TaskStore.invalidate()
         File(ctx.filesDir, "backup-seq.txt").delete()
