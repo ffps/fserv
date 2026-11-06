@@ -213,7 +213,7 @@ object TaskEngine {
         val root = config()
         val task = findTask(root, e.task) ?: return "задачи «${e.task}» нет"
         if (current?.info?.id == e.task || queue.any { it.taskId == e.task }) return "задача «${e.task}» уже выполняется или стоит в очереди"
-        val spoken = if (e.wild) "$heard $tail".trim() else heard
+        val spoken = if (e.wild) "${e.full} $tail".trim() else heard
         val note = if (e.wild || VoiceCmd.words(heard).joinToString(" ") != e.full) " (услышано: «$spoken»)" else ""
         val phrase = if (e.wild) "${e.rest} $tail".trim() else e.rest
         enqueue(Req(e.task, "voice", false, emptyMap(), System.currentTimeMillis(), Long.MAX_VALUE / 4, phrase, note), task)
@@ -662,9 +662,10 @@ object TaskEngine {
         val nameSum = s.optString("assign")
         val nameAlert = s.optString("alert")
         val nameOk = s.optString("ok")
+        val fromUser = s.optString("from") == "user"
         val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else 5 * 60_000L
         val turns = s.optInt("turns", 8)
-        log(r, p, "chat: тема «${topic.take(120)}», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else "") + (if (nameOk.isNotEmpty()) ", успех → $nameOk" else ""))
+        log(r, p, "chat: " + (if (fromUser) "слова человека" else "тема") + " «${topic.take(120)}», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else "") + (if (nameOk.isNotEmpty()) ", успех → $nameOk" else ""))
         if (r.info.dry) {
             if (nameSum.isNotEmpty()) r.vars[nameSum] = r.assume[nameSum]?.toString() ?: ""
             if (nameAlert.isNotEmpty()) r.vars[nameAlert] = r.assume[nameAlert] == true
@@ -689,6 +690,7 @@ object TaskEngine {
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
         val hist = ArrayList<Chat.Msg>()
         val said = ArrayList<String>()
+        if (fromUser) { hist.add(Chat.Msg("user", topic)); said.add(topic) } // текст шага — первая реплика человека: модель отвечает на неё
         val end = System.currentTimeMillis() + forMs
         var alert = false
         var silences = 0
@@ -697,7 +699,7 @@ object TaskEngine {
         while (true) {
             check(r)
             val last = n + 1 >= turns || end - System.currentTimeMillis() < 45_000 || silences >= 2
-            val system = Chat.systemPrompt(rules, topic, Weather.chatContext()) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
+            val system = Chat.systemPrompt(rules, if (fromUser) "" else topic, Weather.chatContext(), hist.isEmpty()) + if (last) "\n\nЭто твоя последняя реплика: коротко попрощайся и поставь end=true." else ""
             val res = try {
                 Llm.ask(system, hist)
             } catch (e: Llm.LlmError) {

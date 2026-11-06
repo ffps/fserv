@@ -43,7 +43,7 @@ object Script {
     val PARAMS = mapOf(
         "say" to listOf("volume", "wait"),
         "ask" to listOf("assign", "kind", "listen", "retries", "again", "volume"),
-        "chat" to listOf("for", "turns", "assign", "alert", "ok", "volume"),
+        "chat" to listOf("for", "turns", "assign", "alert", "ok", "from", "volume"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
         "telegram" to listOf("files", "confirm", "assign"),

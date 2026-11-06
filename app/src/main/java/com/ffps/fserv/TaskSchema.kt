@@ -205,6 +205,7 @@ object TaskSchema {
                     val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
                     if (d.minMs < 30_000 || d.maxMs > 30 * 60_000) return e("chat: for — от 30s до 30m (сколько длится разговор самое большее)")
                 }
+                if (s.has("from") && s.opt("from") != "user" && s.opt("from") != "topic") return e("chat: from — user (текст шага — слова человека, модель отвечает на них) или topic (текст — тема, по умолчанию)")
                 if (s.has("turns") && !(s.opt("turns") is Number && s.optInt("turns", -1) in 1..30)) return e("chat: turns — число от 1 до 30 (сколько реплик ИИ самое большее)")
                 for (k in listOf("assign", "alert", "ok")) if (s.has(k)) {
                     val n = s.opt(k)

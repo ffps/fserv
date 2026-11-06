@@ -54,6 +54,16 @@ class ChatTest {
         assertFalse(Chat.systemPrompt("Правила", "тема", "  ").contains("\n\n\n"))
     }
 
+    @Test fun topicLine() {
+        val first = Chat.topicLine("сколько будет два плюс два", true)
+        assertTrue(first.contains("сколько будет два плюс два"))
+        assertTrue(first.contains("сразу ответь"))
+        assertEquals("Тема разговора: погода", Chat.topicLine("погода", false))
+        assertEquals("Тема разговора: свободная беседа", Chat.topicLine("  ", true))
+        assertFalse(Chat.systemPrompt("Правила", "тема", "", false).contains("сразу ответь"))
+        assertTrue(Chat.systemPrompt("Правила", "тема", "", true).contains("сразу ответь"))
+    }
+
     @Test fun openAiBody() {
         val b = Chat.openAiBody("m1", "sys", listOf(Chat.Msg("user", "привет"), Chat.Msg("assistant", "здравствуйте")))
         assertEquals("m1", b.getString("model"))

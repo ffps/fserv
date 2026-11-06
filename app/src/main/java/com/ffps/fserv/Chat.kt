@@ -27,9 +27,20 @@ object Chat {
     class Reply(val text: String, val alert: Boolean, val end: Boolean)
 
     /** [context] — дополнительные сведения для модели (дата, время, погода); пусто — без них. */
-    fun systemPrompt(rules: String, topic: String, context: String = ""): String =
-        rules.trim().ifEmpty { DEFAULT_RULES } + (if (context.isBlank()) "" else "\n\n" + context.trim()) +
-            "\n\nТема разговора: " + topic.trim().ifEmpty { "свободная беседа" } + "\n\n" + FORMAT
+    fun systemPrompt(rules: String, topic: String, context: String = "", first: Boolean = true): String =
+        rules.trim().ifEmpty { DEFAULT_RULES } + (if (context.isBlank()) "" else "\n\n" + context.trim()) + "\n\n" + topicLine(topic, first) + "\n\n" + FORMAT
+
+    /**
+     * Строка о теме. Для первой реплики тема — одновременно задание: вопрос или просьба в ней требуют сразу ответа по существу,
+     * а не приветствия и вопроса «чем помочь» (иначе модель принимает вопрос за предмет беседы).
+     */
+    fun topicLine(topic: String, first: Boolean): String {
+        val t = topic.trim()
+        if (t.isEmpty()) return "Тема разговора: свободная беседа"
+        if (!first) return "Тема разговора: $t"
+        return "Тема разговора (она же задание на первую реплику): $t. Если это вопрос или просьба, сразу ответь на неё по существу, " +
+            "без приветствия и без вопроса «чем помочь»; если это тема, начни разговор по ней одной фразой."
+    }
 
     /** История для запроса: начинается с реплики пользователя (модели Gemini этого требуют) и не длиннее [MAX_HISTORY]. */
     fun prepare(history: List<Msg>): List<Msg> {
