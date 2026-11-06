@@ -56,7 +56,7 @@ object VoiceTrigger {
     fun status(): JSONObject {
         val ph = JSONArray()
         for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to (e.full + if (e.wild) " *" else "")))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "ack" to Settings.listenAck, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -81,6 +81,7 @@ object VoiceTrigger {
 
     /** Почему слушать нельзя сейчас, или null. */
     private fun blocker(): Block? {
+        if (!Settings.serviceEnabled) return Block("off", "выключено: служба остановлена")
         val hours = Settings.listenHours
         val w = try { VoiceCmd.parseWindow(hours) } catch (e: IllegalArgumentException) { null }
         if (w == null) return Block("off", "выключено: часы прослушивания не заданы")
