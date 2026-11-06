@@ -650,26 +650,35 @@ object TaskEngine {
     /**
      * Разговор с ИИ на заданную тему: модель говорит (синтезатор), человек отвечает (микрофон, свободная речь), по очереди.
      * Заканчивается по for, turns, прощанию, тревоге или двум молчаниям подряд. Сбой модели или сети шаг ошибкой не считает:
-     * разговор просто заканчивается. assign получает краткий пересказ (пусто, если человек молчал), alert — была ли тревога.
+     * разговор просто заканчивается. assign получает краткий пересказ (пусто, если человек молчал), alert — была ли тревога, ok — отвечала ли модель без сбоев.
      */
     private fun chat(r: Run, s: JSONObject, p: String) {
         val topic = fill(r, s.optString("chat")).trim()
         val nameSum = s.optString("assign")
         val nameAlert = s.optString("alert")
+        val nameOk = s.optString("ok")
         val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else 5 * 60_000L
         val turns = s.optInt("turns", 8)
-        log(r, p, "chat: тема «${topic.take(120)}», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else ""))
+        log(r, p, "chat: тема «${topic.take(120)}», не дольше ${Dur.human(forMs)}, до $turns реплик" + (if (nameSum.isNotEmpty()) ", пересказ → $nameSum" else "") + (if (nameAlert.isNotEmpty()) ", тревога → $nameAlert" else "") + (if (nameOk.isNotEmpty()) ", успех → $nameOk" else ""))
         if (r.info.dry) {
             if (nameSum.isNotEmpty()) r.vars[nameSum] = r.assume[nameSum]?.toString() ?: ""
             if (nameAlert.isNotEmpty()) r.vars[nameAlert] = r.assume[nameAlert] == true
-            val hint = listOfNotNull(if (nameSum.isNotEmpty()) "$nameSum:текст" else null, if (nameAlert.isNotEmpty()) "$nameAlert:true" else null).joinToString(",")
+            if (nameOk.isNotEmpty()) r.vars[nameOk] = r.assume[nameOk] != false
+            val hint = listOfNotNull(if (nameSum.isNotEmpty()) "$nameSum:текст" else null, if (nameAlert.isNotEmpty()) "$nameAlert:true" else null, if (nameOk.isNotEmpty()) "$nameOk:false" else null).joinToString(",")
             log(r, p, "пробный запуск: разговор не ведётся" + if (hint.isNotEmpty()) " (задайте assume=$hint, чтобы проверить ветки)" else "")
             return
         }
         val cfg = r.root.optJSONObject("chat")
         if (topic.isEmpty()) throw StepError("тема разговора пуста (после подстановок): напишите её в шаге chat")
         val rules = cfg?.optString("rules").orEmpty()
-        Llm.problem()?.let { throw StepError(it) }
+        Llm.problem()?.let {
+            if (nameOk.isEmpty()) throw StepError(it)
+            log(r, p, "модель не настроена, разговор не начат: $it")
+            if (nameSum.isNotEmpty()) r.vars[nameSum] = ""
+            if (nameAlert.isNotEmpty()) r.vars[nameAlert] = false
+            r.vars[nameOk] = false
+            return
+        }
         Stt.check(r.ctx)?.let { throw StepError(it) }
         Stt.prepareAsync("free")
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
@@ -678,6 +687,7 @@ object TaskEngine {
         val end = System.currentTimeMillis() + forMs
         var alert = false
         var silences = 0
+        var failed = false
         var n = 0
         while (true) {
             check(r)
@@ -688,7 +698,8 @@ object TaskEngine {
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "разговор оборван: ${e.message}")
                 log(r, p, "модель недоступна, разговор закончен: ${e.message}")
-                if (n > 0) say(r, "Извините, пропала связь. Поговорим в другой раз.", vol)
+                failed = true
+                if (n > 0 && nameOk.isEmpty()) say(r, "Извините, пропала связь. Поговорим в другой раз.", vol) // с ok= решает сама задача
                 break
             }
             val rep = res.reply
@@ -722,6 +733,10 @@ object TaskEngine {
             }
         }
         if (nameAlert.isNotEmpty()) r.vars[nameAlert] = alert
+        if (nameOk.isNotEmpty()) {
+            r.vars[nameOk] = !failed && n > 0
+            log(r, p, "$nameOk = ${if (!failed && n > 0) "да" else "нет"}")
+        }
         if (nameSum.isNotEmpty()) {
             val sum = if (said.isEmpty()) "" else summary(r, p, hist, said)
             r.vars[nameSum] = sum

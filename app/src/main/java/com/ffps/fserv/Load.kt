@@ -17,6 +17,7 @@ object Load {
     private var lastWall = 0L
     private var lastCpu = 0L
     private var lastListen = 0L
+    private var lastChunks: Pair<Long, Long> = 0L to 0L
     private var lastThreads: Map<Int, ProcStat.T> = emptyMap()
 
     /** Доля [part] от [whole] в процентах (0, если [whole] не положительно). */
@@ -40,7 +41,7 @@ object Load {
     fun tick() {
         val now = SystemClock.elapsedRealtime()
         if (lastWall == 0L) {
-            lastWall = now; lastCpu = Process.getElapsedCpuTime(); lastListen = VoiceTrigger.listenMs(); lastThreads = threads()
+            lastWall = now; lastCpu = Process.getElapsedCpuTime(); lastListen = VoiceTrigger.listenMs(); lastChunks = VoiceTrigger.chunkStats(); lastThreads = threads()
             return
         }
         if (now - lastWall < PERIOD_MS) return
@@ -50,10 +51,13 @@ object Load {
         val cur = threads()
         val top = ProcStat.top(lastThreads, cur, wall, hz(), 5)
         val rt = Runtime.getRuntime()
+        val ch = VoiceTrigger.chunkStats()
+        val dTotal = ch.first - lastChunks.first
+        val gated = if (Settings.listenLevel > 0 && dTotal > 0) ", порог громкости ${"%.1f".format(Settings.listenLevel)}%: распознавателю ушло ${"%.0f".format(percent(ch.second - lastChunks.second, dTotal))}% звука" else ""
         FLog.d("load", "за ${wall / 60000} мин: процессор приложения ${"%.1f".format(percent(cpu - lastCpu, wall))}% одного ядра (ядер: ${rt.availableProcessors()}), " +
-            "слушание команд ${"%.0f".format(percent(listen - lastListen, wall))}% времени, " +
+            "слушание команд ${"%.0f".format(percent(listen - lastListen, wall))}% времени$gated, " +
             "память: нативная ${Debug.getNativeHeapAllocatedSize() / 1048576} МБ, Java ${(rt.totalMemory() - rt.freeMemory()) / 1048576} МБ")
         FLog.d("load", "потоки (процент одного ядра): " + ProcStat.format(top))
-        lastWall = now; lastCpu = cpu; lastListen = listen; lastThreads = cur
+        lastWall = now; lastCpu = cpu; lastListen = listen; lastChunks = ch; lastThreads = cur
     }
 }

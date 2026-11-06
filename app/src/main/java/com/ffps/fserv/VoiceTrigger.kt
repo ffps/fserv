@@ -56,7 +56,7 @@ object VoiceTrigger {
     fun status(): JSONObject {
         val ph = JSONArray()
         for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to e.full))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "phrases" to ph)
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -132,6 +132,8 @@ object VoiceTrigger {
                     recKey = key
                     Stt.voiceHold = true
                     FLog.d("voice-cmd", "распознаватель команд собран за ${System.currentTimeMillis() - t0} мс, фраз: ${phrases.size}")
+                    for ((task, list) in phrases.groupBy { it.task })
+                        FLog.d("voice-cmd", "задача «$task»: фраз ${list.size}: " + list.joinToString("; ") { it.full }.let { if (it.length > 3000) it.take(3000) + "…" else it })
                 }
                 val minBuf = AudioRecord.getMinBufferSize(Stt.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 val a = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, Stt.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, Stt.RATE))
@@ -159,37 +161,30 @@ object VoiceTrigger {
         }
     }
 
-    /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. */
+    @Volatile private var peakPct = 0.0   // самый громкий кусок за последние ~3 с, % полной шкалы (для настройки порога)
+    @Volatile private var totalChunks = 0L // всего прочитано кусков по 100 мс
+    @Volatile private var fedChunks = 0L   // из них ушло в распознаватель (остальное отсеял порог громкости)
+
+    /** (всего прочитано, отдано распознавателю) кусков по 100 мс с начала работы; для записи о нагрузке. */
+    fun chunkStats(): Pair<Long, Long> = totalChunks to fedChunks
+
+    private fun threshold(): Int = (Settings.listenLevel * 327.68).toInt()
+
+    /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. Тише порога громкости звук не отдаётся. */
     private fun readLoop(a: AudioRecord, r: Recognizer, phrases: List<TaskEngine.VoiceEntry>, key: String) {
         val list = phrases.map { it.full }
         val buf = ShortArray(Stt.RATE / 10)
+        val gate = LevelGate()
+        var thr = threshold()
         var gain = 1f
         var muted = false
         var chunks = 0L
+        var winMax = 0
         var lastTrigger = 0L
-        while (true) {
-            if (Stt.micUsers.get() > 0 || Call.active) return
-            if (++chunks % 10 == 0L) {
-                if (blocker() != null) return
-                if (TaskEngine.voicePhrases().joinToString("|") { it.full } != key) return
-            }
-            val n = a.read(buf, 0, buf.size)
-            if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
-            if (n == 0) continue
-            // пока говорит синтезатор (и недолго после) звук выбрасывается, а начатая фраза сбрасывается
-            if (Voice.msSinceSpeech() < ECHO_MS) {
-                if (!muted) { r.reset(); muted = true }
-                continue
-            }
-            muted = false
-            var peak = 0
-            for (i in 0 until n) { val v = Math.abs(buf[i].toInt()); if (v > peak) peak = v }
-            if (peak > 150) gain = gain * 0.9f + (TARGET_PEAK.toFloat() / peak).coerceIn(1f, MAX_GAIN) * 0.1f
-            val g = if (peak > 0) minOf(gain, 32000f / peak) else gain
-            if (g > 1.05f) for (i in 0 until n) buf[i] = (buf[i] * g).toInt().coerceIn(-32768, 32767).toShort()
-            if (!r.acceptWaveForm(buf, n)) continue
+
+        fun onFinal() {
             val heard = JSONObject(r.result).optString("text").replace("[unk]", " ").trim().replace(Regex("\\s+"), " ")
-            if (heard.isEmpty()) continue
+            if (heard.isEmpty()) return
             val phrase = VoiceCmd.match(heard, list)
             FLog.d("voice-cmd", "услышано «$heard»" + if (phrase == null) ", это не команда" else " → «$phrase»")
             val now = System.currentTimeMillis()
@@ -198,7 +193,39 @@ object VoiceTrigger {
                 val entry = phrases.first { it.full == phrase }
                 TaskEngine.runByVoice(entry, heard)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
                 r.reset()
+                gate.reset()
             }
+        }
+
+        while (true) {
+            if (Stt.micUsers.get() > 0 || Call.active) return
+            if (++chunks % 10 == 0L) {
+                if (blocker() != null) return
+                if (TaskEngine.voicePhrases().joinToString("|") { it.full } != key) return
+                thr = threshold()
+            }
+            val n = a.read(buf, 0, buf.size)
+            if (n < 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
+            if (n == 0) continue
+            // пока говорит синтезатор (и недолго после) звук выбрасывается, а начатая фраза сбрасывается
+            if (Voice.msSinceSpeech() < ECHO_MS) {
+                if (!muted) { r.reset(); gate.reset(); muted = true }
+                continue
+            }
+            muted = false
+            var peak = 0
+            for (i in 0 until n) { val v = Math.abs(buf[i].toInt()); if (v > peak) peak = v }
+            if (peak > winMax) winMax = peak
+            if (chunks % 30 == 0L) { peakPct = winMax * 100.0 / 32768; winMax = 0 }
+            if (peak > 150) gain = gain * 0.9f + (TARGET_PEAK.toFloat() / peak).coerceIn(1f, MAX_GAIN) * 0.1f
+            val g = if (peak > 0) minOf(gain, 32000f / peak) else gain
+            if (g > 1.05f) for (i in 0 until n) buf[i] = (buf[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+            totalChunks++
+            val feed = gate.push(if (n == buf.size) buf else buf.copyOf(n), peak, thr)
+            if (feed.isEmpty()) continue
+            fedChunks += feed.size
+            for (f in feed) if (r.acceptWaveForm(f, f.size)) onFinal()
+            if (gate.closedNow) r.reset() // тишина после фразы без завершения: брошенное не копим
         }
     }
 }

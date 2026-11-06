@@ -54,8 +54,8 @@
   .f input[type=text], .f input[type=number], .f input[type=password], .f input:not([type]), .f select { width:100%; }
   code { background:var(--code); padding:1px 5px; border-radius:4px; }
   a { color:var(--acc-d); }
-  .cw { position:relative; }
-  .cp { position:absolute; top:6px; right:6px; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.9); border:1px solid #cdd2e0; border-radius:6px; color:var(--dim); cursor:pointer; z-index:2; }
+  .cw { position:relative; padding-top:34px; }
+  .cp { position:absolute; top:0; right:0; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.9); border:1px solid #cdd2e0; border-radius:6px; color:var(--dim); cursor:pointer; z-index:2; }
   .cp:hover { color:var(--acc); border-color:var(--acc); background:var(--acc-soft); }
   .cp svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .cp.done { color:var(--good); border-color:var(--good); } .cp.fail { color:var(--bad); border-color:var(--bad); }
@@ -69,6 +69,9 @@
   .ib svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .ib svg [fill=currentColor] { fill:currentColor; stroke:none; }
   .ib.add { border:1px solid #cdd2e0; background:#fff; padding:6px 8px; }
+  .ib.pri { color:var(--acc-d); border-color:var(--acc); }
+  .vcph { max-height:260px; overflow:auto; font-size:13px; line-height:1.5; padding:4px 10px 8px; border:1px solid var(--line); border-radius:6px; margin-top:6px; background:#fff; }
+  .vcph h4 { margin:8px 0 2px; font-size:13px; color:var(--dim); font-weight:600; }
   .phg { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
   .phg figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg); }
   .phg img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#222; }
@@ -197,15 +200,14 @@
   <div class="msg" id="tkMsg"></div>
 
   <div id="tkEditor" style="display:none;margin-top:14px">
-    <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="btn sec sm" id="tkClose">Закрыть</button></div>
+    <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="ib add" id="tkClose" title="Закрыть"></button><button class="ib add pri" id="tkSave" title="Сохранить задачу"></button></div>
+    <div class="msg" id="tkSMsg"></div>
     <p class="hint" id="tkIdHint" style="margin:0">id (латиница, цифры, _ и -) служит именем файла tasks/id.txt; если его изменить и сохранить, файл будет переименован.</p>
     <textarea id="tkText" rows="22" spellcheck="false" wrap="off"></textarea>
     <div class="row" style="margin-top:8px">
-      <button class="btn" id="tkSave">Сохранить задачу</button>
       <button class="btn sec" id="tkDry">Пробный запуск</button>
       <label>результаты watch <input id="tkAssume" placeholder="moved:true" style="width:150px"></label>
     </div>
-    <div class="msg" id="tkSMsg"></div>
     <p class="hint" id="tkRunInfo"></p>
     <pre id="tkLog" style="max-height:300px">—</pre>
   </div>
@@ -263,15 +265,18 @@
   <p class="hint">Нужна для шага <code>ask</code>: планшет задаёт вопрос голосом и слушает ответ («да», «нет» или число до 999). Распознавание офлайн (Vosk, малая русская модель); модель весит около 45 МБ, скачивается один раз (нужен интернет) и хранится на устройстве. Если сеть на устройстве медленная, скачивание повторяется и продолжается с места обрыва; если сервер недоступен из вашей сети (например, из России без VPN), включите SOCKS5-прокси для модели на вкладке «Связь» (галочка «STT/TTS»); можно и скачать <a href="https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" target="_blank" rel="noopener">vosk-model-small-ru-0.22.zip</a> на компьютере и загрузить файл кнопкой выше. Микрофону нужно разрешение: кнопка Allow microphone в окне настроек на устройстве. Слушается только после вопроса, ничего не записывается и не отправляется.</p>
   <h2 style="margin-top:22px">Голосовые команды</h2>
   <div class="kvwrap"><table class="kv"><tbody id="vcInfo"></tbody></table></div>
+  <details id="vcPhD" style="margin:8px 0 12px;display:none"><summary id="vcPhS">Все фразы</summary><div class="vcph" id="vcPhB"></div></details>
   <div class="f">
     <label for="vcHours">Слушать команды, часы</label>
     <input id="vcHours" placeholder="например 8..22 (пусто = не слушать)">
     <label for="vcPrefix">Префикс (имя помощника)</label>
     <input id="vcPrefix" placeholder="например Кузя или Кузя|Кузьма (пусто = без префикса)">
+    <label for="vcLevel">Порог громкости, % (0 — слушать всегда)</label>
+    <input id="vcLevel" type="number" min="0" max="50" step="0.1" placeholder="0">
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="vcSave">Сохранить</button></div>
   <div class="msg" id="vcMsg"></div>
-  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона.</p>
+  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона. <b>Порог громкости</b> (0–50, % полной шкалы микрофона) экономит процессор: тишина распознавателю не отдаётся, а звук громче порога включает распознавание (вместе с секундой до и после). 0 — слушать всегда. Подберите порог по строке «Громкость сейчас»: сначала в тишине (запомните фон), затем при команде с обычного расстояния; порог ставят выше фона и ниже голоса, обычно 1–3. Слишком высокий порог пропустит тихую речь.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Задачи</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -581,7 +586,7 @@ document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
 track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
-track("vcSave", ["vcHours", "vcPrefix"]);
+track("vcSave", ["vcHours", "vcPrefix", "vcLevel"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -605,7 +610,7 @@ async function copyText(text) {
 const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>';
 const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>';
 const ICON_BAD = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-// у каждого большого текстового поля справа вверху появляется кнопка-иконка «копировать»
+// над каждым большим текстовым полем справа появляется кнопка-иконка «копировать»
 document.querySelectorAll("pre, textarea").forEach(el => {
   const w = document.createElement("div"); w.className = "cw";
   el.parentNode.insertBefore(w, el); w.appendChild(el);
@@ -616,6 +621,10 @@ document.querySelectorAll("pre, textarea").forEach(el => {
     setTimeout(() => { b.className = "cp"; b.innerHTML = ICON_COPY; }, 1500);
   };
   w.appendChild(b);
+  // скрытое поле (style.display = "none") не должно оставлять после себя кнопку копирования и пустую полосу
+  const vis = () => { w.style.display = el.style.display === "none" ? "none" : ""; };
+  new MutationObserver(vis).observe(el, {attributes: true, attributeFilter: ["style"]});
+  vis();
 });
 
 // ---- значки ----
@@ -628,9 +637,11 @@ const ICO = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   refresh: svg('<path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/>'),
   rectDel: svg('<rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/><path d="M9 10l6 4M15 10l-6 4"/>'),
+  save: svg('<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'),
+  close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "tkSave") b.innerHTML = ICO.save; if (b.id === "tkClose") b.innerHTML = ICO.close; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -908,6 +919,8 @@ setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
 let upTimer = null, upVer = null, upBusy = false;
 const ST = {checking: "проверяю", downloading: "скачиваю", installing: "передано системе", confirm: "ждёт подтверждения на экране устройства (или в уведомлении)"};
 function kvRow(k, v) { return "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>"; }
+/** Число с существительным: 1 фраза, 2 фразы, 5 фраз. */
+function pl(n, one, few, many) { const a = n % 100, b = n % 10; return n + " " + (a >= 11 && a <= 14 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many); }
 function kvRowHtml(k, html) { return "<tr><td>" + esc(k) + "</td><td>" + html + "</td></tr>"; }
 function fmtBytes(b) { return b < 1024 ? b + " Б" : b < 1048576 ? Math.round(b / 1024) + " КБ" : (b / 1048576).toFixed(1) + " МБ"; }
 async function loadUpdate() {
@@ -1153,6 +1166,7 @@ async function loadSound() {
   loadSoundFiles();
 }
 let sttTimer = null, sttBusy = false;
+setInterval(() => { if (current === "sound" && !document.hidden) loadStt(); }, 2000); // «громкость сейчас» живая
 async function loadStt() {
   try {
     const t = (await api("/api/stt")).json;
@@ -1160,8 +1174,18 @@ async function loadStt() {
     $("#sttInfo").innerHTML = kvRow("Модель", st) + (t.error ? kvRow("Ошибка", t.error) : "") + kvRow("Микрофон", t.permission ? "разрешён" : "нет разрешения: нажмите Allow microphone на устройстве");
     const L = t.listen;
     if (L) {
-      $("#vcInfo").innerHTML = kvRow("Состояние", L.text) + kvRowHtml("Фразы", L.phrases.length ? L.phrases.slice(0, 40).map(x => esc(x.task) + ": «" + esc(x.phrase) + "»").join("<br>") + (L.phrases.length > 40 ? "<br>… и ещё " + (L.phrases.length - 40) : "") : "нет (добавьте voice= в задачу)");
-      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; rebase("vcSave"); }
+      const ph = L.phrases, tasks = {};
+      ph.forEach(x => (tasks[x.task] = tasks[x.task] || []).push(x.phrase));
+      const nt = Object.keys(tasks).length;
+      const sum = ph.length ? pl(ph.length, "фраза", "фразы", "фраз") + " из " + pl(nt, "задачи", "задач", "задач") + (L.prefix ? ", префикс «" + L.prefix + "»" : "") : "нет (добавьте voice= в задачу)";
+      let rows = kvRow("Состояние", L.text) + kvRow("Фразы", sum);
+      if (L.state === "listening") rows += kvRow("Громкость сейчас", L.peak + " %" + (L.level > 0 ? ", порог " + L.level + " %: " + (L.peak >= L.level ? "звук проходит" : "тише порога, не слушаю") : ", порог не задан"));
+      $("#vcInfo").innerHTML = rows;
+      $("#vcPhD").style.display = ph.length ? "" : "none";
+      $("#vcPhS").textContent = "Показать все фразы (" + ph.length + ")";
+      const body = Object.keys(tasks).map(t => "<h4>" + esc(t) + ": " + tasks[t].length + "</h4>" + tasks[t].map(f => esc(f)).join("<br>")).join("");
+      if ($("#vcPhB").dataset.h !== body) { $("#vcPhB").innerHTML = body; $("#vcPhB").dataset.h = body; }
+      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; $("#vcLevel").value = L.level; rebase("vcSave"); }
     }
     $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
     $("#sttUpload").disabled = t.state === "downloading" || t.state === "unpacking";
@@ -1172,7 +1196,7 @@ async function loadStt() {
   } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
 $("#vcSave").onclick = () => run("#vcMsg", async () => {
-  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim()}}));
+  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim(), level: Number($("#vcLevel").value) || 0}}));
   await loadStt();
   return $("#vcHours").value.trim() ? "сохранено" : "сохранено: слушание выключено";
 }, "vcSave");

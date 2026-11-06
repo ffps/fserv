@@ -131,6 +131,9 @@ object Settings {
     /** Имя помощника (префикс): варианты через «|»; добавляется в начало фраз голосовых команд, кроме фраз «=…». Пусто — без префикса. */
     @get:Synchronized val listenPrefix: String get() = o.optJSONObject("listen")?.optString("prefix")?.trim() ?: ""
 
+    /** Порог громкости слушателя команд, % полной шкалы микрофона (0..50): тише порога звук распознавателю не отдаётся. 0 — слушать всегда. */
+    @get:Synchronized val listenLevel: Double get() = (o.optJSONObject("listen")?.optDouble("level", 0.0) ?: 0.0).let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 50.0)
+
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
@@ -258,7 +261,7 @@ object Settings {
         "zones" to zones(),
         "llm" to llmPublic(),
         "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
-        "listen" to obj("hours" to listenHours, "prefix" to listenPrefix),
+        "listen" to obj("hours" to listenHours, "prefix" to listenPrefix, "level" to listenLevel),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
@@ -328,6 +331,7 @@ object Settings {
         patch.optJSONObject("listen")?.let { l ->
             if (l.has("hours")) try { VoiceCmd.parseWindow(l.optString("hours")) } catch (e: IllegalArgumentException) { errors.add("listen.hours: ${e.message}") }
             if (l.has("prefix")) try { VoiceCmd.expandPrefixes(l.optString("prefix")) } catch (e: IllegalArgumentException) { errors.add("listen.prefix: ${e.message}") }
+            if (l.has("level")) { val v = l.optDouble("level", Double.NaN); if (v.isNaN() || v < 0.0 || v > 50.0) errors.add("listen.level: число от 0 до 50 (0 — слушать всегда)") }
         }
         patch.optJSONObject("chat")?.let { c ->
             if (c.optString("rules").length > 4000) errors.add("chat.rules: не длиннее 4000 знаков")
@@ -412,6 +416,7 @@ object Settings {
             val n = JSONObject((o.optJSONObject("listen") ?: JSONObject()).toString())
             if (l.has("hours")) n.put("hours", l.optString("hours").trim())
             if (l.has("prefix")) n.put("prefix", l.optString("prefix").trim())
+            if (l.has("level")) n.put("level", l.optDouble("level", 0.0))
             o.put("listen", n)
         }
         patch.optJSONObject("chat")?.let { c ->

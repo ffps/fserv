@@ -123,7 +123,7 @@ object TaskSchema {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
-                if (steps.has("chat")) for (k in listOf("assign", "alert")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("chat")) for (k in listOf("assign", "alert", "ok")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
                 for (k in listOf("then", "else", "do", "background")) collectVars(steps.opt(k), vars, photos)
             }
@@ -206,12 +206,13 @@ object TaskSchema {
                     if (d.minMs < 30_000 || d.maxMs > 30 * 60_000) return e("chat: for — от 30s до 30m (сколько длится разговор самое большее)")
                 }
                 if (s.has("turns") && !(s.opt("turns") is Number && s.optInt("turns", -1) in 1..30)) return e("chat: turns — число от 1 до 30 (сколько реплик ИИ самое большее)")
-                for (k in listOf("assign", "alert")) if (s.has(k)) {
+                for (k in listOf("assign", "alert", "ok")) if (s.has(k)) {
                     val n = s.opt(k)
                     if (n !is String || !VAR_RE.matches(n)) return e("chat: $k — имя из латинских букв, цифр и _")
                     if (n in BUILTINS) return e("chat: имя «$n» занято встроенной подстановкой")
                 }
-                if (s.has("assign") && s.opt("assign") == s.opt("alert")) return e("chat: assign и alert должны называться по-разному")
+                val names = listOf("assign", "alert", "ok").filter { s.has(it) }.map { s.opt(it) }
+                if (names.size != names.toSet().size) return e("chat: assign, alert и ok должны называться по-разному")
                 volume(s)?.let { return e(it) }
             }
             "log", "telegram", "stop" -> {
