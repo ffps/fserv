@@ -250,6 +250,23 @@ class ScriptTest {
         assertEquals(true, Script.parse("task preempt=true\n  say \"a\"\n").root.getJSONArray("tasks").getJSONObject(0).getBoolean("preempt"))
     }
 
+    @Test fun preemptLevels() {
+        assertNull(Script.validate("task preempt=2\n  say \"a\"\n"))
+        assertNull(Script.validate("task preempt=0\n  say \"a\"\n"))
+        assertNull(Script.validate("task preempt=9\n  say \"a\"\n"))
+        assertTrue(Script.validate("task preempt=10\n  say \"a\"\n")!!.contains("от 0 до 9"))
+        assertTrue(Script.validate("task preempt=1.5\n  say \"a\"\n")!!.contains("preempt"))
+        fun lv(src: String) = TaskSchema.preemptLevel(Script.parse(src).root.getJSONArray("tasks").getJSONObject(0))
+        assertEquals(0, lv("task\n  say \"a\"\n"))
+        assertEquals(1, lv("task preempt=true\n  say \"a\"\n"))
+        assertEquals(0, lv("task preempt=false\n  say \"a\"\n"))
+        assertEquals(3, lv("task preempt=3\n  say \"a\"\n"))
+        assertEquals(9, TaskSchema.preemptLevel(org.json.JSONObject().put("id", "call")))
+        assertEquals(0, TaskSchema.preemptLevel(org.json.JSONObject().put("id", "call").put("preempt", false)))
+        assertEquals(2, TaskSchema.preemptLevel(org.json.JSONObject().put("id", "call").put("preempt", 2)))
+        assertEquals(0, TaskSchema.preemptLevel(null))
+    }
+
     @Test fun telegramConfirm() {
         assertNull(Script.validate(task("telegram \"CALL {time}\" confirm=10s assign=sent", "if sent", "  say \"Я сообщил\"", "else", "  say \"Нет связи\"")))
         assertNull(Script.validate(task("telegram \"x\" confirm=5s")))
@@ -309,6 +326,10 @@ class ScriptTest {
         assertNull(Script.validate(task("slide hello.svg")))
         assertNull(Script.validate(task("slide [\"hello.svg\",\"hi.gif\"] for=5s fit=contain bg=auto brightness=90 fade_in=1s fade_out=2s tap=hide")))
         assertNull(Script.validate(task("slide a.png bg=\"#d81b60\" fit=cover")))
+        assertNull(Script.validate(task("slide a.png bg=[\"#fc6\", \"#df6\"]")))
+        assertNull(Script.validate(task("slide a.png bg=[\"#fc6\", auto]")))
+        expect(task("slide a.png bg=[]"), "bg")
+        expect(task("slide a.png bg=[\"#fc6\", \"red\"]"), "bg")
         assertNull(Script.validate(task("slide off")))
         for (f in listOf("full", "contain", "cover", "width", "height", "none")) assertNull(Script.validate(task("slide a.png fit=$f")))
         expect(task("slide a.png fit=zoom"), "fit")

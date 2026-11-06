@@ -128,7 +128,7 @@ object VoiceTrigger {
                     rec = null
                     setState("loading", "готовлю распознавание команд…")
                     val t0 = System.currentTimeMillis()
-                    rec = Stt.newRecognizer(phrases.map { it.full }).also { it.setWords(true) } // метки времени слов нужны, чтобы найти начало хвоста
+                    rec = Stt.newRecognizer(phrases.map { it.full }).also { it.setWords(true); it.setPartialWords(true) } // метки времени слов нужны, чтобы найти начало хвоста
                     recKey = key
                     Stt.voiceHold = true
                     FLog.d("voice-cmd", "распознаватель команд собран за ${System.currentTimeMillis() - t0} мс, фраз: ${phrases.size}")
@@ -190,6 +190,8 @@ object VoiceTrigger {
         val words = ArrayList<Triple<String, Double, Double>>()
         @Volatile var error: Throwable? = null
         @Volatile var createMs = 0L
+        @Volatile var audioSamples = 0L   // сколько звука разобрано
+        @Volatile var busyNs = 0L         // сколько времени на это ушло (без ожидания звука)
         private val th = Thread({ work() }, "voice-tail").apply { isDaemon = true; start() }
 
         fun feed(c: ShortArray) { q.put(c.copyOf()) }
@@ -215,15 +217,43 @@ object VoiceTrigger {
                 while (true) {
                     val c = q.take()
                     if (c.isEmpty()) break
+                    val t = System.nanoTime()
                     if (r.acceptWaveForm(c, c.size)) take(r.result)
+                    busyNs += System.nanoTime() - t
+                    audioSamples += c.size
                 }
+                val t = System.nanoTime()
                 take(r.finalResult)
+                busyNs += System.nanoTime() - t
             } catch (e: Throwable) {
                 error = e
             } finally {
                 try { fr?.close() } catch (e: Throwable) {}
             }
         }
+    }
+
+    /** Начатый заранее второй проход: распознаватель хвоста для [entry], звук подан с [cutSec] секунд от начала звука реплики. */
+    private class Spec(val entry: TaskEngine.VoiceEntry, val dec: TailDecoder, val cutSec: Double)
+
+    private fun wordsOf(arr: JSONArray?): List<Triple<String, Double, Double>> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map { val w = arr.getJSONObject(it); Triple(norm(w.optString("word")), w.optDouble("start"), w.optDouble("end")) }
+    }
+
+    /** Конец команды [e] среди слов (без «[unk]») в секундах потока распознавателя; -1.0, если её там нет. */
+    private fun headEndOf(words: List<Triple<String, Double, Double>>, e: TaskEngine.VoiceEntry): Double {
+        val real = words.filter { it.first != "[unk]" }
+        val hw = e.full.split(' ').map { norm(it) }
+        for (i in 0..real.size - hw.size) if (hw.indices.all { real[i + it].first == hw[it] }) return real[i + hw.size - 1].third
+        return -1.0
+    }
+
+    /** Звук отклика (настройка «Звук отклика»): дослушали хвост команды, идёт разбор. Играет в стороне, ничего не ждёт. */
+    private fun playAck() {
+        val name = Settings.listenAck
+        if (name.isEmpty() || !Sounds.exists(name)) return
+        Thread({ Audio.play(app, name, null, 0L, 0L, null, false) { false }?.let { FLog.w("voice-cmd", "звук отклика не сыграл: $it") } }, "voice-ack").apply { isDaemon = true; start() }
     }
 
     /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. Тише порога громкости звук не отдаётся. */
@@ -239,6 +269,9 @@ object VoiceTrigger {
         var chunks = 0L
         var winMax = 0
         var lastTrigger = 0L
+        var spec: Spec? = null
+        val wildList = phrases.filter { it.wild }.map { it.full }
+        fun dropSpec() { spec?.dec?.abort(); spec = null }
 
         /** Очередной кусок с усилением и его сырой пик; null — пока ничего нет или говорит синтезатор. */
         fun readChunk(): Pair<ShortArray, Int>? {
@@ -247,7 +280,7 @@ object VoiceTrigger {
             if (n == 0) return null
             // пока говорит синтезатор (и недолго после) звук выбрасывается, а начатая фраза сбрасывается
             if (Voice.msSinceSpeech() < ECHO_MS) {
-                if (!muted) { r.reset(); gate.reset(); utt.clear(); muted = true }
+                if (!muted) { r.reset(); gate.reset(); utt.clear(); dropSpec(); muted = true }
                 return null
             }
             muted = false
@@ -261,33 +294,62 @@ object VoiceTrigger {
             return (if (n == buf.size) buf else buf.copyOf(n)) to peak
         }
 
+        /**
+         * Как только по промежуточному результату слышно начало команды со знаком «*», запускает второй проход заранее: он идёт параллельно
+         * с тем, как человек договаривает, и после конца реплики остаётся доделать немного.
+         */
+        fun startEarly() {
+            if (spec != null || wildList.isEmpty() || utt.size < 6) return
+            val pj = JSONObject(r.partialResult)
+            val text = pj.optString("partial").replace("[unk]", " ").trim().replace(Regex("\\s+"), " ")
+            if (text.isEmpty()) return
+            val full = VoiceCmd.match(text, wildList) ?: return
+            val e = phrases.first { it.full == full && it.wild }
+            val ws = wordsOf(pj.optJSONArray("partial_result"))
+            val headEnd = headEndOf(ws, e)
+            if (headEnd < 0 || ws.isEmpty() || !utt.trimToSpeech(2)) return
+            val headEndSec = utt.firstLoud() * CH + (headEnd - ws[0].second)
+            val cutIdx = maxOf(0, Math.ceil(headEndSec / CH).toInt() - CUT_BACK)
+            val dec = TailDecoder()
+            val all = utt.all()
+            for (i in cutIdx until all.size) dec.feed(all[i])
+            spec = Spec(e, dec, cutIdx * CH)
+            FLog.d("voice-cmd", "услышано начало «$full *»: второй проход начат заранее")
+        }
+
         /** Дослушивает реплику после начала команды со знаком «*» и возвращает хвост; null — хвоста нет или он слишком короткий. */
         fun captureTail(j: JSONObject, e: TaskEngine.VoiceEntry): String? {
             val tailSec = Settings.listenTail
-            val arr = j.optJSONArray("result")
-            val words = ArrayList<Triple<String, Double, Double>>()
-            if (arr != null) for (i in 0 until arr.length()) { val w = arr.getJSONObject(i); words.add(Triple(norm(w.optString("word")), w.optDouble("start"), w.optDouble("end"))) }
-            val real = words.filter { it.first != "[unk]" }
+            val words = wordsOf(j.optJSONArray("result"))
             val hw = e.full.split(' ').map { norm(it) }
-            var headEnd = -1.0
-            for (i in 0..real.size - hw.size) if (hw.indices.all { real[i + it].first == hw[it] }) { headEnd = real[i + hw.size - 1].third; break }
-            if (headEnd < 0 || words.isEmpty()) { FLog.d("voice-cmd", "хвост «${e.full} *»: нет меток времени слов, не запускаю"); return null }
-            if (!utt.trimToSpeech(2)) { FLog.d("voice-cmd", "хвост «${e.full} *»: в звуке нет речи, не запускаю"); return null }
+            val headEnd = headEndOf(words, e)
+            if (headEnd < 0 || words.isEmpty()) { dropSpec(); FLog.d("voice-cmd", "хвост «${e.full} *»: нет меток времени слов, не запускаю"); return null }
+            if (!utt.trimToSpeech(2)) { dropSpec(); FLog.d("voice-cmd", "хвост «${e.full} *»: в звуке нет речи, не запускаю"); return null }
             val headEndSec = utt.firstLoud() * CH + (headEnd - words[0].second) // конец команды в секундах от начала звука
             val headEndChunk = Math.ceil(headEndSec / CH).toInt()
-            // второй проход идёт параллельно с дослушиванием, начиная чуть раньше конца команды: к концу реплики остаётся доделать немного
-            val cutIdx = maxOf(0, headEndChunk - CUT_BACK)
-            val cutSec = cutIdx * CH
-            val dec = TailDecoder()
+            var early = spec
+            if (early != null && (early.entry !== e || early.cutSec > headEndSec - TAIL_BEFORE_SEC)) { dropSpec(); early = null } // заранее начатый не подходит
+            spec = null // дальше декодером владеет эта функция
+            val dec: TailDecoder
+            val cutSec: Double
+            if (early != null) {
+                dec = early.dec; cutSec = early.cutSec
+            } else {
+                // второй проход идёт параллельно с дослушиванием, начиная чуть раньше конца команды
+                val cutIdx = maxOf(0, headEndChunk - CUT_BACK)
+                cutSec = cutIdx * CH
+                dec = TailDecoder()
+                val all = utt.all()
+                for (i in cutIdx until all.size) dec.feed(all[i])
+            }
             var ok = false
+            var spoke = false
             try {
-                val now0 = utt.all()
-                for (i in cutIdx until now0.size) dec.feed(now0[i])
                 val deadline = System.currentTimeMillis() + ((tailSec + NO_SPEECH_SEC + 3) * 1000).toLong()
                 while (true) {
                     if (Stt.micUsers.get() > 0 || Call.active || muted) return null
                     val after = (utt.size - headEndChunk) * CH
-                    val spoke = utt.loudAfter(headEndChunk + 1)
+                    spoke = utt.loudAfter(headEndChunk + 1)
                     if (spoke && utt.trailingSilence() >= END_SILENCE) break // сказал и замолчал
                     if (!spoke && after >= NO_SPEECH_SEC) break              // после команды молчат
                     if (after >= tailSec + 0.5) break                        // предел длины хвоста
@@ -300,6 +362,7 @@ object VoiceTrigger {
             } finally {
                 if (!ok) dec.abort()
             }
+            if (spoke) playAck()
             val t0 = System.currentTimeMillis()
             val done = dec.finish(20_000)
             val waitMs = System.currentTimeMillis() - t0
@@ -307,7 +370,9 @@ object VoiceTrigger {
             val got = synchronized(dec.words) { dec.words.toList() }
             val tail = got.filter { it.second >= shift - TAIL_BEFORE_SEC && it.second <= shift + tailSec }.map { it.first }.toMutableList()
             if (tail.isNotEmpty() && tail[0] == hw.last()) tail.removeAt(0) // обрывок последнего слова самой команды
-            FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
+            val speed = if (dec.busyNs > 0) "%.1f".format(dec.audioSamples.toDouble() / Stt.RATE / (dec.busyNs / 1e9)) else "?"
+            FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс" +
+                (if (early != null) " (разбор начат заранее)" else "") + ", скорость разбора ×$speed реального времени, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
                 (if (!done) ", не уложились во время" else "") + (dec.error?.let { ", сбой: ${it.message}" } ?: ""))
             if (tail.size < MIN_TAIL_WORDS) { FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю"); return null }
             return tail.joinToString(" ")
@@ -328,7 +393,7 @@ object VoiceTrigger {
             TaskEngine.runByVoice(entry, heard, tail)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
         }
 
-        fun resetAll() { r.reset(); gate.reset(); utt.clear() }
+        fun resetAll() { r.reset(); gate.reset(); utt.clear(); dropSpec() }
 
         while (true) {
             if (Stt.micUsers.get() > 0 || Call.active) return
@@ -343,8 +408,9 @@ object VoiceTrigger {
             if (feed.isEmpty()) continue
             fedChunks += feed.size
             for (f in feed) {
-                if (hasWild) utt.add(f)
+                if (hasWild) { utt.add(f); spec?.dec?.feed(f) }
                 if (r.acceptWaveForm(f, f.size)) { handle(r.result); resetAll() }
+                else if (hasWild) startEarly()
             }
             // слишком долгая реплика без паузы: завершаем принудительно, чтобы не копить звук без конца
             if (hasWild && utt.size >= (Settings.listenTail + 5) * 10) { handle(r.finalResult); resetAll() }

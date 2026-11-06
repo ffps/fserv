@@ -137,6 +137,9 @@ object Settings {
     /** Сколько секунд после начала команды со свободным хвостом («масяня, расскажи про *») слушается хвост (2..15). */
     @get:Synchronized val listenTail: Int get() = (o.optJSONObject("listen")?.optInt("tail", 8) ?: 8).coerceIn(2, 15)
 
+    /** Звук отклика: имя файла со вкладки «Звуки», который играет, когда слушатель дослушал хвост команды со знаком «*»; пусто — без отклика. */
+    @get:Synchronized val listenAck: String get() = o.optJSONObject("listen")?.optString("ack")?.trim() ?: ""
+
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
     /** Настройки голоса для задач (вкладка «Звук»): volume, lang, voice, rate, pitch (в процентах, 100 = обычные); отсутствующий ключ = значение по умолчанию. */
@@ -264,7 +267,7 @@ object Settings {
         "zones" to zones(),
         "llm" to llmPublic(),
         "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
-        "listen" to obj("hours" to listenHours, "prefix" to listenPrefix, "level" to listenLevel, "tail" to listenTail),
+        "listen" to obj("hours" to listenHours, "prefix" to listenPrefix, "level" to listenLevel, "tail" to listenTail, "ack" to listenAck),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
         "call" to call()
     )
@@ -334,6 +337,7 @@ object Settings {
         patch.optJSONObject("listen")?.let { l ->
             if (l.has("hours")) try { VoiceCmd.parseWindow(l.optString("hours")) } catch (e: IllegalArgumentException) { errors.add("listen.hours: ${e.message}") }
             if (l.has("prefix")) try { VoiceCmd.expandPrefixes(l.optString("prefix")) } catch (e: IllegalArgumentException) { errors.add("listen.prefix: ${e.message}") }
+            if (l.has("ack")) { val a = l.optString("ack").trim(); if (a.isNotEmpty() && !Sounds.exists(a)) errors.add("listen.ack: звука «$a» нет (загрузите его на вкладке «Звуки» или оставьте пусто)") }
             if (l.has("tail")) { val v = l.optInt("tail", -1); if (v < 2 || v > 15) errors.add("listen.tail: целое число секунд от 2 до 15") }
             if (l.has("level")) { val v = l.optDouble("level", Double.NaN); if (v.isNaN() || v < 0.0 || v > 50.0) errors.add("listen.level: число от 0 до 50 (0 — слушать всегда)") }
         }
@@ -422,6 +426,7 @@ object Settings {
             if (l.has("prefix")) n.put("prefix", l.optString("prefix").trim())
             if (l.has("level")) n.put("level", l.optDouble("level", 0.0))
             if (l.has("tail")) n.put("tail", l.optInt("tail", 8))
+            if (l.has("ack")) n.put("ack", l.optString("ack").trim())
             o.put("listen", n)
         }
         patch.optJSONObject("chat")?.let { c ->

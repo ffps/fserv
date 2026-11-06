@@ -78,11 +78,18 @@ object TaskSchema {
         return null
     }
 
+    /** Приоритет задачи (настройка preempt): false — 0, true — 1, число 0..9 как есть; у задачи с id call без настройки — 9. */
+    fun preemptLevel(task: JSONObject?): Int {
+        if (task == null) return 0
+        if (!task.has("preempt")) return if (task.optString("id") == "call") 9 else 0
+        return when (val v = task.opt("preempt")) { is Boolean -> if (v) 1 else 0; is Number -> v.toInt().coerceIn(0, 9); else -> 0 }
+    }
+
     private fun task(t: JSONObject, c: Ctx): String? {
         val id = t.optString("id")
         if (t.has("title") && t.opt("title") !is String) return c.err(t, "task $id: title — текст, например title=\"Подъём\"")
         if (t.has("enabled") && t.opt("enabled") !is Boolean) return c.err(t, "task $id: enabled — true или false")
-        if (t.has("preempt") && t.opt("preempt") !is Boolean) return c.err(t, "task $id: preempt — true или false")
+        if (t.has("preempt")) { val pv = t.opt("preempt"); if (!(pv is Boolean || (pv is Number && pv.toDouble() == pv.toInt().toDouble() && pv.toInt() in 0..9))) return c.err(t, "task $id: preempt — true, false или число от 0 до 9 (приоритет)") }
         if (t.has("cron")) {
             if (t.opt("cron") !is String) return c.err(t, "task $id: cron пишется в кавычках, например cron=\"0 8 * * *\"")
             try { Cron.parse(t.optString("cron")) } catch (e: IllegalArgumentException) { return c.err(t, "task $id: cron: ${e.message}") }
@@ -302,7 +309,10 @@ object TaskSchema {
                     if (s.has("fit") && s.opt("fit") !in SLIDE_FITS) return e("slide: fit — ${SLIDE_FITS.joinToString(", ")}")
                     if (s.has("bg")) {
                         val b = s.opt("bg")
-                        if (!(b == "auto" || (b is String && Regex("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})").matches(b)))) return e("slide: bg — auto или цвет в кавычках, например bg=\"#d81b60\"")
+                        val col = Regex("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
+                        val one = { x: Any? -> x == "auto" || (x is String && col.matches(x)) }
+                        val ok = if (b is JSONArray) b.length() > 0 && (0 until b.length()).all { one(b.opt(it)) } else one(b)
+                        if (!ok) return e("slide: bg — auto, цвет в кавычках (bg=\"#d81b60\") или список таких значений (bg=[\"#fc6\", \"#df6\"], выбирается случайный)")
                     }
                     if (s.has("brightness") && !(s.opt("brightness") is Number && s.optInt("brightness", -1) in 1..100)) return e("slide: brightness — число от 1 до 100 (яркость экрана, %)")
                     for (k in listOf("fade_in", "fade_out")) if (s.has(k)) {

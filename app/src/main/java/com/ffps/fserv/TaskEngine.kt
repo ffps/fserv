@@ -47,7 +47,13 @@ object TaskEngine {
         val phrase: String = "",
         /** Пометка для журнала (что именно услышано, если не точно фраза). */
         val note: String = ""
-    )
+    ) {
+        /** Приоритет в очереди (preempt): больше — раньше; при равном порядок поступления. */
+        @Volatile var level = 0
+        val seq = reqSeq.incrementAndGet()
+    }
+
+    private val reqSeq = java.util.concurrent.atomic.AtomicLong()
 
     private class Run(val ctx: Context, val root: JSONObject, val task: JSONObject, val info: RunInfo, val assume: Map<String, Any?>, deadlineMs: Long) {
         val vars = java.util.concurrent.ConcurrentHashMap<String, Any?>()
@@ -70,7 +76,8 @@ object TaskEngine {
     }
 
     private lateinit var app: Context
-    private val queue = java.util.concurrent.LinkedBlockingDeque<Req>()
+    private val queueOrder = Comparator<Req> { a, b -> if (a.level != b.level) b.level - a.level else a.seq.compareTo(b.seq) }
+    private val queue = java.util.concurrent.PriorityBlockingQueue<Req>(11, queueOrder)
     private var worker: Thread? = null
     @Volatile private var current: Run? = null
     private val recent = ArrayDeque<RunInfo>()
@@ -221,15 +228,17 @@ object TaskEngine {
         return null
     }
 
-    /** Задача с настройкой preempt=true (для id call по умолчанию так) встаёт в очереди первой и прерывает выполняющуюся задачу, если та не preempt. */
-    private fun isPreempt(task: JSONObject?): Boolean =
-        task != null && (if (task.has("preempt")) task.optBoolean("preempt") else task.optString("id") == "call")
+    /** Приоритет задачи: preempt=false — 0, true — 1, число 0..9 как есть; у задачи call по умолчанию 9. */
+    private fun level(task: JSONObject?): Int = TaskSchema.preemptLevel(task)
 
+    /** Задача с приоритетом выше 0 встаёт в очереди перед задачами с меньшим приоритетом и прерывает выполняющуюся, если у той приоритет меньше. */
     private fun enqueue(req: Req, task: JSONObject?) {
-        if (req.dry || !isPreempt(task)) { queue.add(req); return }
-        queue.addFirst(req)
+        val lv = if (req.dry) 0 else level(task)
+        req.level = lv
+        queue.add(req)
+        if (lv == 0) return
         val cur = current
-        if (cur != null && !isPreempt(cur.task) && !cur.cancelled) {
+        if (cur != null && lv > level(cur.task) && !cur.cancelled) {
             val who = task?.optString("title").orEmpty().ifEmpty { req.taskId }
             cur.preemptedBy = who
             cur.cancelled = true
@@ -776,7 +785,7 @@ object TaskEngine {
         val name = pickText(r, s.opt("slide"))
         val forMs = if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else null
         val spec = Slide.Spec(
-            name, s.optString("fit", "full"), s.optString("bg", "auto"),
+            name, s.optString("fit", "full"), pickText(r, s.opt("bg") ?: "auto"),
             if (s.has("brightness")) s.optInt("brightness") else null,
             if (s.has("fade_in")) Dur.parse(s.opt("fade_in"), "fade_in").sample(r.rnd) else 0L,
             if (s.has("fade_out")) Dur.parse(s.opt("fade_out"), "fade_out").sample(r.rnd) else 0L,
@@ -923,7 +932,7 @@ object TaskEngine {
         return obj(
             "configOk" to true, "tasks" to tasks,
             "running" to current?.let { runJson(it.info, false) },
-            "queue" to arr(queue.map { it.taskId + if (it.dry) " (пробный)" else "" }),
+            "queue" to arr(queue.sortedWith(queueOrder).map { it.taskId + if (it.dry) " (пробный)" else "" }),
             "runs" to runs
         )
     }

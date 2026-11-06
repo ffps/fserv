@@ -273,10 +273,12 @@
     <input id="vcLevel" type="number" min="0" max="50" step="0.1" placeholder="0">
     <label for="vcTail">Длина хвоста после команды «*», с</label>
     <input id="vcTail" type="number" min="2" max="15" step="1" placeholder="8">
+    <label for="vcAck">Звук отклика после хвоста «*»</label>
+    <select id="vcAck"><option value="">нет отклика</option></select>
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="vcSave">Сохранить</button></div>
   <div class="msg" id="vcMsg"></div>
-  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Знак <code>*</code> в конце фразы означает «и дальше что угодно»: <code>voice="*"</code> — любая речь после имени помощника, <code>voice="расскажи про *"</code> — после этих слов; сказанное целиком (вместе с хвостом) попадает в <code>{phrase}</code>, например в <code>chat "{phrase}"</code>. Хвост распознаётся вторым проходом (свободная речь, не дольше «длины хвоста»), короче двух слов он не считается; точная фраза из другой задачи важнее «*». Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона. <b>Порог громкости</b> (0–50, % полной шкалы микрофона) экономит процессор: тишина распознавателю не отдаётся, а звук громче порога включает распознавание (вместе с секундой до и после). 0 — слушать всегда. Подберите порог по строке «Громкость сейчас»: сначала в тишине (запомните фон), затем при команде с обычного расстояния; порог ставят выше фона и ниже голоса, обычно 1–3. Слишком высокий порог пропустит тихую речь.</p>
+  <p class="hint">Задача запускается голосом, если в её заголовке есть настройка <code>voice="фраза 1|фраза 2"</code> (например <code>voice="поболтай со мной|ты здесь"</code>). Префикс добавляется в начало каждой фразы: при префиксе «Кузя» слушается «Кузя, поболтай со мной»; можно несколько вариантов через <code>|</code>. Фраза с <code>=</code> в начале (<code>voice="=на помощь"</code>) слушается без префикса. В фразах можно писать шаблоны: <code>(время|времени)</code> — обязательный выбор, <code>[у нас|сейчас]</code> — необязательная часть, например <code>скажи сколько [сейчас] (время|времени)</code>. В задаче то, что было сказано после префикса, доступно как <code>{phrase}</code>. Знак <code>*</code> в конце фразы означает «и дальше что угодно»: <code>voice="*"</code> — любая речь после имени помощника, <code>voice="расскажи про *"</code> — после этих слов; сказанное целиком (вместе с хвостом) попадает в <code>{phrase}</code>, например в <code>chat "{phrase}"</code>. Хвост распознаётся вторым проходом (свободная речь, не дольше «длины хвоста»), короче двух слов он не считается; точная фраза из другой задачи важнее «*». «Звук отклика» (из вкладки «Звуки», можно не выбирать) играет, когда человек договорил хвост и идёт разбор: после неё задача стартует через пару секунд. Устройство слушает постоянно, но только в заданные часы: <code>8..22</code> или <code>8:30..22:00</code>, через полночь <code>22..6</code>, круглосуточно <code>0..24</code>; пусто — не слушать. Распознаются только фразы из задач, всё остальное игнорируется; слова должны быть в словаре русской модели (проверьте фразу кнопкой «свободная речь» выше). Распознавание идёт на устройстве, звук не записывается и никуда не передаётся. Пока говорит синтезатор, идёт звонок или шаг <code>ask</code>/<code>chat</code> слушает сам, команды не принимаются. Постоянное прослушивание нагружает процессор и расходует заряд, пока планшет не на зарядке; услышанное и срабатывания видны в журнале (уровень DEBUG). Нужны скачанная модель и разрешение микрофона. <b>Порог громкости</b> (0–50, % полной шкалы микрофона) экономит процессор: тишина распознавателю не отдаётся, а звук громче порога включает распознавание (вместе с секундой до и после). 0 — слушать всегда. Подберите порог по строке «Громкость сейчас»: сначала в тишине (запомните фон), затем при команде с обычного расстояния; порог ставят выше фона и ниже голоса, обычно 1–3. Слишком высокий порог пропустит тихую речь.</p>
   <h2 style="margin-top:22px">Звуки</h2>
   <table><thead><tr><th>Файл</th><th>Размер, КБ</th><th>Длительность, сек</th><th>Задачи</th><th></th></tr></thead><tbody id="sdBody"></tbody></table>
   <div class="row" style="margin-top:10px">
@@ -586,7 +588,7 @@ document.addEventListener("input", refreshDirty);
 document.addEventListener("change", refreshDirty);
 setInterval(() => { refreshDirty(); if (typeof syncEditors === "function") syncEditors(); }, 500);
 track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "sPortS", "sBoot", "sPass"]);
-track("vcSave", ["vcHours", "vcPrefix", "vcLevel", "vcTail"]);
+track("vcSave", ["vcHours", "vcPrefix", "vcLevel", "vcTail", "vcAck"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
@@ -1185,7 +1187,7 @@ async function loadStt() {
       $("#vcPhS").textContent = "Показать все фразы (" + ph.length + ")";
       const body = Object.keys(tasks).map(t => "<h4>" + esc(t) + ": " + tasks[t].length + "</h4>" + tasks[t].map(f => esc(f)).join("<br>")).join("");
       if ($("#vcPhB").dataset.h !== body) { $("#vcPhB").innerHTML = body; $("#vcPhB").dataset.h = body; }
-      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; $("#vcLevel").value = L.level; $("#vcTail").value = L.tail; rebase("vcSave"); }
+      const vd = DIRTY.vcSave; if (vd.base === undefined || val(vd.ids) === vd.base) { $("#vcHours").value = L.hours; $("#vcPrefix").value = L.prefix; $("#vcLevel").value = L.level; $("#vcTail").value = L.tail; setAck(L.ack); rebase("vcSave"); }
     }
     $("#sttDownload").disabled = t.state === "downloading" || t.state === "unpacking" || t.state === "ready";
     $("#sttUpload").disabled = t.state === "downloading" || t.state === "unpacking";
@@ -1196,7 +1198,7 @@ async function loadStt() {
   } catch (e) { $("#sttInfo").innerHTML = kvRow("Ошибка", e.message); }
 }
 $("#vcSave").onclick = () => run("#vcMsg", async () => {
-  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim(), level: Number($("#vcLevel").value) || 0, tail: Number($("#vcTail").value) || 8}}));
+  await post("/api/settings", JSON.stringify({listen: {hours: $("#vcHours").value.trim(), prefix: $("#vcPrefix").value.trim(), level: Number($("#vcLevel").value) || 0, tail: Number($("#vcTail").value) || 8, ack: $("#vcAck").value}}));
   await loadStt();
   return $("#vcHours").value.trim() ? "сохранено" : "сохранено: слушание выключено";
 }, "vcSave");
@@ -1226,9 +1228,18 @@ function renderSys() {
   $("#ssBody").innerHTML = SYS.map(([id, t]) => "<tr><td><a href=\"#\" class=\"bp\" data-bp=\"" + id + "\" title=\"прослушать здесь, в браузере\">" + t + "</a></td><td><code>" + id + '</code></td><td><button class="ib" data-sd="' + id + '" data-act="play" title="' + (playing === id ? "Остановить" : "Проиграть на устройстве") + '">' + (playing === id ? ICO.stop : ICO.play) + "</button></td></tr>").join("");
 }
 let sdTimer = null;
+/** Список звуков для выбора «звука отклика»; выбранное значение сохраняется, даже если файла уже нет в списке. */
+let ackNames = [];
+function setAck(cur) {
+  const sel = $("#vcAck"), v = cur === undefined ? sel.value : cur;
+  const names = ackNames.slice(); if (v && names.indexOf(v) < 0) names.push(v);
+  sel.innerHTML = '<option value="">нет отклика</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join("");
+  sel.value = v;
+}
 async function loadSoundFiles() {
   try {
     const d = (await api("/api/sounds")).json;
+    ackNames = d.files.map(f => f.name); setAck();
     playing = d.playing || null; renderSys();
     clearTimeout(sdTimer);
     if (playing && current === "sound") sdTimer = setTimeout(loadSoundFiles, 1000);
