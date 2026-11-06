@@ -9,8 +9,8 @@
     font-family: "Roboto", "Segoe UI", system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
   .wrap { height: 100%; box-sizing: border-box; padding-bottom: 2vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
   #time { font-weight: 100; font-size: 30vh; font-size: min(32vw, 34vh); line-height: 1; letter-spacing: -0.02em; }
-  #time .c { display: inline-block; animation: colon 2s ease-in-out infinite;}
-  @keyframes colon { 0%, 100% { opacity: .9; } 50% { opacity: .1; } }
+  #time .c { display: inline-block; opacity: .9; }
+  #time .c.off { opacity: .15; }
   #date { font-weight: 300; font-size: 8vh; font-size: min(8vw, 10vh); margin-top: 10vh; opacity: .9; color: #39c;}
   #day  { font-weight: 300; font-size: 8vh; font-size: min(8vw, 10vh); margin-top: 1vh; opacity: .9; color: #39c;}
   #day.weekend {color: #c93;}
@@ -21,7 +21,7 @@
 <body>
 <div id="wx" style="display:none"><span class="i" id="wxi"></span><span id="wxt"></span></div>
 <div class="wrap">
-  <div id="time"><span id="hh">--</span><span class="c">:</span><span id="mm">--</span></div>
+  <div id="time"><span id="hh">--</span><span class="c" id="colon">:</span><span id="mm">--</span></div>
   <div id="date"></div>
   <div id="day"></div>
 </div>
@@ -30,14 +30,17 @@
   var MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   var DAYS = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"];
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  // текст меняется только когда он изменился, двоеточие мигает раз в секунду: страница почти не перерисовывается
+  function put(id, t) { var e = document.getElementById(id); if (e.textContent !== t) e.textContent = t; }
   function tick() {
     var d = new Date();
     var day = d.getDay();
-    document.getElementById("hh").textContent = pad(d.getHours());
-    document.getElementById("mm").textContent = pad(d.getMinutes());
-    document.getElementById("date").textContent = d.getDate() + " " + MONTHS[d.getMonth()];
-    document.getElementById("day").textContent = DAYS[day];
+    put("hh", pad(d.getHours()));
+    put("mm", pad(d.getMinutes()));
+    put("date", d.getDate() + " " + MONTHS[d.getMonth()]);
+    put("day", DAYS[day]);
     document.getElementById("day").classList.toggle('weekend', day === 0 || day === 6);
+    document.getElementById("colon").classList.toggle('off', d.getSeconds() % 2 === 1);
   }
   tick();
   setInterval(tick, 1000);
