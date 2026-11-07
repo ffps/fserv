@@ -88,12 +88,15 @@ object TaskEngine {
         Thread { refreshStt() }.start()
     }
 
-    /** Виды ответов (yesno, number) всех шагов ask в исправных задачах. */
+    /** Вид распознавателя для вида ответа: text — свободная речь (без словаря), остальные — со словарём. */
+    private fun sttKind(kind: String) = if (kind == "text") "free" else kind
+
+    /** Виды распознавателей (yesno, number, free) всех шагов ask и chat в исправных задачах. */
     private fun askKinds(node: Any?, out: MutableSet<String>) {
         when (node) {
             is JSONArray -> for (i in 0 until node.length()) askKinds(node.opt(i), out)
             is JSONObject -> {
-                if (node.has("ask")) out.add(node.optString("kind", "yesno"))
+                if (node.has("ask")) out.add(sttKind(node.optString("kind", "yesno")))
                 if (node.has("chat")) out.add("free")
                 for (k in listOf("then", "else", "do", "background", "steps")) askKinds(node.opt(k), out)
             }
@@ -622,14 +625,14 @@ object TaskEngine {
         log(r, p, "ask: $text → $name ($kind, ждать ${Dur.human(listenMs)}, переспросов до $retries)")
         if (r.info.dry) {
             val v = r.assume[name]
-            val value: Any? = if (kind == "number") (v as? Number)?.toInt() else v as? Boolean
+            val value: Any? = when (kind) { "number" -> (v as? Number)?.toInt(); "text" -> v?.toString()?.takeIf { it.isNotBlank() }; else -> v as? Boolean }
             if (value != null) r.vars[name] = value
-            log(r, p, "пробный запуск: ответ ${value ?: "не получен"} (задайте assume=$name:${if (kind == "number") "120" else "true"}, чтобы проверить другую ветку)")
+            log(r, p, "пробный запуск: ответ ${value ?: "не получен"} (задайте assume=$name:${when (kind) { "number" -> "120"; "text" -> "купить хлеб"; else -> "true" }}, чтобы проверить другую ветку)")
             return
         }
         val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
         Stt.check(r.ctx)?.let { throw StepError(it) } // не спрашиваем, если слушать всё равно нечем
-        Stt.prepareAsync(kind) // модель и распознаватель готовятся, пока звучит вопрос: слушание начнётся сразу после него
+        Stt.prepareAsync(sttKind(kind)) // модель и распознаватель готовятся, пока звучит вопрос: слушание начнётся сразу после него
         var attempt = 0
         while (true) {
             val phrase = if (attempt == 0) text else fill(r, pickText(r, again))
@@ -637,13 +640,13 @@ object TaskEngine {
             check(r)
             sleep(r, 150) // эхо синтезатора не должно попасть в микрофон
             val heard = try {
-                Stt.listen(r.ctx, kind, listenMs) { r.stopRequested() }
+                Stt.listen(r.ctx, sttKind(kind), listenMs) { r.stopRequested() }
             } catch (e: IllegalStateException) {
                 throw StepError(e.message ?: "распознавание речи недоступно")
             }
             check(r)
             log(r, p, "услышано: «$heard»")
-            val value = Speech.parse(kind, heard)
+            val value: Any? = if (kind == "text") heard.trim().ifEmpty { null } else Speech.parse(kind, heard)
             if (value != null) {
                 r.vars[name] = value
                 log(r, p, "$name = $value")

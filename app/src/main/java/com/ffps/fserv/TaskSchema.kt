@@ -194,7 +194,7 @@ object TaskSchema {
                 val n = s.opt("assign")
                 if (n !is String || !VAR_RE.matches(n)) return e("ask: нужен assign=имя (латинские буквы, цифры и _), куда попадёт ответ, например ask \"Какое давление?\" assign=bp kind=number")
                 if (n in BUILTINS) return e("ask: имя «$n» занято встроенной подстановкой")
-                if (s.has("kind") && s.opt("kind") !in listOf("yesno", "number")) return e("ask: kind — yesno (да или нет, по умолчанию) или number (число от 0 до 999)")
+                if (s.has("kind") && s.opt("kind") !in listOf("yesno", "number", "text")) return e("ask: kind — yesno (да или нет, по умолчанию), number (число от 0 до 999) или text (свободная речь, ответ — текст)")
                 if (s.has("listen")) {
                     val ms = try { Dur.parse(s.opt("listen"), "listen") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "listen") }
                     if (ms.minMs < 2_000 || ms.maxMs > 120_000) return e("ask: listen — от 2s до 2m (сколько ждать ответ)")

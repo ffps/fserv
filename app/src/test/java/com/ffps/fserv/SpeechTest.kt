@@ -45,6 +45,7 @@ class SpeechTest {
         fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
         assertNull(ok("ask \"Какое давление?\" assign=bp kind=number listen=20s retries=2 again=\"Ещё раз, {task}\"", "if bp > 140", "  say \"Высокое: {bp}\""))
         assertNull(ok("ask \"Вы приняли таблетки?\" assign=pills", "if not pills", "  say \"Примите таблетки\""))
+        assertNull(ok("ask \"Что записать?\" assign=note kind=text listen=30s", "if note", "  telegram \"{note}\""))
         bad("assign", "ask \"Вопрос?\"")
         bad("kind", "ask \"Вопрос?\" assign=x kind=word")
         bad("listen", "ask \"Вопрос?\" assign=x listen=1s")
