@@ -175,6 +175,8 @@ object VoiceTrigger {
     private const val CH = 0.1              // секунд в одном куске звука
     private const val END_SILENCE = 10      // столько кусков тишины (1 с) после речи — хвост закончен
     private const val NO_SPEECH_SEC = 3.0   // если после команды столько секунд молчат, хвоста нет
+    private const val SOFT_PAUSE = 3        // на пределе длины ждём такую паузу (кусков), чтобы не оборвать слово
+    private const val SOFT_EXTRA_SEC = 3.0  // но не дольше, чем на столько секунд сверх предела
     private const val MIN_TAIL_WORDS = 2    // короче хвост считается случайным шумом
     private const val CUT_BACK = 4          // второй проход начинается за столько кусков (0,4 с) до конца команды
     private const val TAIL_SILENCE_FEED = 3 // тишины в конце хвоста второму проходу достаточно этого числа кусков (0,3 с): конец реплики мы ждём сами
@@ -357,6 +359,7 @@ object VoiceTrigger {
             }
             var ok = false
             var spoke = false
+            var endWhy = ""
             val pending = ArrayList<ShortArray>()
             try {
                 val deadline = System.currentTimeMillis() + ((tailSec + NO_SPEECH_SEC + 3) * 1000).toLong()
@@ -364,10 +367,13 @@ object VoiceTrigger {
                     if (Stt.micUsers.get() > 0 || Call.active || muted) return null
                     val after = (utt.size - headEndChunk) * CH
                     spoke = utt.loudAfter(headEndChunk + 1)
-                    if (spoke && utt.trailingSilence() >= END_SILENCE) break // сказал и замолчал
-                    if (!spoke && after >= NO_SPEECH_SEC) break              // после команды молчат
-                    if (after >= tailSec + 0.5) break                        // предел длины хвоста
-                    if (System.currentTimeMillis() > deadline) break
+                    if (spoke && utt.trailingSilence() >= END_SILENCE) { endWhy = "тишина"; break } // сказал и замолчал
+                    if (!spoke && after >= NO_SPEECH_SEC) { endWhy = "нет речи"; break }             // после команды молчат
+                    if (after >= tailSec + 0.5) {                                                    // предел длины хвоста: не рвём речь посреди слова
+                        if (utt.trailingSilence() >= SOFT_PAUSE) { endWhy = "предел, пауза"; break }
+                        if (after >= tailSec + 0.5 + SOFT_EXTRA_SEC) { endWhy = "предел, речь не кончилась"; break }
+                    }
+                    if (System.currentTimeMillis() > deadline) { endWhy = "срок"; break }
                     val c = readChunk() ?: continue
                     utt.add(c.first)
                     // длинную тишину в конце реплики второму проходу не отдаём (она нужна только нам, чтобы понять, что человек договорил);
@@ -389,7 +395,7 @@ object VoiceTrigger {
             val tail = pick.tail.toMutableList()
             val how = pick.how
             val speed = if (dec.busyNs > 0) "%.1f".format(dec.audioSamples.toDouble() / Stt.RATE / (dec.busyNs / 1e9)) else "?"
-            FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс" +
+            FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс, слушали до: $endWhy (после команды ${"%.1f".format((utt.size - headEndChunk) * CH)} с, тишины в конце ${utt.trailingSilence()} к.)" +
                 (if (early != null) " (разбор начат заранее)" else "") + ", скорость разбора ×$speed реального времени, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
                 (if (!done) ", не уложились во время" else "") + (dec.error?.let { ", сбой: ${it.message}" } ?: ""))
             // диагностика привязки по времени: первый громкий кусок против первого слова, оценка конца команды (сверка с «слова второго прохода»)
