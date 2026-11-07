@@ -178,6 +178,7 @@ object VoiceTrigger {
     private const val MIN_TAIL_WORDS = 2    // короче хвост считается случайным шумом
     private const val CUT_BACK = 4          // второй проход начинается за столько кусков (0,4 с) до конца команды
     private const val TAIL_SILENCE_FEED = 3 // тишины в конце хвоста второму проходу достаточно этого числа кусков (0,3 с): конец реплики мы ждём сами
+    private const val FRAGMENT_SEC = 0.1     // слово, начавшееся в первые 0,1 с второго прохода, это обрывок самой команды (разбор начат посреди неё)
     private const val TAIL_BEFORE_SEC = 0.25 // слово, начавшееся не раньше чем за столько до конца команды, относится к хвосту
 
     internal fun norm(w: String) = w.lowercase().replace('ё', 'е')
@@ -278,6 +279,8 @@ object VoiceTrigger {
         var winMax = 0
         var lastTrigger = 0L
         var spec: Spec? = null
+        var rFed = 0L        // сколько кусков подано в распознаватель команд (первый проход) с его создания
+        var rFedAtReset = 0L // значение rFed на последнем сбросе: по нему проверяем, считает ли распознаватель время потока по поданному звуку
         val wildList = phrases.filter { it.wild }.map { it.full }
         fun dropSpec() { spec?.dec?.abort(); spec = null }
 
@@ -288,7 +291,7 @@ object VoiceTrigger {
             if (n == 0) return null
             // пока говорит синтезатор (и недолго после) звук выбрасывается, а начатая фраза сбрасывается
             if (Voice.msSinceSpeech() < ECHO_MS) {
-                if (!muted) { r.reset(); gate.reset(); utt.clear(); dropSpec(); muted = true }
+                if (!muted) { r.reset(); gate.reset(); utt.clear(); dropSpec(); rFedAtReset = rFed; muted = true }
                 return null
             }
             muted = false
@@ -382,15 +385,17 @@ object VoiceTrigger {
             val waitMs = System.currentTimeMillis() - t0
             val shift = headEndSec - cutSec // конец команды в секундах от начала второго прохода
             val got = synchronized(dec.words) { dec.words.toList() }
-            val tail = got.filter { it.second >= shift - TAIL_BEFORE_SEC && it.second <= shift + tailSec }.map { it.first }.toMutableList()
-            if (tail.isNotEmpty() && tail[0] == hw.last()) tail.removeAt(0) // обрывок последнего слова самой команды
+            val pick = TailPick.pick(got.map { it.first to it.second }, hw, shift, tailSec, TAIL_BEFORE_SEC, FRAGMENT_SEC)
+            val tail = pick.tail.toMutableList()
+            val how = pick.how
             val speed = if (dec.busyNs > 0) "%.1f".format(dec.audioSamples.toDouble() / Stt.RATE / (dec.busyNs / 1e9)) else "?"
             FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс" +
                 (if (early != null) " (разбор начат заранее)" else "") + ", скорость разбора ×$speed реального времени, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
                 (if (!done) ", не уложились во время" else "") + (dec.error?.let { ", сбой: ${it.message}" } ?: ""))
             // диагностика привязки по времени: первый громкий кусок против первого слова, оценка конца команды (сверка с «слова второго прохода»)
             FLog.d("voice-cmd", "привязка: первый громкий кусок ${utt.firstLoud()}, первое слово первого прохода ${"%.2f".format(words[0].second)} с, конец команды в его потоке ${"%.2f".format(headEnd)} с → ${"%.2f".format(headEndSec)} с от начала звука, " +
-                "второй проход с ${"%.2f".format(cutSec)} с (конец команды в нём ${"%.2f".format(shift)} с)$dropped; слова первого прохода: " + words.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" } +
+                "второй проход с ${"%.2f".format(cutSec)} с (конец команды в нём ${"%.2f".format(shift)} с)$dropped; хвост выбран $how; " +
+                "счёт кусков: конец команды по счёту ${"%.2f".format(rFedAtReset * CH + (headEndSec + utt.dropped * CH))} с против ${"%.2f".format(headEnd)} с у распознавателя (поданное до сброса ${"%.1f".format(rFedAtReset * CH)} с, выброшено кусков ${utt.dropped}); слова первого прохода: " + words.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" } +
                 "; слова второго прохода: " + (if (got.isEmpty()) "нет" else got.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" }))
             if (tail.size < MIN_TAIL_WORDS) {
                 FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю (слова и привязка — в строке выше)")
@@ -415,7 +420,7 @@ object VoiceTrigger {
             TaskEngine.runByVoice(entry, heard, tail)?.let { FLog.w("voice-cmd", "команда «$phrase» не выполнена: $it") }
         }
 
-        fun resetAll() { r.reset(); gate.reset(); utt.clear(); dropSpec() }
+        fun resetAll() { r.reset(); gate.reset(); utt.clear(); dropSpec(); rFedAtReset = rFed }
 
         while (true) {
             if (Stt.micUsers.get() > 0 || Call.active) return
@@ -431,6 +436,7 @@ object VoiceTrigger {
             fedChunks += feed.size
             for (f in feed) {
                 if (hasWild) { utt.add(f); spec?.dec?.feed(f) }
+                rFed++
                 if (r.acceptWaveForm(f, f.size)) { handle(r.result); resetAll() }
                 else if (hasWild) startEarly()
             }

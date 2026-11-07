@@ -96,4 +96,18 @@ class LevelGateTest {
         x.add(b); b.fill(1)
         assertEquals(9, x.all()[0][0].toInt())
     }
+
+    @Test fun uttCountsDropped() {
+        val u = Utterance(maxChunks = 5)
+        repeat(8) { u.add(ShortArray(10) { 1 }) }
+        assertEquals(5, u.size)
+        assertEquals(3, u.dropped)
+        u.clear()
+        assertEquals(0, u.dropped)
+        repeat(4) { u.add(ShortArray(10) { 1 }) }
+        u.add(ShortArray(10) { 20000 })
+        u.add(ShortArray(10) { 1 })
+        assertTrue(u.trimToSpeech(pre = 1))
+        assertTrue(u.dropped >= 3)
+    }
 }

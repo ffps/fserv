@@ -57,14 +57,18 @@ class Utterance(private val maxChunks: Int = 250, val chunkSec: Double = 0.1) {
 
     val size: Int get() = chunks.size
 
+    /** Сколько кусков выброшено с начала реплики (переполнение и [trimToSpeech]): номер куска в потоке = [dropped] + номер в [all]. */
+    var dropped = 0
+        private set
+
     fun add(c: ShortArray) {
         var p = 0
         for (v in c) { val a = Math.abs(v.toInt()); if (a > p) p = a }
         chunks.addLast(c.copyOf()); peaks.addLast(p)
-        while (chunks.size > maxChunks) { chunks.removeFirst(); peaks.removeFirst() }
+        while (chunks.size > maxChunks) { chunks.removeFirst(); peaks.removeFirst(); dropped++ }
     }
 
-    fun clear() { chunks.clear(); peaks.clear() }
+    fun clear() { chunks.clear(); peaks.clear(); dropped = 0 }
 
     fun all(): List<ShortArray> = chunks.toList()
 
@@ -90,6 +94,7 @@ class Utterance(private val maxChunks: Int = 250, val chunkSec: Double = 0.1) {
         if (f < 0) return false
         val drop = maxOf(0, f - pre)
         repeat(drop) { chunks.removeFirst(); peaks.removeFirst() }
+        dropped += drop
         return true
     }
 }

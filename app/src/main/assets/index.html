@@ -94,7 +94,6 @@
 <header>
   <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a1f"/><stop offset="1" stop-color="#d81b60"/></linearGradient></defs><rect width="120" height="120" rx="26" fill="url(#g)"/><ellipse cx="60" cy="60" rx="36" ry="32" fill="none" stroke="#FFFFFF" stroke-width="8" /><ellipse cx="49" cy="56" rx="6" ry="10" fill="#FFFFFF" /><ellipse cx="71" cy="56" rx="6" ry="10" fill="#FFFFFF" /></svg>
   <h1>fServe</h1><span class="ver" id="ver"></span>
-  <span class="ver" id="beat"></span>
   <button class="ib" id="logout" title="Выйти" aria-label="Выйти"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
 </header>
 <nav id="tabs">
@@ -180,10 +179,9 @@
   <div class="row">
     <label>Уровень <select id="logLevel"><option>DEBUG</option><option selected>INFO</option><option>WARN</option><option>ERROR</option></select></label>
     <label>Строк <input id="logLines" type="number" value="300" min="10" max="5000" style="width:90px"></label>
-    <button class="btn sec" id="logRefresh">Обновить</button>
-    <label><input type="checkbox" id="logAuto"> каждые 5 с</label>
-    <a href="/api/logs/download" download><button class="btn sec" type="button">Скачать всё</button></a>
-    <button class="btn danger" id="logClear">Очистить</button>
+    <button class="ib add" id="logRefresh" title="Обновить" aria-label="Обновить"></button>
+    <a class="ib add" id="logDownload" href="/api/logs/download" download title="Скачать всё" aria-label="Скачать всё" style="display:inline-block;text-decoration:none"></a>
+    <button class="ib add del" id="logClear" title="Очистить журнал" aria-label="Очистить журнал"></button>
   </div>
   <pre id="logOut">—</pre>
   <div class="msg" id="logMsg"></div>
@@ -651,9 +649,11 @@ const ICO = {
   rectDel: svg('<rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/><path d="M9 10l6 4M15 10l-6 4"/>'),
   save: svg('<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  download: svg('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "tkSave" || b.id === "lsSave") b.innerHTML = ICO.save; if (b.id === "tkClose") b.innerHTML = ICO.close; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay") b.innerHTML = ICO.del; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "tkSave" || b.id === "lsSave") b.innerHTML = ICO.save; if (b.id === "tkClose") b.innerHTML = ICO.close; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay" || b.id === "logClear") b.innerHTML = ICO.del; if (b.id === "logRefresh") b.innerHTML = ICO.refresh; });
+$("#logDownload").innerHTML = ICO.download;
 
 // ---- редактор кода: номера строк и автоотступ ----
 const EDITORS = [];
@@ -985,7 +985,7 @@ function fmtDur(s) { s = Math.floor(s); const d = Math.floor(s / 86400), h = Mat
 async function loadStatus() {
   try {
     const i = (await api("/api/info")).json;
-    $("#ver").textContent = "версия " + i.app.version;
+    $("#ver").textContent = i.device.model + " v" + i.app.version;
     const b = i.battery;
     const sc = i.screen;
     $("#cards").innerHTML =
@@ -1004,7 +1004,6 @@ async function loadStatus() {
       kvRow("Перезагрузка устройства", i.power.rebootMethod || "недоступна") +
       kvRow("Cron перезапуска / перезагрузки", (i.power.appRestartCron || "—") + " / " + (i.power.rebootCron || "—"));
     $("#infoRaw").textContent = JSON.stringify(i, null, 2);
-    $("#beat").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
   } catch (e) { $("#cards").innerHTML = kvRow("Ошибка", e.message); }
 }
 
@@ -1788,7 +1787,6 @@ document.addEventListener("click", e => {
 // ---- автообновление ----
 setInterval(() => {
   if (current === "status") loadStatus();
-  if (current === "logs" && $("#logAuto").checked) loadLogs();
 }, 5000);
 showTab(location.hash.slice(1) || "status");
 </script>
