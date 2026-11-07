@@ -236,7 +236,7 @@ object VoiceTrigger {
     }
 
     /** Начатый заранее второй проход: распознаватель хвоста для [entry], звук подан с [cutSec] секунд от начала звука реплики. */
-    private class Spec(val entry: TaskEngine.VoiceEntry, val dec: TailDecoder, val cutSec: Double)
+    private class Spec(val entry: TaskEngine.VoiceEntry, val dec: TailDecoder, val cutSec: Double, val estEndSec: Double)
 
     private fun wordsOf(arr: JSONArray?): List<Triple<String, Double, Double>> {
         if (arr == null) return emptyList()
@@ -321,7 +321,7 @@ object VoiceTrigger {
             val dec = TailDecoder()
             val all = utt.all()
             for (i in cutIdx until all.size) dec.feed(all[i])
-            spec = Spec(e, dec, cutIdx * CH)
+            spec = Spec(e, dec, cutIdx * CH, headEndSec)
             FLog.d("voice-cmd", "услышано начало «$full *»: второй проход начат заранее")
         }
 
@@ -336,7 +336,9 @@ object VoiceTrigger {
             val headEndSec = utt.firstLoud() * CH + (headEnd - words[0].second) // конец команды в секундах от начала звука
             val headEndChunk = Math.ceil(headEndSec / CH).toInt()
             var early = spec
-            if (early != null && (early.entry !== e || early.cutSec > headEndSec - TAIL_BEFORE_SEC)) { dropSpec(); early = null } // заранее начатый не подходит
+            // заготовка не подходит, только если начинается позже конца команды (раньше нужно только для контекста; оценка конца по промежуточному результату плавает на ±0,3 с)
+            var dropped = ""
+            if (early != null && (early.entry !== e || early.cutSec > headEndSec)) { dropped = ", заготовка отброшена: начало ${"%.2f".format(early.cutSec)} с, оценка конца команды ${"%.2f".format(early.estEndSec)} с"; dropSpec(); early = null }
             spec = null // дальше декодером владеет эта функция
             val dec: TailDecoder
             val cutSec: Double
@@ -386,9 +388,12 @@ object VoiceTrigger {
             FLog.d("voice-cmd", "хвост «${tail.joinToString(" ")}»: звука ${"%.1f".format(utt.size * CH)} с, после конца речи ждали $waitMs мс" +
                 (if (early != null) " (разбор начат заранее)" else "") + ", скорость разбора ×$speed реального времени, сборка распознавателя ${dec.createMs} мс, предел $tailSec с" +
                 (if (!done) ", не уложились во время" else "") + (dec.error?.let { ", сбой: ${it.message}" } ?: ""))
+            // диагностика привязки по времени: первый громкий кусок против первого слова, оценка конца команды (сверка с «слова второго прохода»)
+            FLog.d("voice-cmd", "привязка: первый громкий кусок ${utt.firstLoud()}, первое слово первого прохода ${"%.2f".format(words[0].second)} с, конец команды в его потоке ${"%.2f".format(headEnd)} с → ${"%.2f".format(headEndSec)} с от начала звука, " +
+                "второй проход с ${"%.2f".format(cutSec)} с (конец команды в нём ${"%.2f".format(shift)} с)$dropped; слова первого прохода: " + words.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" } +
+                "; слова второго прохода: " + (if (got.isEmpty()) "нет" else got.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" }))
             if (tail.size < MIN_TAIL_WORDS) {
-                FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю; слова второго прохода (с, от начала разбора; конец команды на ${"%.2f".format(shift)} с): " +
-                    (if (got.isEmpty()) "нет" else got.joinToString(", ") { "«${it.first}» ${"%.2f".format(it.second)}" }))
+                FLog.d("voice-cmd", "после «${e.full}» меньше $MIN_TAIL_WORDS слов, не запускаю (слова и привязка — в строке выше)")
                 if (spoke) say(Settings.listenMiss)
                 return null
             }
