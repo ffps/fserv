@@ -236,7 +236,7 @@
   <h2 style="margin-top:22px">Общие настройки</h2>
   <div class="f">
     <label for="vsVol">Громкость по умолчанию, %</label><input id="vsVol" type="number" min="0" max="100" placeholder="не задана">
-    <label for="vsLang">Язык голоса</label><input id="vsLang" placeholder="ru-RU">
+    <label for="vsLang">Язык голоса</label><select id="vsLang"><option value="">По умолчанию (ru-RU)</option></select>
     <label for="vsVoice">Голос</label><select id="vsVoice"><option value="">по умолчанию</option></select>
     <label for="vsRate">Скорость речи, %</label><input id="vsRate" type="number" step="1" min="30" max="300" placeholder="100">
     <label for="vsPitch">Тон голоса, %</label><input id="vsPitch" type="number" step="1" min="30" max="200" placeholder="100">
@@ -1178,12 +1178,27 @@ function voiceLabel(x) {
   return m ? m[1] : x.name;
 }
 function voiceSource(x) { return x.network ? "сеть" : "локально"; }
-let voiceList = [];
+let voiceList = [], voiceLangs = [], voiceReady = false;
+// список языков из голосов движка; сохранённый язык, которого в списке нет, остаётся отдельным пунктом (не теряется, если движок не ответил)
+function fillLangSelect(cur) {
+  const sel = $("#vsLang");
+  cur = (cur === undefined ? sel.value : cur || "").replace("_", "-");
+  let dn = null;
+  try { dn = new Intl.DisplayNames(["ru"], {type: "language"}); } catch (e) {}
+  const name = t => { try { return dn ? dn.of(t) : ""; } catch (e) { return ""; } };
+  let h = '<option value="">По умолчанию (ru-RU)</option>';
+  for (const t of voiceLangs) h += '<option value="' + esc(t) + '">' + esc(t) + (name(t) ? " · " + esc(name(t)) : "") + '</option>';
+  if (cur && !voiceLangs.includes(cur)) h += '<option value="' + esc(cur) + '">' + esc(cur) + (voiceReady ? " (голосов нет)" : " (движок речи не отвечает)") + '</option>';
+  sel.innerHTML = h;
+  sel.value = cur;
+}
 async function loadSound() {
   try {
     const v = (await api("/api/voice")).json;
     $("#svInfo").textContent = v.ready ? "Синтезатор: " + (v.engine || "?") + "; язык " + v.lang + (v.languageAvailable ? " доступен" : " НЕ доступен: установите голос в настройках устройства (Язык и ввод, Синтез речи)") : "Синтезатор не готов: " + v.error;
     voiceList = v.voices || [];
+    voiceReady = !!v.ready; voiceLangs = Object.keys(v.voicesByLocale || {}).sort();
+    fillLangSelect();
     $("#svVoices").innerHTML = voiceList.length ? voiceList.map(x => '<tr><td title="' + esc(x.name) + '">' + esc(voiceLabel(x)) + '</td><td>' + esc(voiceSource(x)) + '</td><td>' + esc(Q_TXT[x.quality] || "?") + '</td><td><button class="ib" data-vt="' + esc(x.name) + '" title="Проверить этим голосом">' + ICO.play + '</button></td></tr>').join("") : '<tr><td colspan="5" style="color:var(--dim)">нет данных</td></tr>';
   } catch (e) { $("#svInfo").textContent = e.message; }
   loadVoiceCfg();
@@ -1562,7 +1577,7 @@ async function loadVoiceCfg() {
   try {
     if (DIRTY.vsSave && DIRTY.vsSave.base !== undefined && val(DIRTY.vsSave.ids) !== DIRTY.vsSave.base) return; // не затираем несохранённое
     const v = (await api("/api/settings")).json.voice || {};
-    $("#vsVol").value = v.volume ?? ""; $("#vsLang").value = v.lang || "";
+    $("#vsVol").value = v.volume ?? ""; fillLangSelect(v.lang || "");
     $("#vsRate").value = v.rate ?? 100; $("#vsPitch").value = v.pitch ?? 100;
     try {
       const vi = (await api("/api/voice")).json;

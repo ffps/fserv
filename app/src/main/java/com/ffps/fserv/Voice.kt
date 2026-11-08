@@ -232,9 +232,10 @@ object Voice {
         val t = tts
         if (err != null || t == null) return obj("ready" to false, "error" to (err ?: "не готов"))
         val lang = cfg?.optString("lang").orEmpty().ifEmpty { "ru-RU" }
-        val avail = t.isLanguageAvailable(Locale.forLanguageTag(lang))
+        val loc = Locale.forLanguageTag(lang.replace('_', '-')) // как и при речи: ru_RU и ru-RU одно и то же
+        val avail = t.isLanguageAvailable(loc)
         val voices = try {
-            t.voices?.filter { it.locale.language == Locale.forLanguageTag(lang).language }
+            t.voices?.filter { it.locale.language == loc.language }
                 ?.sortedBy { it.name }?.take(60)?.map {
                     obj("name" to it.name, "locale" to it.locale.toLanguageTag(), "quality" to it.quality, "latency" to it.latency, "network" to it.isNetworkConnectionRequired, "notInstalled" to (it.features?.contains("notInstalled") == true))
                 } ?: emptyList()
