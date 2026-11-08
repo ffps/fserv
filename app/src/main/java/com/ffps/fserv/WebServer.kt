@@ -212,7 +212,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 if (used != null) fail(Response.Status.CONFLICT, "слайд используется в задачах: ${used.joinToString(", ")}; сначала уберите его из сценария")
                 else if (Slides.delete(name)) { FLog.i("slides", "удалён слайд «$name»"); ok("удалено: $name") } else fail(Response.Status.NOT_FOUND, "файла нет")
             }
-            get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()))
+            get && uri == "/api/voice" -> json(Response.Status.OK, Voice.info(voiceCfg()?.let { c -> q(s, "lang")?.takeIf { it.isNotBlank() }?.let { JSONObject(c.toString()).put("lang", it) } ?: c }))
             post && uri == "/api/say" -> {
                 val text = body(s).trim()
                 require(text.isNotEmpty()) { "пустой текст" }
@@ -687,7 +687,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /api/slides/file" to "отдать слайд для просмотра; ?name=hello.svg",
         "POST /api/slides" to "загрузить слайд: тело файла, ?name=hello.gif (jpg, png, gif, webp, svg; до 5 МБ, всего до 30 МБ)",
         "POST /api/slides/delete" to "удалить слайд; ?name=",
-        "GET /api/voice" to "состояние синтезатора речи, доступные голоса",
+        "GET /api/voice" to "состояние синтезатора речи, доступные голоса (?lang=ru-RU — голоса этого языка вместо сохранённого)",
         "POST /api/say" to "произнести текст (тело); ?volume=80; ?voice=имя — проверить конкретный голос Android",
         "POST /api/say/stop" to "прервать речь",
         "GET /api/stt" to "распознавание речи: состояние модели, разрешение микрофона, ход скачивания",

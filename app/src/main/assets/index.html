@@ -1573,18 +1573,23 @@ $("#svSay").onclick = () => {
 };
 
 // ---- голос: общие настройки (вкладка «Звук») ----
+// голоса выбранного языка (не обязательно сохранённого): список обновляется сразу при смене языка
+async function fillVoiceSelect(lang, selected) {
+  let vs = [];
+  try { vs = ((await api("/api/voice?lang=" + encodeURIComponent(lang || ""))).json.voices || []).slice(); } catch (e) {}
+  if (selected && !vs.some(x => x.name === selected)) vs.unshift({name: selected, locale: "?"});
+  $("#vsVoice").innerHTML = '<option value="">по умолчанию</option>' + vs.map(x => '<option value="' + esc(x.name) + '">' + esc(x.locale === "?" ? x.name + " (нет в списке)" : voiceLabel(x) + " (" + voiceSource(x) + ")") + "</option>").join("");
+  $("#vsVoice").value = selected || "";
+}
+$("#vsLang").onchange = () => fillVoiceSelect($("#vsLang").value, $("#vsVoice").value);
 async function loadVoiceCfg() {
   try {
     if (DIRTY.vsSave && DIRTY.vsSave.base !== undefined && val(DIRTY.vsSave.ids) !== DIRTY.vsSave.base) return; // не затираем несохранённое
     const v = (await api("/api/settings")).json.voice || {};
     $("#vsVol").value = v.volume ?? ""; fillLangSelect(v.lang || "");
     $("#vsRate").value = v.rate ?? 100; $("#vsPitch").value = v.pitch ?? 100;
-    try {
-      const vi = (await api("/api/voice")).json;
-      const vs = (vi.voices || []).slice(); if (v.voice && !vs.some(x => x.name === v.voice)) vs.unshift({name: v.voice, locale: "?"});
-      $("#vsVoice").innerHTML = '<option value="">по умолчанию</option>' + vs.map(x => '<option value="' + esc(x.name) + '">' + esc(x.locale === "?" ? x.name + " (нет в списке)" : voiceLabel(x) + " (" + voiceSource(x) + ")") + "</option>").join("");
-    } catch (e) {}
-    $("#vsVoice").value = v.voice || ""; rebase("vsSave");
+    await fillVoiceSelect(v.lang || "", v.voice || "");
+    rebase("vsSave");
   } catch (e) { say("#vsMsg", e.message, false); }
 }
 $("#vsSave").onclick = () => run("#vsMsg", async () => {
@@ -1595,7 +1600,7 @@ $("#vsSave").onclick = () => run("#vsMsg", async () => {
   v.rate = $("#vsRate").value === "" ? 100 : Number($("#vsRate").value);
   v.pitch = $("#vsPitch").value === "" ? 100 : Number($("#vsPitch").value);
   await post("/api/settings", JSON.stringify({voice: v}));
-  loadVoiceCfg(); return "сохранено";
+  rebase("vsSave"); loadVoiceCfg(); return "сохранено";
 }, "vsSave");
 
 // ---- зоны детектора движения (вкладка «Камера») ----
