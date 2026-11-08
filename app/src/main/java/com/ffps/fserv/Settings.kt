@@ -125,23 +125,32 @@ object Settings {
     /** Период обновления погоды, минут; 0 — погода выключена (не запрашивается, не показывается на киоске, не попадает в чат). */
     @get:Synchronized val weatherEveryMin: Int get() = (o.optJSONObject("weather")?.optInt("everyMin", 60) ?: 60).coerceIn(0, 1440)
 
+    /**
+     * Настройки слушателя команд; пока блока listen нет (новая установка), действуют значения по умолчанию: часы не заданы
+     * (слушатель выключен, чтобы помощник не заговорил неожиданно), имя «Кузя», звук отклика sys.mp3 (из стартового набора).
+     */
+    private fun listen(): JSONObject = o.optJSONObject("listen") ?: LISTEN_DEFAULT
+
+    private val LISTEN_DEFAULT: JSONObject get() = JSONObject().put("hours", "").put("prefix", "Кузя").put("level", 1).put("tail", 8)
+        .put("ack", "sys.mp3").put("miss", "Я не расслышал вас, повторите пожалуйста!")
+
     /** Часы прослушивания голосовых команд («8..22»); пусто — не слушать. Фразы заданы настройкой voice в задачах. */
-    @get:Synchronized val listenHours: String get() = o.optJSONObject("listen")?.optString("hours")?.trim() ?: ""
+    @get:Synchronized val listenHours: String get() = listen().optString("hours").trim()
 
     /** Имя помощника (префикс): варианты через «|»; добавляется в начало фраз голосовых команд, кроме фраз «=…». Пусто — без префикса. */
-    @get:Synchronized val listenPrefix: String get() = o.optJSONObject("listen")?.optString("prefix")?.trim() ?: ""
+    @get:Synchronized val listenPrefix: String get() = listen().optString("prefix").trim()
 
     /** Порог громкости слушателя команд, % полной шкалы микрофона (0..50): тише порога звук распознавателю не отдаётся. 0 — слушать всегда. */
-    @get:Synchronized val listenLevel: Double get() = (o.optJSONObject("listen")?.optDouble("level", 0.0) ?: 0.0).let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 50.0)
+    @get:Synchronized val listenLevel: Double get() = listen().optDouble("level", 0.0).let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 50.0)
 
-    /** Сколько секунд после начала команды со свободным хвостом («масяня, расскажи про *») слушается хвост (2..15). */
-    @get:Synchronized val listenTail: Int get() = (o.optJSONObject("listen")?.optInt("tail", 8) ?: 8).coerceIn(2, 15)
+    /** Сколько секунд после начала команды со свободным хвостом («кузя, расскажи про *») слушается хвост (2..15). */
+    @get:Synchronized val listenTail: Int get() = listen().optInt("tail", 8).coerceIn(2, 15)
 
     /** Звук отклика: имя файла со вкладки «Звуки», который играет, когда слушатель дослушал хвост команды со знаком «*»; пусто — без отклика. */
-    @get:Synchronized val listenAck: String get() = o.optJSONObject("listen")?.optString("ack")?.trim() ?: ""
+    @get:Synchronized val listenAck: String get() = listen().optString("ack").trim()
 
     /** Фраза, которую устройство говорит, если после команды со знаком «*» человек что-то сказал, а разобрать это не удалось; пусто — молчит. */
-    @get:Synchronized val listenMiss: String get() = o.optJSONObject("listen")?.optString("miss")?.trim() ?: ""
+    @get:Synchronized val listenMiss: String get() = listen().optString("miss").trim()
 
     val telegramConfigured: Boolean get() = telegramToken.isNotEmpty() && telegramChatId.isNotEmpty()
 
@@ -425,7 +434,7 @@ object Settings {
             weatherChanged = true
         }
         patch.optJSONObject("listen")?.let { l ->
-            val n = JSONObject((o.optJSONObject("listen") ?: JSONObject()).toString())
+            val n = JSONObject(listen().toString())
             if (l.has("hours")) n.put("hours", l.optString("hours").trim())
             if (l.has("prefix")) n.put("prefix", l.optString("prefix").trim())
             if (l.has("level")) n.put("level", l.optDouble("level", 0.0))

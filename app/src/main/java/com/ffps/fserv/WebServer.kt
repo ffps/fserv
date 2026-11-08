@@ -284,8 +284,9 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 val topic = b.optString("topic").trim()
                 val ha = b.optJSONArray("history") ?: JSONArray()
                 val hist = (0 until ha.length()).map { i -> ha.getJSONObject(i).let { Chat.Msg(if (it.optString("role") == "assistant") "assistant" else "user", it.optString("text")) } }
-                val r = Llm.ask(Chat.systemPrompt(chat.optString("rules"), topic, Weather.chatContext(), hist.isEmpty()), hist)
-                json(Response.Status.OK, obj("ok" to true, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
+                val system = Chat.systemPrompt(chat.optString("rules"), topic, Weather.chatContext(), hist.isEmpty())
+                val r = Llm.ask(system, hist)
+                json(Response.Status.OK, obj("ok" to true, "system" to system, "reply" to r.reply.text, "alert" to r.reply.alert, "end" to r.reply.end, "ms" to r.ms, "provider" to r.provider, "model" to r.model))
             } catch (e: Llm.LlmError) {
                 FLog.w("llm", "проверка чата не удалась: ${e.message}")
                 fail(Response.Status.INTERNAL_ERROR, e.message ?: "ошибка")

@@ -7,9 +7,9 @@ class ListsTest {
     private fun task(vararg steps: String) = "task\n" + steps.joinToString("") { "  $it\n" }
 
     @Test fun parsesLists() {
-        val t = Lists.parse("# слайды\nmascots = [\"ma_c.gif\", ma_e.gif]   # комментарий\npastels = [\n  \"#77dd77\", \"#7fc7ff\",\n  \"#afdafc\"\n]\n\n")
+        val t = Lists.parse("# слайды\nmascots = [\"kuzya.hi.png\", kuzya.ok.png]   # комментарий\npastels = [\n  \"#77dd77\", \"#7fc7ff\",\n  \"#afdafc\"\n]\n\n")
         assertEquals(setOf("mascots", "pastels"), t.keys)
-        assertEquals("[\"ma_c.gif\", ma_e.gif]", t["mascots"])
+        assertEquals("[\"kuzya.hi.png\", kuzya.ok.png]", t["mascots"])
         assertTrue(t["pastels"]!!.contains("#afdafc"))
         assertTrue(Lists.parse("").isEmpty())
         assertTrue(Lists.parse("# только комментарии\n\n").isEmpty())
@@ -37,7 +37,7 @@ class ListsTest {
     }
 
     @Test fun refsInTasks() {
-        val lists = Lists.parse("mascots = [\"ma_c.gif\", \"ma_e.gif\"]\npastels = [\"#77dd77\", \"#fc6\"]\nphrases = [\"Привет\", \"Здравствуйте\"]\n")
+        val lists = Lists.parse("mascots = [\"kuzya.hi.png\", \"kuzya.ok.png\"]\npastels = [\"#77dd77\", \"#fc6\"]\nphrases = [\"Привет\", \"Здравствуйте\"]\n")
         assertNull(Script.validate(task("slide @mascots fade_in=1 fit=width bg=@pastels"), "x", emptySet(), lists))
         val st = Script.parse(task("slide @mascots bg=@pastels"), "x", lists).root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
         assertEquals(2, st.getJSONArray("slide").length())

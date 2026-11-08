@@ -216,7 +216,7 @@
 
   <details id="lsBox" style="margin-top:22px"><summary>Общие списки</summary>
     <div class="row" style="margin-top:8px"><button class="ib add pri" id="lsSave" title="Сохранить списки"></button></div>
-    <textarea id="lsText" rows="10" spellcheck="false" wrap="off" placeholder='mascots = ["ma_c.gif", "ma_e.gif"]'></textarea>
+    <textarea id="lsText" rows="10" spellcheck="false" wrap="off" placeholder='mascots = ["kuzya.hi.png", "kuzya.ok.png"]'></textarea>
     <div class="msg" id="lsMsg"></div>
     <p class="hint">Список, который нужен нескольким задачам, описывается здесь один раз: <code>имя = ["а", "б", в]</code>; запись может занимать несколько строк, <code>#</code> начинает комментарий. В задаче вместо списка пишется <code>@имя</code>: <code>slide @mascots bg=@pastels</code>, <code>say @greetings</code>, <code>play @sounds</code>. Список, на который ссылается задача, удалить или переименовать нельзя (сохранение откажет). Файл <code>lists.txt</code> входит в резервную копию.</p>
   </details>
@@ -286,7 +286,7 @@
     <label for="vcAck">Звук отклика после хвоста «*»</label>
     <select id="vcAck"><option value="">нет отклика</option></select>
     <label for="vcMiss">Фраза, если команда после имени не расслышана</label>
-    <input id="vcMiss" type="text" maxlength="200" placeholder="Не расслышала, повторите, пожалуйста">
+    <input id="vcMiss" type="text" maxlength="200" placeholder="Не расслышал, повторите, пожалуйста">
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="vcSave">Сохранить</button></div>
   <div class="msg" id="vcMsg"></div>
@@ -374,6 +374,7 @@
   <h2 style="margin-top:22px">Проверка разговора</h2>
   <div class="row"><input id="chTopic" placeholder="Тема, как в шаге chat (можно пусто — свободная беседа)" style="flex:1;min-width:200px"><button class="btn sec" id="chStart">Начать заново</button></div>
   <div class="chlog" id="chLog"></div>
+  <details id="chSent" style="display:none"><summary>Что ушло модели</summary><p class="hint" style="margin:6px 0 2px">Системная подсказка (правила, сведения о времени и погоде, тема, формат ответа) последнего запроса:</p><pre id="chSys" class="chlog" style="white-space:pre-wrap;margin:4px 0"></pre><p class="hint" style="margin:6px 0 2px">История, отправленная вместе с ней:</p><pre id="chHistSent" class="chlog" style="white-space:pre-wrap;margin:4px 0"></pre></details>
   <div class="row"><input id="chInput" placeholder="Что отвечает человек" style="flex:1;min-width:200px"><button class="btn" id="chSend">Отправить</button></div>
   <div class="msg" id="chTMsg"></div>
   <p class="hint">Проверка без голоса: по тексту, с сохранёнными правилами и темой из поля выше (подстановки вроде <code>{phrase}</code> здесь не работают, напишите готовый текст). Так можно подобрать формулировки, не разговаривая с устройством.</p>
@@ -783,7 +784,9 @@ async function chAsk() {
   if (chBusy) return false;
   chBusy = true; $("#chSend").disabled = true; $("#chStart").disabled = true; say("#chTMsg", "жду ответ модели…", true);
   try {
+    const sentHist = chHist.slice();
     const r = (await post("/api/chat/test", JSON.stringify({topic: $("#chTopic").value, history: chHist}))).json;
+    $("#chSys").textContent = r.system || ""; $("#chHistSent").textContent = sentHist.length ? sentHist.map(m => (m.role === "user" ? "Человек: " : "Помощник: ") + m.text).join("\n") : "(пусто: это первая реплика)"; $("#chSent").style.display = "";
     chHist.push({role: "assistant", text: r.reply}); chLine("assistant", r.reply, r);
     if (r.end) chEnded = true;
     say("#chTMsg", r.provider + ", " + r.model + ", " + r.ms + " мс" + (r.end ? ". Разговор закончен: начните заново." : ""), true);
@@ -791,7 +794,7 @@ async function chAsk() {
   } catch (e) { say("#chTMsg", e.message, false); return false; }
   finally { chBusy = false; $("#chSend").disabled = false; $("#chStart").disabled = false; }
 }
-$("#chStart").onclick = () => { chHist = []; chEnded = false; $("#chLog").innerHTML = ""; chAsk(); };
+$("#chStart").onclick = () => { chHist = []; chEnded = false; $("#chLog").innerHTML = ""; $("#chSent").style.display = "none"; chAsk(); };
 async function chSend() {
   const text = $("#chInput").value.trim();
   if (!text || chBusy) return;

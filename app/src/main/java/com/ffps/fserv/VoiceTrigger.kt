@@ -261,10 +261,10 @@ object VoiceTrigger {
         Thread({ Audio.play(app, name, null, 0L, 0L, null, false) { false }?.let { FLog.w("voice-cmd", "звук отклика не сыграл: $it") } }, "voice-ack").apply { isDaemon = true; start() }
     }
 
-    /** Говорит [text] (фраза «не расслышала»): человек сказал что-то после команды, но разобрать это не удалось. Пусто — молчит. Синтезатор занимает слушателя, пока говорит. */
+    /** Говорит [text] (фраза «не расслышал»): человек сказал что-то после команды, но разобрать это не удалось. Пусто — молчит. Синтезатор занимает слушателя, пока говорит. */
     private fun say(text: String) {
         if (text.isEmpty()) return
-        Voice.speak(text, null, Settings.voice()) { false }?.let { FLog.w("voice-cmd", "фраза «не расслышала» не сказана: $it") }
+        Voice.speak(text, null, Settings.voice()) { false }?.let { FLog.w("voice-cmd", "фраза «не расслышал» не сказана: $it") }
     }
 
     /** Читает микрофон и отдаёт Vosk, пока слушать можно и набор фраз не изменился. Тише порога громкости звук не отдаётся. */

@@ -21,6 +21,7 @@ class App : Application() {
         CameraEngine.init(this)
         Sounds.init(this)
         Slides.init(this)
+        Starter.installIfFirst(this)
         Call.init(this)
         PhotoStore.init(this)
         Voice.init(this)
