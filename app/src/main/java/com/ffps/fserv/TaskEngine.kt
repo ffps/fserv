@@ -65,6 +65,7 @@ object TaskEngine {
         val bg = ArrayList<Thread>()
         /** Номера слайдов, показанных этим запуском: в конце запуска скрываются, если ещё на экране. */
         val slideTokens = java.util.concurrent.CopyOnWriteArrayList<Int>()
+        @Volatile var speechWarned = false
         val slots = java.util.concurrent.ConcurrentHashMap<String, Slot>()
         /** Слот, в потоке которого сейчас выполняется код (null в основном ходе задачи). */
         val slotOf = ThreadLocal<Slot?>()
@@ -456,7 +457,7 @@ object TaskEngine {
                 log(r, p, "say: $text" + if (!wait) " (в фоне)" else "")
                 if (!dry) {
                     val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
-                    val speak = { Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) } }
+                    val speak = { Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { speechUnavailable(r, p, it) } }
                     if (wait) { speak(); check(r) } else startSlot(r, "say", p) { speak() }
                 }
             }
@@ -659,8 +660,22 @@ object TaskEngine {
         }
     }
 
+    /**
+     * Шаг say не смог говорить (нет голоса, синтезатор не отвечает): остальные шаги задачи (слайд, звук, Telegram) выполняются,
+     * в журнал и в Telegram уходит одно сообщение за запуск. Чужим голосом вместо выбранного приложение не говорит.
+     */
+    private fun speechUnavailable(r: Run, p: String, err: String) {
+        log(r, p, "речь недоступна, шаг пропущен: $err")
+        FLog.w("task", "«${r.title()}»: речь недоступна, шаг $p пропущен: $err")
+        if (r.info.message.isEmpty()) r.info.message = "речь недоступна: $err"
+        if (!r.info.dry && !r.speechWarned && (r.info.source == "cron" || r.info.source == "voice")) {
+            r.speechWarned = true
+            Telegram.enqueue("fServe: задача «${r.title()}»: речь недоступна ($err). Остальные шаги выполнены. Проверьте синтезатор речи на устройстве.")
+        }
+    }
+
     private fun say(r: Run, text: String, vol: Int?) {
-        Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) }
+        Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { throw StepError(it) } // в разговоре без речи смысла нет
         check(r)
     }
 

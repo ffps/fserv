@@ -30,6 +30,8 @@ object Voice {
     @Volatile private var lastUse = 0L // когда синтезатор в последний раз работал (речь или прогрев)
     private val warming = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    private const val START_TIMEOUT_MS = 20_000L // столько ждём начала звука после команды говорить
+
     fun init(ctx: Context) {
         app = ctx.applicationContext
     }
@@ -163,6 +165,13 @@ object Voice {
                 val end = System.currentTimeMillis() + 5 * 60_000L
                 while (!latch.await(100, TimeUnit.MILLISECONDS)) {
                     if (cancel()) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return null }
+                    if (!startedAt.containsKey(id) && System.currentTimeMillis() - tCall > START_TIMEOUT_MS) {
+                        // движок принял фразу, но не начал говорить (завис, нет голоса): не ждём, при следующей речи синтезатор создаётся заново
+                        try { t.stop() } catch (e: Exception) {}
+                        waiting.remove(id)
+                        synchronized(lock) { try { tts?.shutdown() } catch (e: Exception) {}; tts = null; initStatus = -1 }
+                        return "синтезатор не начал говорить за ${START_TIMEOUT_MS / 1000} с (движок речи не отвечает)"
+                    }
                     if (System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return "речь не закончилась за 5 минут" }
                 }
                 val st = startedAt.remove(id)
@@ -230,8 +239,19 @@ object Voice {
                     obj("name" to it.name, "locale" to it.locale.toLanguageTag(), "quality" to it.quality, "latency" to it.latency, "network" to it.isNetworkConnectionRequired, "notInstalled" to (it.features?.contains("notInstalled") == true))
                 } ?: emptyList()
         } catch (e: Throwable) { emptyList() }
+        // для разбора «нет голоса»: что движок отдаёт вообще, а не только для выбранного языка
+        val engines = try { t.engines.map { obj("name" to it.name, "label" to it.label) } } catch (e: Throwable) { emptyList() }
+        val allVoices = try { t.voices } catch (e: Throwable) { null }
+        val byLang = allVoices?.groupingBy { it.locale.toLanguageTag() }?.eachCount()?.toSortedMap()
+        val checks = JSONObject()
+        for (tag in listOf("ru-RU", "ru", "en-US")) checks.put(tag, try { t.isLanguageAvailable(Locale.forLanguageTag(tag)) } catch (e: Throwable) { null })
         return obj(
             "ready" to true,
+            "engines" to arr(engines),
+            "voiceCount" to (allVoices?.size ?: -1),
+            "voicesByLocale" to JSONObject(byLang?.mapKeys { it.key } ?: emptyMap<String, Int>()),
+            "isLanguageAvailable" to checks, // коды Android: 0 язык, 1 язык и страна, 2 язык, страна и вариант; -1 нет данных; -2 не поддерживается
+            "defaultVoice" to (try { t.defaultVoice?.name } catch (e: Throwable) { null }),
             "engine" to (try { t.defaultEngine } catch (e: Throwable) { null }),
             "lang" to lang,
             "languageAvailable" to (avail >= TextToSpeech.LANG_AVAILABLE),
