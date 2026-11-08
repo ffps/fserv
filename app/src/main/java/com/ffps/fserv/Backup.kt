@@ -148,13 +148,14 @@ object Backup {
     }
 
     /** Возврат к исходному состоянию: пользовательские файлы, очереди, кэши и настройки (кроме доступа) сбрасываются. Фотографии в галерее (DCIM/fServ) не удаляются. */
-    fun reset(ctx: Context) {
+    fun reset(ctx: Context, starter: Boolean = false) {
         wipe(ctx)
         TaskStore.replaceAll(null)
         TaskStore.setLists(null)
         Settings.resetUser()
         TaskStore.invalidate()
         File(ctx.filesDir, "backup-seq.txt").delete()
+        if (starter) try { Starter.install(ctx) } catch (e: Exception) { FLog.w("backup", "стартовый набор не разложен: ${e.message}") }
     }
 
     /** Сохраняет тело запроса во временный файл не больше [MAX_UPLOAD] байт. */

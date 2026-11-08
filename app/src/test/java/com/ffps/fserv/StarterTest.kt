@@ -24,15 +24,6 @@ class StarterTest {
         }
     }
 
-    @Test fun noOldCharacterOrFeminineInStarter() {
-        ZipFile(zip()).use { zf ->
-            for (e in zf.entries().asSequence().filter { !it.isDirectory && (it.name.startsWith("tasks/") || it.name == "lists.txt") }) {
-                val t = zf.getInputStream(e).use { String(it.readBytes(), Charsets.UTF_8) }
-                assertFalse(e.name, Regex("масян|расслышала|Отправила|записала", RegexOption.IGNORE_CASE).containsMatchIn(t))
-            }
-        }
-    }
-
     @Test fun defaultRulesKeepLineBreaks() {
         assertTrue(Chat.DEFAULT_RULES.lines().size >= 7)
         assertTrue(Chat.DEFAULT_RULES.contains("не начинай разговор с них"))

@@ -1753,7 +1753,8 @@ async function afterRestart(msg) {
 }
 $("#bkReset").onclick = () => {
   if (!confirm("Очистить всё?\n\nБудут удалены звуки, свои страницы, история задач, очередь Telegram, кэш обновлений и журнал, настройки вернутся к исходным (токен бота, прокси, камера, расписания). Пароль, порт, автозапуск и состояние службы останутся. Приложение перезапустится.\n\nПеред этим можно скачать копию кнопкой «Сохранить».")) return;
-  run("#bkMsg", async () => { const r = await post("/api/reset?confirm=1"); return await afterRestart(r.json.message); });
+  const starter = confirm("Установить стартовый набор файлов?\n\nОК — после сброса будут разложены стартовые задачи, списки, слайды и звуки. Отмена — останется пусто.");
+  run("#bkMsg", async () => { const r = await post("/api/reset?confirm=1" + (starter ? "&starter=1" : "")); return await afterRestart(r.json.message); });
 };
 
 // ---- фотографии ----

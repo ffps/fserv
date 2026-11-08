@@ -29,7 +29,8 @@ object Starter {
         }
     }
 
-    private fun install(ctx: Context) {
+    /** Раскладывает набор (при первой установке и по желанию при сбросе). Бросает исключение, если набор не годится. */
+    fun install(ctx: Context) {
         val tmp = File(ctx.cacheDir, "starter.zip")
         ctx.assets.open(ASSET).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
         try {

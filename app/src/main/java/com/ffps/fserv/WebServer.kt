@@ -422,8 +422,9 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             }
             post && uri == "/api/reset" -> {
                 if (q(s, "confirm") != "1") return fail(Response.Status.BAD_REQUEST, "нужен параметр confirm=1")
-                Backup.reset(ctx)
-                FLog.i("backup", "настройки сброшены к исходным")
+                val starter = q(s, "starter") == "1"
+                Backup.reset(ctx, starter)
+                FLog.i("backup", "настройки сброшены к исходным" + if (starter) ", стартовый набор установлен" else "")
                 Thread { Thread.sleep(700); Power.restartApp(ctx) }.start()
                 ok("всё сброшено, приложение перезапускается (пароль и порт сохранены)")
             }
@@ -709,7 +710,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "POST /api/photos/take" to "сделать снимок сейчас (камера включается на время снимка, если она выключена)",
         "GET /api/backup" to "выгрузить все настройки, задачи, звуки и свои страницы одним zip (fserv.ДАТА.NN.zip)",
         "POST /api/restore" to "восстановить из zip (тело = файл): сначала проверка, затем замена всех настроек и перезапуск",
-        "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1); пароль и порт остаются",
+        "POST /api/reset" to "сбросить настройки и пользовательские файлы к исходным (?confirm=1; &starter=1 — ещё и разложить стартовый набор); пароль и порт остаются",
         "POST /api/restart" to "перезапустить веб-сервер, планировщик и киоск без выхода из приложения",
         "POST /api/reboot" to "перезагрузить устройство (нужен Device Owner или root); ?confirm=1",
         "GET /login" to "страница входа (только пароль); без пароля открыта",
