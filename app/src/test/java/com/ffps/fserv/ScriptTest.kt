@@ -348,4 +348,25 @@ class ScriptTest {
         val e = Script.validate(task("slide missing.png"), "x", emptySet(), slideExists = { false })
         assertNotNull(e); assertTrue(e!!.contains("Слайды"))
     }
+
+    @Test fun requestAndKioskSteps() {
+        fun ok(vararg steps: String) = Script.validate("task voice=\"свет\"\n" + steps.joinToString("\n") { "  $it" })
+        fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
+        assertNull(ok("request \"http://192.168.12.34:8080/api?opt={phrase}\" post=\"{\\\"dev\\\":2}\" proxy=true timeout=5 assign=ok", "if ok", "  say \"Готово\""))
+        assertNull(ok("request \"http://user:pass@192.168.1.5/cm\"", "request [\"http://a/on\", \"https://b/on\"] timeout=2s body=answer code=status", "if status == 200 and answer == \"on\"", "  say \"Включено\""))
+        assertNull(ok("request \"http://a/x\" method=DELETE header=[\"Authorization: Bearer t\", \"X-Key: {phrase}\"] type=\"application/json\" post=\"[1]\""))
+        assertNull(ok("kiosk show", "slide a.svg"))
+        assertNull(Script.validate("task voice=\"свет\"\n  request @lights assign=ok\n", "x", setOf(), mapOf("lights" to "[\"http://a/on\", \"http://b/on\"]")))
+        bad("http", "request \"ftp://a/x\"")
+        bad("в кавычках", "request 5")
+        bad("method", "request \"http://a\" method=FETCH")
+        bad("тела", "request \"http://a\" method=GET post=\"x\"")
+        bad("timeout", "request \"http://a\" timeout=100")
+        bad("proxy", "request \"http://a\" proxy=yes")
+        bad("по-разному", "request \"http://a\" assign=x body=x")
+        bad("переменной", "request \"http://a/{nothing}\"")
+        bad("header", "request \"http://a\" header=\"без двоеточия\"")
+        bad("только kiosk show", "kiosk hide")
+        bad("kiosk", "kiosk")
+    }
 }

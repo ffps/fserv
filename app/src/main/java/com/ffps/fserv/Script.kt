@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
@@ -48,6 +48,8 @@ object Script {
         "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
         "telegram" to listOf("files", "confirm", "assign"),
         "photo" to listOf("assign", "size"),
+        "request" to listOf("post", "method", "type", "header", "proxy", "timeout", "assign", "body", "code"),
+        "kiosk" to emptyList(),
         "delay" to emptyList(),
         "watch" to listOf("poll", "assign", "threshold", "area", "zone"),
         "background" to emptyList(),
@@ -253,6 +255,17 @@ object Script {
                         s.put(word, pv.s)
                     }
                 }
+                "request" -> {
+                    if (pv == null) fail(l.no, "request: нужен адрес в кавычках, например request \"http://192.168.1.5/on\" или список адресов request @lights")
+                    if (pv is List<*>) {
+                        if (pv.isEmpty() || pv.any { it !is Q }) fail(l.no, "request: в списке должны быть адреса в кавычках, например request [\"http://a/on\", \"http://b/on\"]")
+                        s.put("request", JSONArray().also { a -> pv.forEach { a.put((it as Q).s) } })
+                    } else {
+                        if (pv !is Q) fail(l.no, "request: адрес нужно написать в кавычках, например request \"http://192.168.1.5/on\"")
+                        s.put("request", pv.s)
+                    }
+                }
+                "kiosk" -> s.put("kiosk", unwrap(pv ?: fail(l.no, "kiosk: нужно действие, например kiosk show")))
                 "stop" -> s.put("stop", if (pv == null) "" else (pv as? Q)?.s ?: fail(l.no, "stop: причину нужно написать в кавычках"))
                 "play" -> {
                     if (pv == null) fail(l.no, "play: нужно имя файла или системный звук, например play system:alarm")

@@ -207,7 +207,7 @@ object Settings {
     fun proxyCfg(purpose: String): ProxyCfg? {
         val p = o.optJSONObject("proxy") ?: return null
         if (p.optString("host").isBlank()) return null
-        if (purpose != "test" && !p.optBoolean(purpose)) return null
+        if (purpose != "test" && purpose != "request_proxy" && !p.optBoolean(purpose)) return null // request_proxy: шаг request с proxy=true
         return ProxyCfg(p.optString("host").trim(), p.optInt("port", 1080), p.optString("user"), p.optString("password"))
     }
 

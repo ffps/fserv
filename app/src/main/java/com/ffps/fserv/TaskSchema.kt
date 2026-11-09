@@ -14,6 +14,8 @@ object TaskSchema {
     val SYSTEM_SOUNDS = setOf("system:alarm", "system:notification", "system:ringtone")
 
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
+    private val URL_RE = Regex("""^https?://[^\s/?#]+""", RegexOption.IGNORE_CASE)
+    const val MAX_REQUESTS = 50
     private val TPL_RE = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""")
     private const val MAX_DEPTH = 8
     private const val MAX_STEPS = 300
@@ -129,6 +131,7 @@ object TaskSchema {
             is JSONObject -> {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("request")) for (k in listOf("assign", "body", "code")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("chat")) for (k in listOf("assign", "alert", "ok")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
@@ -249,6 +252,53 @@ object TaskSchema {
                         return e("files: «$n» не переменная с фото (её задаёт photo assign=$n; есть: ${c.photoVars.joinToString(", ").ifEmpty { "нет" }})")
                     }
                 }
+            }
+            "kiosk" -> if (v != "show") return e("kiosk: поддерживается только kiosk show (вывести киоск на экран)")
+            "request" -> {
+                val urls = when (v) {
+                    is String -> listOf(v)
+                    is JSONArray -> (0 until v.length()).map { v.opt(it) as? String ?: return e("request: в списке должны быть адреса в кавычках") }
+                    else -> return e("request: нужен адрес в кавычках или список адресов")
+                }
+                if (urls.isEmpty()) return e("request: список адресов пуст")
+                if (urls.size > MAX_REQUESTS) return e("request: не больше $MAX_REQUESTS адресов в одном шаге")
+                for (u in urls) {
+                    tpl(u, c)?.let { return e("request: $it") }
+                    if (!URL_RE.containsMatchIn(TPL_RE.replace(u, "x"))) return e("request: адрес «${u.take(60)}» должен начинаться с http:// или https:// и содержать хост")
+                }
+                if (s.has("post")) {
+                    val b = s.opt("post") as? String ?: return e("request: post — текст запроса в кавычках")
+                    tpl(b, c)?.let { return e("request: post: $it") }
+                }
+                if (s.has("method")) {
+                    val m = (s.opt("method") as? String)?.uppercase()
+                    if (m == null || m !in listOf("GET", "POST", "PUT", "PATCH", "DELETE")) return e("request: method — GET, POST, PUT, PATCH или DELETE")
+                    if (m == "GET" && s.has("post")) return e("request: у GET не бывает тела (post=); уберите post или смените method")
+                }
+                if (s.has("type") && (s.opt("type") as? String)?.matches(Regex("""[\w.+-]+/[\w.+-]+(;.*)?""")) != true) return e("request: type — тип содержимого вида application/json")
+                if (s.has("header")) {
+                    val hs = when (val h = s.opt("header")) {
+                        is String -> listOf(h)
+                        is JSONArray -> (0 until h.length()).map { h.opt(it) as? String ?: return e("request: header — строки вида \"Имя: значение\"") }
+                        else -> return e("request: header — строка вида \"Имя: значение\" или список таких строк")
+                    }
+                    for (h in hs) {
+                        if (!Regex("""[A-Za-z0-9-]+:\s*\S.*""").matches(h)) return e("request: header «${h.take(40)}» — нужен вид \"Имя: значение\"")
+                        tpl(h, c)?.let { return e("request: header: $it") }
+                    }
+                }
+                if (s.has("proxy") && s.opt("proxy") !is Boolean) return e("request: proxy — true или false")
+                if (s.has("timeout")) {
+                    val d = try { Dur.parse(s.opt("timeout"), "timeout") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "timeout") }
+                    if (d.minMs < 1_000 || d.maxMs > 60_000) return e("request: timeout — от 1 до 60 секунд, например timeout=5")
+                }
+                val names = listOf("assign", "body", "code").filter { s.has(it) }.map { k ->
+                    val n = s.opt(k)
+                    if (n !is String || !VAR_RE.matches(n)) return e("request: $k — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("request: имя «$n» занято встроенной подстановкой")
+                    n
+                }
+                if (names.size != names.toSet().size) return e("request: assign, body и code должны называться по-разному")
             }
             "stop_background", "photo" -> {
                 if (a == "photo" && s.has("assign")) {

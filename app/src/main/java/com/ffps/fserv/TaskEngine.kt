@@ -1,5 +1,6 @@
 package com.ffps.fserv
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
@@ -404,10 +405,11 @@ object TaskEngine {
         else -> v?.toString() ?: ""
     }
 
-    private fun fill(r: Run, text: String): String = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""").replace(text) { m ->
+    /** Подставляет {имя}; [enc] обрабатывает каждое подставленное значение (кодирование для адреса, экранирование для JSON). */
+    private fun fill(r: Run, text: String, enc: ((String) -> String)? = null): String = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""").replace(text) { m ->
         val n = m.groupValues[1]
         val cal = Calendar.getInstance()
-        when (n) {
+        val v: String = when (n) {
             "time" -> String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
             "date" -> "${cal.get(Calendar.DAY_OF_MONTH)} ${MONTHS[cal.get(Calendar.MONTH)]}"
             "weekday" -> DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]
@@ -420,6 +422,7 @@ object TaskEngine {
                 else -> v.toString()
             }
         }
+        if (enc != null) enc(v) else v
     }
 
     private val MONTHS = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
@@ -466,6 +469,8 @@ object TaskEngine {
             s.has("play") -> play(r, s, p)
             s.has("slide") -> slide(r, s, p)
             s.has("photo") -> photo(r, s, p)
+            s.has("request") -> request(r, s, p)
+            s.has("kiosk") -> kiosk(r, p)
             s.has("background") -> {
                 val block = s.getJSONArray("background")
                 log(r, p, "background: ${block.length()} шаг(ов) в фоне" + if (dry) " (в пробном запуске выполняются здесь же, без звука и пауз)" else "")
@@ -815,6 +820,90 @@ object TaskEngine {
         if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); FLog.i("task", "«${r.title()}»: слайд не показан, киоск не на переднем плане"); return }
         slideScope.get()?.add(token)
         r.slideTokens.add(token)
+    }
+
+    /** Вывод киоска на передний план; без права «Поверх других окон» (Android 10+) система может не разрешить. */
+    private fun kiosk(r: Run, p: String) {
+        log(r, p, "kiosk show" + if (r.info.dry) " (в пробном запуске пропущено)" else "")
+        if (r.info.dry) return
+        if (MainActivity.isVisible()) { log(r, p, "киоск уже на экране"); return }
+        MainActivity.show(r.ctx)?.let { log(r, p, "киоск не выведен: $it"); return }
+        val end = System.currentTimeMillis() + 3_000
+        while (!MainActivity.isVisible() && System.currentTimeMillis() < end) { Thread.sleep(100); check(r) }
+        log(r, p, if (MainActivity.isVisible()) "киоск на экране" else "киоск не вышел на экран за 3 с (проверьте «Поверх других окон» в окне настроек)")
+    }
+
+    private fun urlEnc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+    private fun jsonEsc(s: String): String = buildString { for (c in s) when { c == '\\' -> append("\\\\"); c == '"' -> append("\\\""); c == '\n' -> append("\\n"); c == '\r' -> append("\\r"); c == '\t' -> append("\\t"); c < ' ' -> append(' '); else -> append(c) } }
+
+    /** Адрес для журнала: без логина и пароля и без запроса после «?» (в нём бывают ключи). */
+    private fun safeUrl(u: String): String {
+        val noCred = u.replace(Regex("""^(https?://)[^/?#@]*@""", RegexOption.IGNORE_CASE), "$1***@")
+        return if (noCred.contains('?')) noCred.substringBefore('?') + "?…" else noCred
+    }
+
+    /**
+     * HTTP-запрос (интеграция с домашней автоматикой). Список адресов выполняется по очереди. assign — все ответы 2xx;
+     * body и code — ответ и код последнего запроса. Ошибки сети и тайм-аут задачу не роняют: assign ложно, причина в журнале.
+     */
+    private fun request(r: Run, s: JSONObject, p: String) {
+        val urls = when (val v = s.opt("request")) {
+            is JSONArray -> (0 until v.length()).map { v.optString(it) }
+            else -> listOf(s.optString("request"))
+        }
+        val tmoMs = if (s.has("timeout")) Dur.parse(s.opt("timeout"), "timeout").sample(r.rnd).toInt() else 5_000
+        val nOk = s.optString("assign"); val nBody = s.optString("body"); val nCode = s.optString("code")
+        if (r.info.dry) {
+            log(r, p, "request: ${urls.size} адрес(ов), в пробном запуске не отправляется" + " (значения берутся из assume)")
+            if (nOk.isNotEmpty()) r.vars[nOk] = r.assume[nOk] != false
+            if (nBody.isNotEmpty()) r.vars[nBody] = r.assume[nBody]?.toString() ?: ""
+            if (nCode.isNotEmpty()) r.vars[nCode] = (r.assume[nCode] as? Number)?.toInt() ?: 200
+            return
+        }
+        val rawBody = if (s.has("post")) s.optString("post") else null
+        val jsonLike = rawBody?.trimStart()?.let { it.startsWith("{") || it.startsWith("[") } == true
+        val body = rawBody?.let { fill(r, it, if (jsonLike) ::jsonEsc else null) }
+        val method = (if (s.has("method")) s.optString("method").uppercase() else if (body != null) "POST" else "GET")
+        val ctype = if (s.has("type")) s.optString("type") else if (jsonLike) "application/json" else "text/plain; charset=utf-8"
+        val headers = LinkedHashMap<String, String>()
+        val hs = when (val h = s.opt("header")) { is String -> listOf(h); is JSONArray -> (0 until h.length()).map { h.optString(it) }; else -> emptyList() }
+        for (h in hs) { val f = fill(r, h) { it.replace("\r", " ").replace("\n", " ") }; headers[f.substringBefore(':').trim()] = f.substringAfter(':').trim() }
+        val purpose = if (s.optBoolean("proxy", false)) "request_proxy" else "request"
+        var all = true
+        var lastCode = 0
+        var lastBody = ""
+        for ((i, raw) in urls.withIndex()) {
+            check(r)
+            val full = fill(r, raw, ::urlEnc)
+            val shown = safeUrl(full)
+            var url = full
+            val hdr = LinkedHashMap(headers)
+            full.toHttpUrlOrNull()?.let { hu ->
+                if (hu.username.isNotEmpty() && hdr.keys.none { it.equals("Authorization", true) }) {
+                    hdr["Authorization"] = okhttp3.Credentials.basic(hu.username, hu.password)
+                    url = hu.newBuilder().username("").password("").build().toString()
+                }
+            }
+            log(r, p, "request${if (urls.size > 1) " ${i + 1}/${urls.size}" else ""}: $method $shown" + (if (body != null) ", тело ${body.length} зн." else "") + ", ждать до ${tmoMs / 1000} с" + if (purpose == "request_proxy") ", через прокси" else "")
+            var code = 0
+            var text = ""
+            var err = ""
+            val t0 = System.currentTimeMillis()
+            val worker = Thread {
+                try {
+                    val resp = Net.request(purpose, method, url, body?.toByteArray(Charsets.UTF_8), if (body != null) ctype else null, hdr, tmoMs, maxBody = 4096, callTimeoutMs = tmoMs)
+                    code = resp.code; text = resp.body
+                } catch (e: Exception) { err = e.message ?: e.javaClass.simpleName }
+            }.also { it.isDaemon = true; it.start() }
+            while (worker.isAlive) { worker.join(100); check(r) }
+            lastCode = code; lastBody = text
+            val ok = err.isEmpty() && code in 200..299
+            if (!ok) all = false
+            log(r, p, if (err.isNotEmpty()) "request: не удалось за ${System.currentTimeMillis() - t0} мс: $err" else "request: ответ $code за ${System.currentTimeMillis() - t0} мс" + (if (text.isNotBlank()) ": " + text.replace(Regex("\\s+"), " ").take(100) else ""))
+        }
+        if (nOk.isNotEmpty()) r.vars[nOk] = all
+        if (nBody.isNotEmpty()) r.vars[nBody] = lastBody
+        if (nCode.isNotEmpty()) r.vars[nCode] = lastCode
     }
 
     /** Фото с камеры в PhotoStore; камера включается на время шага. */

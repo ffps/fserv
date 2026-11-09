@@ -47,6 +47,8 @@ object Net {
         contentType: String? = null,
         headers: Map<String, String> = emptyMap(),
         timeoutMs: Int = 0,
+        maxBody: Int = 0,
+        callTimeoutMs: Int = 0,
         saveTo: File? = null,
         onProgress: ((Long, Long) -> Unit)? = null
     ): Resp {
@@ -62,6 +64,7 @@ object Net {
             .readTimeout(tmo.toLong(), TimeUnit.MILLISECONDS)
             .writeTimeout(tmo.toLong(), TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
+            .apply { if (callTimeoutMs > 0) callTimeout(callTimeoutMs.toLong(), TimeUnit.MILLISECONDS) }
             .connectionPool(ConnectionPool(0, 1, TimeUnit.SECONDS))
             .build()
         try {
@@ -95,6 +98,12 @@ object Net {
                         }
                     }
                     return Resp(code, "", via)
+                }
+                if (maxBody > 0 && rbody != null) {
+                    // начало ответа не больше maxBody байт (остальное не читаем)
+                    val src = rbody.source()
+                    src.request(maxBody.toLong())
+                    return Resp(code, src.buffer.readString(minOf(src.buffer.size, maxBody.toLong()), Charsets.UTF_8), via)
                 }
                 return Resp(code, rbody?.string() ?: "", via)
             }
