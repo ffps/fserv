@@ -899,7 +899,7 @@ object TaskEngine {
             lastCode = code; lastBody = text
             val ok = err.isEmpty() && code in 200..299
             if (!ok) all = false
-            log(r, p, if (err.isNotEmpty()) "request: не удалось за ${System.currentTimeMillis() - t0} мс: $err" else "request: ответ $code за ${System.currentTimeMillis() - t0} мс" + (if (text.isNotBlank()) ": " + text.replace(Regex("\\s+"), " ").take(100) else ""))
+            log(r, p, if (err.isNotEmpty()) "request: не удалось за ${System.currentTimeMillis() - t0} мс: $err" else "request: ответ $code за ${System.currentTimeMillis() - t0} мс" + (if (text.isNotBlank()) ": " + text.replace(Regex("\\s+"), " ").take(4096) else ""))
         }
         if (nOk.isNotEmpty()) r.vars[nOk] = all
         if (nBody.isNotEmpty()) r.vars[nBody] = lastBody

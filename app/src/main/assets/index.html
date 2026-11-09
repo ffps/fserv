@@ -203,7 +203,7 @@
   <div class="msg" id="tkMsg"></div>
 
   <div id="tkEditor" style="display:none;margin-top:14px">
-    <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="ib add" id="tkClose" title="Закрыть"></button><button class="ib add pri" id="tkSave" title="Сохранить задачу"></button></div>
+    <div class="row"><label>Задача <input id="tkId" placeholder="id, например wakeup" maxlength="40" spellcheck="false" style="width:190px"></label><button class="ib add" id="tkClose" title="Закрыть"></button><button class="ib add" id="tkRun" data-tk="run" data-id="" title="Запустить" disabled></button><button class="ib add pri" id="tkSave" title="Сохранить задачу"></button></div>
     <textarea id="tkText" rows="22" spellcheck="false" wrap="off"></textarea>
     <div class="row" style="margin-top:8px">
       <button class="btn sec" id="tkDry">Пробный запуск</button>
@@ -659,7 +659,7 @@ const ICO = {
   download: svg('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>'),
   cam: svg('<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>')
 };
-document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "tkSave" || b.id === "lsSave") b.innerHTML = ICO.save; if (b.id === "tkClose") b.innerHTML = ICO.close; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay" || b.id === "logClear") b.innerHTML = ICO.del; if (b.id === "logRefresh") b.innerHTML = ICO.refresh; });
+document.querySelectorAll("button.ib[id]").forEach(b => { if (b.id === "tkAdd" || b.id === "znAdd") b.innerHTML = ICO.plus; if (b.id === "tkSave" || b.id === "lsSave") b.innerHTML = ICO.save; if (b.id === "tkClose") b.innerHTML = ICO.close; if (b.id === "tkRun") b.innerHTML = ICO.play; if (b.id === "phTake") b.innerHTML = ICO.cam; if (b.id === "znShot") b.innerHTML = ICO.refresh; if (b.id === "znRectDel") b.innerHTML = ICO.rectDel; if (b.id === "camToggle" || b.id === "svSay" || b.id === "sttTest") b.innerHTML = ICO.play; if (b.id === "sttDelete" || b.id === "cfgClear" || b.id === "znDel") b.innerHTML = ICO.del; if (b.id === "obClear" || b.id === "phDelDay" || b.id === "logClear") b.innerHTML = ICO.del; if (b.id === "logRefresh") b.innerHTML = ICO.refresh; });
 $("#logDownload").innerHTML = ICO.download;
 $("#phAdmin").innerHTML = ICO.ext;
 
@@ -1115,6 +1115,7 @@ $("#tkSave").onclick = () => run("#tkMsg", async () => {
 }, "tkSave", "#tkText");
 
 function renderTasks() {
+  syncTkRun();
   const ts = cfgObj.tasks || [];
   $("#tkBody").innerHTML = ts.length ? ts.map(x => {
     const st = tkState[x.id] || {};
@@ -1125,6 +1126,13 @@ function renderTasks() {
       '<button class="ib" data-tk="edit" data-id="' + esc(x.id) + '" title="Редактировать">' + ICO.edit + "</button>" +
       '<button class="ib del" data-tk="del" data-id="' + esc(x.id) + '" title="Удалить">' + ICO.del + "</button></td></tr>";
   }).join("") : '<tr><td colspan="5" style="color:var(--dim)">задач нет: добавьте внизу</td></tr>';
+}
+// кнопка запуска над редактором: запускает открытую (сохранённую) задачу, как кнопка в строке списка; во время работы — остановка
+function syncTkRun() {
+  const b = $("#tkRun"); if (!b) return;
+  const id = tkOpen ? tkOrig : "", on = !!(tkState[id] || {}).running;
+  b.dataset.id = id; b.disabled = !id;
+  b.innerHTML = on ? ICO.stop : ICO.play; b.title = id ? (on ? "Остановить" : "Запустить") : "Сначала сохраните задачу";
 }
 let tkRunMsg = null, tkRunAt = 0; // задача, о запуске которой показано сообщение
 async function loadTasks() {

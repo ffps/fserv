@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         web = WebView(this).apply {
-            setBackgroundColor(Color.parseColor("#003366"))
+            setBackgroundColor(Color.parseColor("#001122"))
             settings.javaScriptEnabled = true
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
