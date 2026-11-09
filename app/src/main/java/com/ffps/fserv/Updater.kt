@@ -3,6 +3,7 @@ package com.ffps.fserv
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.app.PendingIntent
 import android.os.Build
 import org.json.JSONObject
@@ -123,6 +124,62 @@ object Updater {
         }.start()
         return null
     }
+
+    /**
+     * Установка APK, загруженного вручную (из админки): проверяет пакет, версию и подпись и передаёт системе.
+     * Возвращает текст ошибки или null. Подпись должна совпасть с установленной (ключ сборки), иначе Android всё равно откажет.
+     */
+    fun installUploaded(ctx: Context, input: java.io.InputStream, len: Long): String? {
+        synchronized(this) {
+            if (state != "idle" && state != "confirm") return "уже выполняется: $state"
+            if (!canInstall(ctx)) return "приложению не разрешена установка обновлений: на устройстве откройте окно настроек fServe и включите «Установка неизвестных приложений»"
+            state = "uploading"
+        }
+        var f: File? = null
+        try {
+            if (len < 1_000_000L || len > 150L * 1024 * 1024) return "размер файла $len байт не похож на APK (нужно от 1 до 150 МБ)"
+            val dir = File(ctx.filesDir, "update").also { it.mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }
+            f = File(dir, "uploaded.apk")
+            f.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var left = len
+                while (left > 0) {
+                    val k = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                    if (k < 0) break
+                    out.write(buf, 0, k)
+                    left -= k
+                }
+                if (left != 0L) return "загрузка оборвалась, получено ${len - left} из $len байт"
+            }
+            val flags = signFlags()
+            val pi = ctx.packageManager.getPackageArchiveInfo(f.absolutePath, flags) ?: return "файл не является APK"
+            if (pi.packageName != ctx.packageName) return "это APK другого приложения (${pi.packageName}), нужен ${ctx.packageName}"
+            @Suppress("DEPRECATION")
+            val code: Long = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+            if (code <= BuildConfig.VERSION_CODE) return "версия в файле (${pi.versionName}, код $code) не новее установленной (${BuildConfig.VERSION_NAME}, код ${BuildConfig.VERSION_CODE}): Android не даёт ставить ту же или более старую"
+            val mine = signers(ctx.packageManager.getPackageInfo(ctx.packageName, flags))
+            val theirs = signers(pi)
+            if (mine.isEmpty() || theirs.isEmpty()) return "не удалось прочитать подпись APK"
+            if (mine.none { m -> theirs.any { it == m } }) return "подпись APK не совпадает с установленным приложением (другой ключ сборки): обновить поверх нельзя"
+            FLog.i("update", "загружен вручную APK ${pi.versionName} (код $code), ${len / 1024} КБ")
+            install(ctx, f)
+            return null
+        } catch (e: Exception) {
+            FLog.e("update", "ручная установка не удалась", e)
+            return e.message ?: e.javaClass.simpleName
+        } finally {
+            if (state == "uploading") state = "idle"
+            if (state == "idle") f?.delete()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signFlags(): Int = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+
+    @Suppress("DEPRECATION")
+    private fun signers(pi: android.content.pm.PackageInfo): List<android.content.pm.Signature> =
+        if (Build.VERSION.SDK_INT >= 28) pi.signingInfo?.apkContentsSigners?.toList() ?: emptyList() else pi.signatures?.toList() ?: emptyList()
 
     private fun download(ctx: Context, l: JSONObject) {
         state = "downloading"

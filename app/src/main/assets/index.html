@@ -495,7 +495,10 @@
   <div class="row" style="margin-top:12px">
     <button class="btn sec" id="upCheck">Проверить</button>
     <button class="btn" id="upInstall" style="display:none">Скачать и установить</button>
+    <button class="btn sec" id="upUpload" title="Установить APK, скачанный на этот компьютер: проверяются пакет, подпись и что версия новее установленной">Загрузить</button>
+    <input type="file" id="upFile" accept=".apk,application/vnd.android.package-archive" style="display:none">
   </div>
+  <p class="hint">«Загрузить» ставит APK с этого компьютера (например, когда GitHub не отдаёт файл): нужен APK этого же приложения новее установленного, подписанный тем же ключом.</p>
   <div class="msg" id="upMsg"></div>
   <pre id="upNotes" style="display:none"></pre>
   <div class="f" style="margin-top:14px">
@@ -972,6 +975,20 @@ async function loadUpdate() {
     else say("#upMsg", e.message, false);
   }
 }
+$("#upUpload").onclick = () => $("#upFile").click();
+$("#upFile").onchange = () => {
+  const f = $("#upFile").files[0]; $("#upFile").value = ""; if (!f) return;
+  if (!confirm("Установить " + f.name + " (" + (f.size / 1048576).toFixed(1) + " МБ)? Приложение на время установки перезапустится.")) return;
+  run("#upMsg", () => new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/api/update/upload");
+    x.setRequestHeader("Content-Type", "application/vnd.android.package-archive");
+    x.upload.onprogress = e => { if (e.lengthComputable) say("#upMsg", "загружаю " + Math.round(e.loaded * 100 / e.total) + "%…", true); };
+    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} x.status === 200 ? resolve(j.message || "установка передана системе") : reject(new Error(j.error || ("HTTP " + x.status))); };
+    x.onerror = () => reject(new Error("загрузка не удалась (связь оборвалась; если приложение уже перезапускается, подождите минуту)"));
+    x.send(f);
+  }));
+};
 $("#upCheck").onclick = () => run("#upMsg", async () => { const r = await post("/api/update/check"); await loadUpdate(); return r.json.available ? "доступна версия " + r.json.latest.versionName + ", " + r.json.latest.apk + (r.json.latest.sizeBytes ? ", " + (r.json.latest.sizeBytes / 1048576).toFixed(1) + " МБ" : "") : "обновлений нет"; });
 $("#upInstall").onclick = () => { if (confirm("Скачать и установить обновление? Приложение на время установки перезапустится.")) run("#upMsg", async () => { const r = await post("/api/update/install"); loadUpdate(); return r.json.message; }); };
 $("#upSave").onclick = () => run("#upSMsg", async () => { await post("/api/settings", JSON.stringify({update: {repo: $("#upRepo").value.trim(), cron: $("#upCron").value.trim()}})); return "сохранено"; }, "upSave");

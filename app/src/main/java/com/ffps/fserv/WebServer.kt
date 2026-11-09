@@ -107,6 +107,11 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
                 if (err == null) ok("скачивание и установка запущены") else fail(Response.Status.CONFLICT, err)
             }
 
+            post && uri == "/api/update/upload" -> {
+                val err = Updater.installUploaded(ctx, s.inputStream, s.headers["content-length"]?.toLongOrNull() ?: 0L)
+                if (err == null) ok("APK принят, установка передана системе: приложение перезапустится") else fail(Response.Status.BAD_REQUEST, "APK не подошёл: $err")
+            }
+
             get && uri == "/api/tasks" -> json(Response.Status.OK, TaskEngine.status())
             post && uri == "/api/tasks/run" -> {
                 val assume = HashMap<String, Any?>()
@@ -669,6 +674,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /api/update" to "состояние обновлений: установленная и последняя версия, ход установки",
         "POST /api/update/check" to "проверить GitHub Releases сейчас",
         "POST /api/update/install" to "скачать, проверить и установить последнюю версию",
+        "POST /api/update/upload" to "установить APK, загруженный с компьютера (тело запроса — файл; проверяются пакет, версия и подпись)",
         "GET /api/tasks" to "задачи, ближайшие запуски, ход и итоги выполнения",
         "POST /api/tasks/run" to "запустить задачу; ?id=wakeup&dry=1 (пробный) &assume=moved:true (результат watch в пробном запуске)",
         "POST /api/tasks/stop" to "остановить выполняющуюся задачу",
