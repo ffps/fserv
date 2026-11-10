@@ -232,6 +232,12 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
 
 
+            post && uri == "/api/listen/on" -> { VoiceTrigger.unmute(); ok("слушание включено") }
+            post && uri == "/api/listen/off" -> {
+                val min = (q(s, "minutes")?.toIntOrNull() ?: 60).coerceIn(1, 1440)
+                VoiceTrigger.muteFor(min * 60_000L)
+                ok("слушание отключено на $min мин")
+            }
             get && uri == "/api/stt" -> json(Response.Status.OK, Stt.status(ctx).put("listen", VoiceTrigger.status()))
             post && uri == "/api/stt/download" -> {
                 val err = Stt.downloadAsync()
@@ -635,6 +641,8 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
         "POST /api/stt/upload" to "установить модель из zip, загруженного с компьютера (тело запроса — файл vosk-model-small-ru-0.22.zip)",
         "POST /api/stt/delete" to "удалить модель распознавания",
+        "POST /api/listen/off" to "отключить слушание голосовых команд на время: ?minutes=60 (1..1440)",
+        "POST /api/listen/on" to "включить слушание голосовых команд сразу",
         "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number|free (свободная речь)&listen=10 (секунд); возвращает услышанное и значение",
         "POST /api/stt/stop" to "прервать проверку микрофона",
         "GET /api/camera" to "состояние камеры и детектора: кадры, частота, оценка движения, ошибки",

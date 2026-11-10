@@ -475,6 +475,7 @@ object TaskEngine {
             s.has("photo") -> photo(r, s, p)
             s.has("request") -> request(r, s, p)
             s.has("kiosk") -> kiosk(r, p)
+            s.has("listen") -> listenStep(r, s, p)
             s.has("set") -> setStep(r, s, p)
             s.has("start") -> startApp(r, s, p)
             s.has("background") -> {
@@ -884,6 +885,18 @@ object TaskEngine {
         }
         if (err.isEmpty()) log(r, p, "запуск выдан") else { log(r, p, "не запущено: $err"); FLog.w("task", "«${r.title()}»: start не удался: $err") }
         if (name.isNotEmpty()) r.vars[name] = err.isEmpty()
+    }
+
+    /** listen off for=1h — слушатель голосовых команд отключается на срок (хранится в приложении, не зависит от задачи); listen on — включается сразу. */
+    private fun listenStep(r: Run, s: JSONObject, p: String) {
+        if (s.optString("listen") == "on") {
+            log(r, p, "listen on" + if (r.info.dry) " (в пробном запуске не меняется)" else "")
+            if (!r.info.dry) VoiceTrigger.unmute()
+            return
+        }
+        val ms = Dur.parse(s.opt("for"), "for").minMs
+        log(r, p, "listen off на ${Dur.human(ms)}" + if (r.info.dry) " (в пробном запуске не меняется)" else "")
+        if (!r.info.dry) VoiceTrigger.muteFor(ms)
     }
 
     /** Вывод киоска на передний план; без права «Поверх других окон» (Android 10+) система может не разрешить. */

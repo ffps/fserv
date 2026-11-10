@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "listen", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
@@ -50,6 +50,7 @@ object Script {
         "photo" to listOf("assign", "size"),
         "request" to listOf("post", "method", "type", "header", "proxy", "timeout", "assign", "body", "code"),
         "kiosk" to emptyList(),
+        "listen" to listOf("for"),
         "start" to listOf("package", "url", "action", "args", "assign"),
         "set" to emptyList(),
         "delay" to emptyList(),
@@ -283,6 +284,7 @@ object Script {
                     }
                 }
                 "kiosk" -> s.put("kiosk", unwrap(pv ?: fail(l.no, "kiosk: нужно действие, например kiosk show")))
+                "listen" -> s.put("listen", unwrap(pv ?: fail(l.no, "listen: нужно listen off for=1h или listen on")))
                 "start" -> s.put("start", if (pv == null) "" else (unwrap(pv) as? String) ?: fail(l.no, "start: после start идёт имя пакета (com.android.chrome) или параметры url=, action="))
                 "stop" -> s.put("stop", if (pv == null) "" else (pv as? Q)?.s ?: fail(l.no, "stop: причину нужно написать в кавычках"))
                 "play" -> {

@@ -56,7 +56,35 @@ object VoiceTrigger {
     fun status(): JSONObject {
         val ph = JSONArray()
         for (e in TaskEngine.voicePhrases()) ph.put(obj("task" to e.task, "phrase" to (e.full + if (e.wild) " *" else "")))
-        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "ack" to Settings.listenAck, "miss" to Settings.listenMiss, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph)
+        return obj("state" to state, "text" to stateText, "hours" to Settings.listenHours, "prefix" to Settings.listenPrefix, "level" to Settings.listenLevel, "tail" to Settings.listenTail, "ack" to Settings.listenAck, "miss" to Settings.listenMiss, "peak" to (Math.round(peakPct * 10) / 10.0), "phrases" to ph).also { o -> brief().let { b -> o.put("mutedUntil", b.get("mutedUntil")); o.put("muted", b.get("muted")); if (b.getBoolean("muted")) { o.put("state", "muted"); o.put("text", b.get("text")) } } }
+    }
+
+    /** Отключает слушатель команд на [ms] миллисекунд (шаг listen off). Срок хранится в настройках и переживает перезапуск. */
+    fun muteFor(ms: Long) {
+        Settings.setListenMuteUntil(System.currentTimeMillis() + ms)
+        FLog.i("voice-cmd", "слушание отключено до ${Util.hhmm(Settings.listenMuteUntil)}")
+    }
+
+    /** Включает слушатель сразу (шаг listen on, кнопка в админке). */
+    fun unmute() {
+        if (Settings.listenMuteUntil > 0L) FLog.i("voice-cmd", "слушание включено раньше срока")
+        Settings.setListenMuteUntil(0L)
+    }
+
+    /** Кратко для /api/info: слушает ли сейчас, почему нет и до какого времени отключено. */
+    fun brief(): JSONObject {
+        val now = System.currentTimeMillis()
+        val mu = Settings.listenMuteUntil.takeIf { it > now } ?: 0L
+        val st = if (mu > 0L) "muted" else state
+        return obj(
+            "active" to (st == "listening"),
+            "state" to st,
+            "text" to (if (mu > 0L) "отключено до ${Util.hhmm(mu)}" else stateText),
+            "muted" to (mu > 0L),
+            "mutedUntil" to (if (mu > 0L) Util.iso(mu) else ""),
+            "mutedUntilTime" to (if (mu > 0L) Util.hhmm(mu) else ""),
+            "mutedMinutes" to (if (mu > 0L) ((mu - now + 59_999) / 60_000) else 0L)
+        )
     }
 
     /** Ждёт, пока слушатель освободит микрофон (вызывается шагом, который собирается слушать сам). */
@@ -82,6 +110,11 @@ object VoiceTrigger {
     /** Почему слушать нельзя сейчас, или null. */
     private fun blocker(): Block? {
         if (!Settings.serviceEnabled) return Block("off", "выключено: служба остановлена")
+        val mu = Settings.listenMuteUntil
+        if (mu > 0L) {
+            if (System.currentTimeMillis() < mu) return Block("muted", "отключено до ${Util.hhmm(mu)} (шаг listen off или кнопка)")
+            Settings.setListenMuteUntil(0L) // срок вышел: слушаем снова (ниже обычные проверки часов и фраз)
+        }
         val hours = Settings.listenHours
         val w = try { VoiceCmd.parseWindow(hours) } catch (e: IllegalArgumentException) { null }
         if (w == null) return Block("off", "выключено: часы прослушивания не заданы")

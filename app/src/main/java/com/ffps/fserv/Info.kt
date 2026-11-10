@@ -69,6 +69,7 @@ object Info {
             ),
             "screen" to screenInfo(ctx),
             "audio" to audioInfo(ctx),
+            "listen" to VoiceTrigger.brief(),
             "power" to obj(
                 "rebootMethod" to Power.rebootMethod(ctx),
                 "appRestartCron" to Settings.appRestartCron,

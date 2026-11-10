@@ -1,4 +1,4 @@
-# fServe: техническое задание (состояние на v1.7.1, основа для v2)
+# fServe: техническое задание (состояние на v1.8.0, основа для v2)
 
 Документ написан по итогам разработки версий 1.x. Его цель: с него можно начать новый чат для версии 2, не перечитывая старую переписку. Подробности: [README.md](README.md) (функции), [script.md](script.md) (язык сценариев, источник истины по DSL), [CLAUDE.md](CLAUDE.md) (правила работы).
 
@@ -40,7 +40,7 @@ Android-приложение `com.ffps.fserv` («fServe») для комнаты
 
 Задача — файл `tasks/<id>.txt`, текст с отступами. Заголовок: `task` с параметрами `cron`, `voice="фраза|фраза"`, `preempt` (0–9, у `call` по умолчанию 9). Специальные задачи `call` и `ring`.
 
-Шаги: `set` (изменение любых простых настроек, чтение `{settings.путь}` и `{info.путь}`), `start` (запуск приложения/адреса), `say`, `ask` (kind=yesno/number/text), `chat` (диалог с LLM: `for`, `turns`, `assign`, `alert`, `from=user`, `ok`), `play`, `slide`, `photo`, `stop_background`, `background`, `telegram`, `request` (HTTP), `kiosk show`, `delay`, `watch` (ждать движение), `if`, `repeat`, `stop`, `log`. Подстановки `{имя}`, условия, общие списки `lists.txt` (`@имя`), пробный запуск (dry-run с `assume`).
+Шаги: `set` (изменение любых простых настроек, чтение `{settings.путь}` и `{info.путь}`), `start` (запуск приложения/адреса), `listen off for=…`/`listen on` (временное отключение слушателя), `say`, `ask` (kind=yesno/number/text), `chat` (диалог с LLM: `for`, `turns`, `assign`, `alert`, `from=user`, `ok`), `play`, `slide`, `photo`, `stop_background`, `background`, `telegram`, `request` (HTTP), `kiosk show`, `delay`, `watch` (ждать движение), `if`, `repeat`, `stop`, `log`. Подстановки `{имя}`, условия, общие списки `lists.txt` (`@имя`), пробный запуск (dry-run с `assume`).
 
 Правила изменения языка: любое изменение сразу отражать в `script.md` (с номером версии в шапке) в том же коммите; блоки `task` верхнего уровня в script.md должны проходить разбор (`ScriptTest.examplesInDocsAreValid`).
 

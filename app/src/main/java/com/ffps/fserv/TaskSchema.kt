@@ -301,6 +301,18 @@ object TaskSchema {
                     if (n in BUILTINS) return e("start: имя «$n» занято встроенной подстановкой")
                 }
             }
+            "listen" -> {
+                when (v) {
+                    "off" -> {
+                        if (!s.has("for")) return e("listen off: нужно, на сколько отключить, например listen off for=1h")
+                        val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
+                        if (d.isRange) return e("listen off: for — одна длительность, без диапазона")
+                        if (d.minMs < 10_000 || d.maxMs > 24 * 3_600_000L) return e("listen off: for — от 10s до 24h")
+                    }
+                    "on" -> if (s.has("for")) return e("listen on: параметр for не нужен (слушание включается сразу)")
+                    else -> return e("listen: поддерживается listen off for=… (отключить слушание голосовых команд на время) и listen on")
+                }
+            }
             "kiosk" -> if (v != "show") return e("kiosk: поддерживается только kiosk show (вывести киоск на экран)")
             "request" -> {
                 val urls = when (v) {

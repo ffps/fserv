@@ -29,7 +29,7 @@ object Settings {
      */
     @Synchronized
     fun replaceAll(n: JSONObject) {
-        for (k in listOf("serviceEnabled", "lastFired")) {
+        for (k in listOf("serviceEnabled", "lastFired", "listenMuteUntil")) {
             if (o.has(k)) n.put(k, o.get(k)) else n.remove(k)
         }
         o = n
@@ -74,6 +74,15 @@ object Settings {
 
     /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */
     @get:Synchronized val serviceEnabled: Boolean get() = o.optBoolean("serviceEnabled", false)
+
+    /** До какого момента (мс с 1970) слушатель голосовых команд временно отключён шагом listen off; 0 — не отключён. Хранится, чтобы пережить перезапуск. */
+    @get:Synchronized val listenMuteUntil: Long get() = o.optLong("listenMuteUntil", 0L)
+
+    @Synchronized
+    fun setListenMuteUntil(t: Long) {
+        if (t <= 0L) o.remove("listenMuteUntil") else o.put("listenMuteUntil", t)
+        save()
+    }
 
     @get:Synchronized val telegramToken: String get() = o.optJSONObject("telegram")?.optString("token") ?: ""
     @get:Synchronized val telegramChatId: String get() = o.optJSONObject("telegram")?.optString("chatId") ?: ""

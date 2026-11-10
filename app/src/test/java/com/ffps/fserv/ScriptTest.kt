@@ -370,6 +370,23 @@ class ScriptTest {
         bad("kiosk", "kiosk")
     }
 
+    @Test fun listenStep() {
+        fun ok(vararg steps: String) = Script.validate("task voice=\"не мешай\"\n" + steps.joinToString("\n") { "  $it" })
+        fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
+        assertNull(ok("listen off for=1h", "listen on", "listen off for=30m", "log \"{info.listen.active} {info.listen.mutedUntilTime} {info.listen.mutedMinutes}\""))
+        val st = Script.parse("task \"t\"\n  listen off for=90m\n  listen on\n").root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps")
+        assertEquals("off", st.getJSONObject(0).getString("listen"))
+        assertEquals("90m", st.getJSONObject(0).get("for"))
+        assertEquals("on", st.getJSONObject(1).getString("listen"))
+        bad("на сколько", "listen off")
+        bad("поддерживается", "listen mute for=1h")
+        bad("не нужен", "listen on for=1h")
+        bad("от 10s до 24h", "listen off for=5s")
+        bad("от 10s до 24h", "listen off for=25h")
+        bad("без диапазона", "listen off for=1h..2h")
+        bad("нет параметра", "listen off for=1h wait=true")
+    }
+
     @Test fun setAndStartSteps() {
         fun ok(vararg steps: String) = Script.validate("task voice=\"свет\"\n" + steps.joinToString("\n") { "  $it" })
         fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
