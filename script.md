@@ -548,12 +548,18 @@ start action=android.settings.WIFI_SETTINGS
 
 Меняет настройки приложения: любой параметр, который виден в `settings.json`, по пути через точку.
 
+Файл `tasks/volume_down.txt`:
+
 ```
 task "Тише на ночь"
   cron="0 22 * * *"
   late_ok=1h
   set voice.volume=30
+```
 
+Файл `tasks/volume_up.txt`:
+
+```
 task "Громче днём"
   cron="0 8 * * *"
   late_ok=1h
