@@ -157,6 +157,7 @@ class MainActivity : Activity() {
         w.alpha = 0f
         val lp = window.attributes
         lp.screenBrightness = spec.brightness?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: savedBrightness
+        slideBrightness = spec.brightness
         window.attributes = lp
         w.loadUrl("https://slide.local/slide.html?f=" + java.net.URLEncoder.encode(spec.file, "UTF-8") + "&fit=" + spec.fit + "&bg=" + java.net.URLEncoder.encode(spec.bg, "UTF-8"))
     }
@@ -168,6 +169,7 @@ class MainActivity : Activity() {
         // яркость возвращается сразу: затухание картинки её не касается
         val lp = window.attributes
         lp.screenBrightness = savedBrightness
+        slideBrightness = null
         window.attributes = lp
         val finish = Runnable { try { root.removeView(w); w.destroy() } catch (e: Exception) {} }
         w.animate().cancel()
@@ -372,6 +374,10 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        /** Яркость окна, заданная показанным слайдом (1..100), либо null (для /api/info). */
+        @Volatile
+        var slideBrightness: Int? = null
+
         private const val ASSET_URL = "file:///android_asset/kiosk.html"
 
         @Volatile

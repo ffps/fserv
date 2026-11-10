@@ -17,6 +17,9 @@ object SettingsPath {
     /** Подстановка в тексте: `{settings.путь}`. */
     const val PREFIX = "settings."
 
+    /** Подстановка в тексте: `{info.путь}` — сведения из /api/info (только чтение). */
+    const val INFO_PREFIX = "info."
+
     /** Значение по пути [path] или null, если такого нет. Числа в путях — номера в списках. */
     fun lookup(root: JSONObject, path: String): Any? {
         var cur: Any? = root
@@ -53,5 +56,28 @@ object SettingsPath {
         }
         cur.put(segs.last(), value)
         return JSONObject().put(top, base)
+    }
+
+    /**
+     * Меняются только простые значения. Если по пути сейчас лежит объект или список, возвращает текст ошибки
+     * (с подсказкой, какие поля внутри), иначе null. Пути, которых ещё нет, проверку проходят (их отсеет чтение после записи).
+     */
+    fun checkSimple(current: JSONObject, stored: JSONObject, path: String): String? {
+        val v = lookup(current, path) ?: lookup(stored, path) ?: return null
+        return when (v) {
+            is JSONObject -> {
+                val keys = v.keys().asSequence().take(6).joinToString(", ")
+                "«$path» — объект, а меняются только простые значения: задайте нужное поле, например $path.${v.keys().asSequence().firstOrNull() ?: "имя"} (внутри: $keys)"
+            }
+            is JSONArray -> "«$path» — список, а меняются только простые значения"
+            else -> null
+        }
+    }
+
+    /** Совпадает ли записанное значение с тем, что просили (числа сравниваются как числа, остальное по тексту). */
+    fun same(stored: Any?, wanted: Any?): Boolean {
+        if (stored is Number && wanted is Number) return Math.abs(stored.toDouble() - wanted.toDouble()) < 1e-9
+        if (stored is Boolean && wanted is Boolean) return stored == wanted
+        return text(stored).trim().equals(text(wanted).trim(), ignoreCase = true) // приложение может обрезать пробелы и привести регистр (logLevel)
     }
 }

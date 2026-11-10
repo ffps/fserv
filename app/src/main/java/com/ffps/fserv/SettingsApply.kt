@@ -25,16 +25,17 @@ object SettingsApply {
         return r
     }
 
-    /** Один параметр по пути (voice.volume): null при успехе, иначе текст ошибки. */
+    /** Один параметр по пути (voice.volume): null при успехе, иначе текст ошибки. Меняются только простые значения (число, true/false, текст). */
     fun setOne(ctx: Context, path: String, value: Any?): String? {
         if (path in SettingsPath.READ_ONLY) return "«$path» только для чтения (производное значение)"
+        SettingsPath.checkSimple(Settings.publicJson(), Settings.exportJson(), path)?.let { return it }
         val patch = SettingsPath.patch(Settings.publicJson(), Settings.exportJson(), path, value)
         val r = apply(ctx, patch)
         r.errors.firstOrNull()?.let { return if (r.errors.size > 1) it + " (и ещё ${r.errors.size - 1})" else it }
-        // Settings.update молча пропускает неизвестные ключи; опечатку в пути нужно заметить
-        if (SettingsPath.lookup(Settings.publicJson(), path) == null && SettingsPath.lookup(Settings.exportJson(), path) == null) {
-            return "такого параметра нет (проверьте путь; ничего не изменено)"
-        }
+        // Settings.update молча пропускает неизвестные ключи и значения не того типа: проверяем, что записалось именно то, что просили
+        val now = SettingsPath.lookup(Settings.publicJson(), path) ?: SettingsPath.lookup(Settings.exportJson(), path)
+            ?: return "такого параметра нет (проверьте путь; ничего не изменено)"
+        if (!SettingsPath.same(now, value)) return "значение не принято: после записи там ${SettingsPath.text(now)} (ожидалось ${SettingsPath.text(value)}); проверьте тип и допустимые значения"
         return null
     }
 

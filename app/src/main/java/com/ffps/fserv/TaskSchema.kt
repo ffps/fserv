@@ -16,7 +16,7 @@ object TaskSchema {
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
     private val URL_RE = Regex("""^https?://[^\s/?#]+""", RegexOption.IGNORE_CASE)
     const val MAX_REQUESTS = 50
-    private val TPL_RE = Regex("""\{(settings(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
+    private val TPL_RE = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
     private val PKG_RE = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+""")
     private val ACTION_RE = Regex("""[A-Za-z][A-Za-z0-9_.]*""")
     private val SCHEME_RE = Regex("""^[A-Za-z][A-Za-z0-9+.-]*:\S""")
@@ -171,7 +171,7 @@ object TaskSchema {
     private fun tpl(text: String, c: Ctx): String? {
         for (m in TPL_RE.findAll(text)) {
             val n = m.groupValues[1]
-            if (n.startsWith(SettingsPath.PREFIX)) continue // {settings.путь}: значение читается из настроек при выполнении
+            if (n.startsWith(SettingsPath.PREFIX) || n.startsWith(SettingsPath.INFO_PREFIX)) continue // {settings.путь}: значение читается из настроек при выполнении
             if (n !in BUILTINS && n !in c.taskVars) return "в тексте есть {$n}, но такой переменной нет (есть: ${(BUILTINS + c.taskVars).joinToString(", ")})"
         }
         return null

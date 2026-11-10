@@ -373,6 +373,8 @@ class ScriptTest {
     @Test fun setAndStartSteps() {
         fun ok(vararg steps: String) = Script.validate("task voice=\"свет\"\n" + steps.joinToString("\n") { "  $it" })
         fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
+        assertNull(ok("log \"{info.app.version} {info.audio.mediaVolume} {info.screen.brightness}\"", "say \"Заряд {info.battery.level}\""))
+        bad("{info", "say \"{info}\"")
         assertNull(ok("set voice.volume=30", "set listen.hours=\"22..6\" listen.level=2 autostart=true", "say \"Тише: {settings.voice.volume}\"", "log \"{settings.listen.hours}\""))
         assertNull(ok("ask \"Громкость?\" assign=v kind=number", "set voice.volume=\"{v}\""))
         assertNull(ok("start com.sec.android.app.sbrowser url=\"https://google.com/\" assign=started", "if started", "  say \"Открыл\""))

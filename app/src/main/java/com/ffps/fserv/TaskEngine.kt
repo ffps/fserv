@@ -408,12 +408,12 @@ object TaskEngine {
     }
 
     /** Подставляет {имя}; [enc] обрабатывает каждое подставленное значение (кодирование для адреса, экранирование для JSON). */
-    private val FILL_RE = Regex("""\{(settings(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
+    private val FILL_RE = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
 
     private fun fill(r: Run, text: String, enc: ((String) -> String)? = null): String = FILL_RE.replace(text) { m ->
         val n = m.groupValues[1]
         val cal = Calendar.getInstance()
-        val v: String = if (n.startsWith(SettingsPath.PREFIX)) SettingsApply.read(n.removePrefix(SettingsPath.PREFIX)) else when (n) {
+        val v: String = if (n.startsWith(SettingsPath.PREFIX)) SettingsApply.read(n.removePrefix(SettingsPath.PREFIX)) else if (n.startsWith(SettingsPath.INFO_PREFIX)) Info.read(r.ctx, n.removePrefix(SettingsPath.INFO_PREFIX)) else when (n) {
             "time" -> String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
             "date" -> "${cal.get(Calendar.DAY_OF_MONTH)} ${MONTHS[cal.get(Calendar.MONTH)]}"
             "weekday" -> DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]

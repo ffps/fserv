@@ -44,4 +44,28 @@ class SettingsPathTest {
         assertFalse(SettingsPath.PATH_RE.matches(".voice"))
         assertFalse(SettingsPath.PATH_RE.matches("a b"))
     }
+
+    @Test fun onlySimpleValuesAreChanged() {
+        val cur2 = JSONObject("""{"voice":{"volume":90},"llm":{"preset":"custom"},"zones":[1,2]}""")
+        val st2 = JSONObject("""{"llm":{"custom":{"url":"https://a/b","model":"m","key":"k"}}}""")
+        assertNull(SettingsPath.checkSimple(cur2, st2, "voice.volume"))
+        assertNull(SettingsPath.checkSimple(cur2, st2, "llm.custom.model"))
+        assertNull(SettingsPath.checkSimple(cur2, st2, "voice.rate")) // ключа ещё нет: разрешено
+        val e = SettingsPath.checkSimple(cur2, st2, "llm.custom")
+        assertTrue(e, e != null && e.contains("объект") && e.contains("llm.custom."))
+        assertTrue(SettingsPath.checkSimple(cur2, st2, "voice")!!.contains("объект"))
+        assertTrue(SettingsPath.checkSimple(cur2, st2, "zones")!!.contains("список"))
+    }
+
+    @Test fun sameComparesWrittenValue() {
+        assertTrue(SettingsPath.same(2.0, 2))
+        assertTrue(SettingsPath.same(30, 30))
+        assertFalse(SettingsPath.same(90, 30))
+        assertTrue(SettingsPath.same(true, true))
+        assertFalse(SettingsPath.same(false, true))
+        assertTrue(SettingsPath.same("DEBUG", "debug"))
+        assertTrue(SettingsPath.same(" x ", "x"))
+        assertFalse(SettingsPath.same("ru-RU", "en-US"))
+        assertFalse(SettingsPath.same(JSONObject("{\"a\":1}"), "1"))
+    }
 }

@@ -322,7 +322,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             }
             post && uri == "/api/camera/test/stop" -> { CameraTest.stop(); ok("остановка запрошена") }
 
-            get && uri == "/api/info" -> json(Response.Status.OK, info())
+            get && uri == "/api/info" -> json(Response.Status.OK, Info.build(ctx))
 
             get && uri == "/api/settings" -> json(Response.Status.OK, Settings.publicJson())
             post && uri == "/api/settings" -> saveSettings(body(s))
@@ -548,54 +548,6 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         )
     )
 
-    private fun info(): JSONObject {
-        val now = System.currentTimeMillis()
-        return obj(
-            "app" to obj(
-                "name" to "fServe",
-                "version" to BuildConfig.VERSION_NAME,
-                "versionCode" to BuildConfig.VERSION_CODE,
-                "package" to ctx.packageName
-            ),
-            "device" to obj(
-                "manufacturer" to Build.MANUFACTURER,
-                "model" to Build.MODEL,
-                "android" to Build.VERSION.RELEASE,
-                "sdk" to Build.VERSION.SDK_INT,
-                "ips" to arr(Util.ips())
-            ),
-            "time" to obj(
-                "now" to Util.iso(now),
-                "epochMillis" to now,
-                "timezone" to TimeZone.getDefault().id,
-                "appUptimeSeconds" to (now - App.startedAt) / 1000,
-                "deviceUptimeSeconds" to SystemClock.elapsedRealtime() / 1000
-            ),
-            "battery" to Util.battery(ctx),
-            "storage" to obj("freeMegabytes" to ctx.filesDir.usableSpace / 1048576, "totalMegabytes" to ctx.filesDir.totalSpace / 1048576),
-            "server" to obj(
-                "port" to Settings.webPort,
-                "startedAt" to Util.iso(ServerService.serverStartedAt),
-                "softRestarts" to ServerService.restarts
-            ),
-            "paths" to obj(
-                "files" to ctx.filesDir.absolutePath,
-                "pages" to File(ctx.filesDir, "web").absolutePath
-            ),
-            "screen" to screenInfo(),
-            "power" to obj(
-                "rebootMethod" to Power.rebootMethod(ctx),
-                "appRestartCron" to Settings.appRestartCron,
-                "rebootCron" to Settings.rebootCron
-            ),
-            "logs" to obj(
-                "level" to Settings.logLevel,
-                "files" to FLog.files().size,
-                "sizeBytes" to FLog.totalSize()
-            )
-        )
-    }
-
     /** Проверка связи: запрос к каждому из трёх адресов; через прокси, если для адреса стоит галочка, иначе напрямую. Любой HTTP-ответ означает, что связь есть. */
     private fun proxyTest(name: String?): Response {
         if (Settings.proxyCfg("test") == null) return fail(Response.Status.BAD_REQUEST, "прокси не задан: укажите адрес и порт и сохраните")
@@ -620,23 +572,6 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
     }
 
     private fun voiceCfg(): JSONObject? = try { Settings.voice() } catch (e: Exception) { null }
-
-    private fun screenInfo(): JSONObject {
-        val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-        val home = ctx.packageManager.resolveActivity(
-            android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME),
-            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
-        )?.activityInfo?.packageName
-        return obj(
-            "on" to pm.isInteractive,
-            "locked" to km.isKeyguardLocked,
-            "kioskVisible" to MainActivity.isVisible(),
-            "homeApp" to home,
-            "isHome" to (home == ctx.packageName),
-            "overlayAllowed" to (android.os.Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(ctx))
-        )
-    }
 
     private fun apiIndex(): JSONObject = obj(
         "GET /health" to "состояние для мониторинга, без пароля; остальное требует входа (cookie после /login) или HTTP Basic admin:пароль для скриптов",
