@@ -36,9 +36,9 @@ task "Подъём" cron="0 8 * * *" timeout=60m
   if moved
     say "Доброе утро!"
     photo assign=photo1
-    telegram "Встал в <b>{time}</b>" files=[photo1]
+    telegram "Проснулся в <b>{time}</b>" files=[photo1]
   else
-    telegram "К {time} не встал"
+    telegram "К {time} не Проснулся"
 ```
 
 ## Как пишется текст
@@ -450,8 +450,7 @@ background
 Ставит сообщение в очередь отправки в Telegram (токен бота и chat id задаются на вкладке «Связь»).
 
 ```
-telegram "OK\n{time} движение <b>есть</b>,\n<u>вставала</u>"
-telegram "Встал в <b>{time}</b>" files=[photo1]
+telegram "OK\n{time} движение <b>есть</b>,\n<u>{time}</u>" files=[photo1]
 ```
 
 | Параметр | Описание |
@@ -618,7 +617,7 @@ watch 30s poll=600ms assign=moved threshold=10 area=1.0 zone=bed
 if moved and not ill
   say "Доброе утро"
 else
-  telegram "Не встал"
+  telegram "Не просыпается"
 ```
 
 Условие описано [ниже](#условия). Шаги под `if` обязательны (хотя бы один); пустой `else` не допускается.
@@ -646,7 +645,7 @@ repeat 3..5 every=[5m,3m,1m]
 Останавливает всю задачу штатно (статус `ok`, причина записывается в журнал). Причина необязательна, пишется в кавычках, допускает подстановки.
 
 ```
-stop "не нужно, уже встала"
+stop "не нужно, уже проснулся"
 stop
 ```
 
@@ -748,7 +747,7 @@ task "Подъём"
   if moved
     say "Доброе утро! Сейчас {time}. Не забудьте измерить давление."
     photo assign=photo1
-    telegram "Встала в {time}" files=[photo1]
+    telegram "Проснулся в {time}" files=[photo1]
   else
     telegram "К {time} движения нет, не вставала"
 ```
