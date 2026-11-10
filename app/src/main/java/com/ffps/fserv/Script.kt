@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
@@ -50,6 +50,8 @@ object Script {
         "photo" to listOf("assign", "size"),
         "request" to listOf("post", "method", "type", "header", "proxy", "timeout", "assign", "body", "code"),
         "kiosk" to emptyList(),
+        "start" to listOf("package", "url", "action", "args", "assign"),
+        "set" to emptyList(),
         "delay" to emptyList(),
         "watch" to listOf("poll", "assign", "threshold", "area", "zone"),
         "background" to emptyList(),
@@ -62,6 +64,8 @@ object Script {
     val TASK_SETTINGS = listOf("title", "cron", "voice", "enabled", "late_ok", "timeout", "preempt")
 
     private val KEY_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*=""")
+    /** Ключ шага set: путь к настройке через точку (voice.volume=). */
+    private val PATH_KEY_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*=""")
     private val WORD_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
     private val INT_RE = Regex("""-?\d{1,9}""")
     private val DEC_RE = Regex("""-?\d+\.\d+""")
@@ -239,6 +243,19 @@ object Script {
                 }
                 return s
             }
+            if (word == "set") {
+                val sa = args(l, rest, false, false, PATH_KEY_RE, false)
+                if (sa.named.isEmpty()) fail(l.no, "set: нужны настройки путь=значение, например set voice.volume=30")
+                val o = JSONObject()
+                for ((k, v) in sa.named) {
+                    if (v is List<*>) fail(l.no, "set: значение «$k» не может быть списком")
+                    o.put(k, unwrap(v))
+                }
+                pos++
+                s.put("set", o)
+                noChildren(l, level, "set")
+                return s
+            }
             val a = args(l, rest, word !in setOf("photo", "background", "stop_background"))
             if (a.extra != null) fail(l.no, "лишнее значение у $word: параметры пишутся как ключ=значение")
             pos++
@@ -266,6 +283,7 @@ object Script {
                     }
                 }
                 "kiosk" -> s.put("kiosk", unwrap(pv ?: fail(l.no, "kiosk: нужно действие, например kiosk show")))
+                "start" -> s.put("start", if (pv == null) "" else (unwrap(pv) as? String) ?: fail(l.no, "start: после start идёт имя пакета (com.android.chrome) или параметры url=, action="))
                 "stop" -> s.put("stop", if (pv == null) "" else (pv as? Q)?.s ?: fail(l.no, "stop: причину нужно написать в кавычках"))
                 "play" -> {
                     if (pv == null) fail(l.no, "play: нужно имя файла или системный звук, например play system:alarm")
@@ -333,7 +351,7 @@ object Script {
         }
 
         /** Разбирает аргументы строки с позиции [from]. positional: первый аргумент без имени (для zone и task — имя; у task второй, в кавычках, — название). */
-        fun args(l: Line, from: Int, wantPositional: Boolean, titleSlot: Boolean = false): Args {
+        fun args(l: Line, from: Int, wantPositional: Boolean, titleSlot: Boolean = false, keyRe: Regex = KEY_RE, flags: Boolean = true): Args {
             val s = l.text
             var i = from
             var positional: Any? = null
@@ -345,7 +363,7 @@ object Script {
             while (true) {
                 cur.skip()
                 if (cur.i >= s.length) break
-                val km = KEY_RE.matchAt(s, cur.i)
+                val km = keyRe.matchAt(s, cur.i)
                 if (km != null) {
                     val key = km.value.dropLast(1)
                     cur.i += km.value.length
@@ -356,6 +374,7 @@ object Script {
                     val v = cur.value(false)
                     if (first && wantPositional) positional = v
                     else if (titleSlot && extra == null && named.isEmpty() && v is Q) extra = v
+                    else if (!flags) fail(l.no, "лишнее значение «${show(v)}»: здесь пишется путь=значение, например voice.volume=30")
                     else if (v is String && WORD_RE.matches(v) && v != "true" && v != "false") {
                         if (named.containsKey(v)) fail(l.no, "параметр «$v» указан дважды")
                         named[v] = true

@@ -299,7 +299,7 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
 
             get && uri == "/api/weather" -> json(Response.Status.OK, Weather.apiJson())
 
-            get && uri == "/api/camera" -> json(Response.Status.OK, CameraEngine.status())
+            get && uri == "/api/camera" -> { CameraEngine.touchManual(); json(Response.Status.OK, CameraEngine.status()) }
             post && uri == "/api/camera/start" -> {
                 if (!CameraEngine.hasPermission(ctx)) fail(Response.Status.CONFLICT, "нет разрешения на камеру: на устройстве нажмите Allow camera в окне настроек")
                 else { CameraEngine.start("manual"); FLog.i("camera", "камера включена вручную"); ok("камера запускается") }
@@ -728,30 +728,17 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "GET /kiosk" to "страница киоска"
     )
 
-    private fun applyCameraKeep() {
-        if (Settings.camera().keepRunning && CameraEngine.hasPermission(ctx)) CameraEngine.start("keep") else CameraEngine.stop("keep")
-    }
-
     private fun saveSettings(bodyText: String): Response {
         val patch = try {
             JSONObject(bodyText)
         } catch (e: JSONException) {
             return fail(Response.Status.BAD_REQUEST, "тело запроса не JSON")
         }
-        val r = Settings.update(patch)
+        val r = SettingsApply.apply(ctx, patch)
         if (r.errors.isNotEmpty()) {
             return json(Response.Status.BAD_REQUEST, obj("ok" to false, "error" to r.errors.joinToString("; "), "errors" to arr(r.errors)))
         }
         FLog.i("web", "настройки изменены: ${patch.keys().asSequence().filter { it != "password" }.joinToString(",")}${if (patch.has("password")) ",password" else ""}")
-        if (patch.has("camera")) applyCameraKeep()
-        if (patch.has("voice") || patch.has("zones") || patch.has("chat")) { TaskStore.invalidate(); TaskEngine.refreshStt() }
-        if (r.restartRequired) {
-            // Порт сменился: перезапускаем сервер чуть позже, чтобы успеть ответить на этот запрос.
-            Thread {
-                Thread.sleep(800)
-                ServerService.instance?.softRestart()
-            }.start()
-        }
         return json(
             Response.Status.OK,
             obj("ok" to true, "restartRequired" to r.restartRequired, "settings" to Settings.publicJson())

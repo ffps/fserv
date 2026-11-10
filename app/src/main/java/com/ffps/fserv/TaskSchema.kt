@@ -16,7 +16,11 @@ object TaskSchema {
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
     private val URL_RE = Regex("""^https?://[^\s/?#]+""", RegexOption.IGNORE_CASE)
     const val MAX_REQUESTS = 50
-    private val TPL_RE = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""")
+    private val TPL_RE = Regex("""\{(settings(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
+    private val PKG_RE = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+""")
+    private val ACTION_RE = Regex("""[A-Za-z][A-Za-z0-9_.]*""")
+    private val SCHEME_RE = Regex("""^[A-Za-z][A-Za-z0-9+.-]*:\S""")
+    const val MAX_START_ARGS = 10
     private const val MAX_DEPTH = 8
     private const val MAX_STEPS = 300
     private const val MAX_FILES = 10
@@ -132,6 +136,7 @@ object TaskSchema {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("request")) for (k in listOf("assign", "body", "code")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("start")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("chat")) for (k in listOf("assign", "alert", "ok")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("photo")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it); photos.add(it) }
@@ -166,6 +171,7 @@ object TaskSchema {
     private fun tpl(text: String, c: Ctx): String? {
         for (m in TPL_RE.findAll(text)) {
             val n = m.groupValues[1]
+            if (n.startsWith(SettingsPath.PREFIX)) continue // {settings.путь}: значение читается из настроек при выполнении
             if (n !in BUILTINS && n !in c.taskVars) return "в тексте есть {$n}, но такой переменной нет (есть: ${(BUILTINS + c.taskVars).joinToString(", ")})"
         }
         return null
@@ -251,6 +257,48 @@ object TaskSchema {
                     for (n in names) if (n !in c.photoVars) {
                         return e("files: «$n» не переменная с фото (её задаёт photo assign=$n; есть: ${c.photoVars.joinToString(", ").ifEmpty { "нет" }})")
                     }
+                }
+            }
+            "set" -> {
+                val o = v as? JSONObject ?: return e("set: нужны настройки путь=значение, например set voice.volume=30")
+                if (o.length() == 0) return e("set: нужны настройки путь=значение, например set voice.volume=30")
+                for (k in o.keys()) {
+                    if (!SettingsPath.PATH_RE.matches(k)) return e("set: путь «$k» — ключи из латинских букв, цифр и _ через точку, например voice.volume")
+                    val x = o.opt(k)
+                    if (x is JSONArray || x is JSONObject) return e("set: значение «$k» должно быть числом, словом, true/false или текстом в кавычках")
+                    if (x is String) tpl(x, c)?.let { return e("set $k: $it") }
+                }
+            }
+            "start" -> {
+                val pos = (v as? String) ?: ""
+                val named = s.opt("package")
+                if (named != null && named !is String) return e("start: package — имя пакета, например com.android.chrome")
+                if (pos.isNotEmpty() && named != null) return e("start: имя пакета указано дважды (после start и package=)")
+                val pkg = pos.ifEmpty { named as? String ?: "" }
+                if (pkg.isNotEmpty() && !PKG_RE.matches(pkg)) return e("start: «$pkg» не похоже на имя пакета Android (например com.sec.android.app.sbrowser)")
+                if (s.has("url")) {
+                    val u = s.opt("url") as? String ?: return e("start: url — адрес в кавычках, например url=\"https://google.com/\"")
+                    tpl(u, c)?.let { return e("start: url: $it") }
+                    if (!SCHEME_RE.containsMatchIn(TPL_RE.replace(u, "x"))) return e("start: url «${u.take(60)}» должен начинаться со схемы, например https://")
+                }
+                if (s.has("action") && (s.opt("action") as? String)?.let { ACTION_RE.matches(it) } != true) return e("start: action — имя действия Android, например android.intent.action.VIEW")
+                if (pkg.isEmpty() && !s.has("url") && !s.has("action")) return e("start: нужно имя пакета, url или action, например start com.sec.android.app.sbrowser url=\"https://google.com/\"")
+                if (s.has("args")) {
+                    val l = when (val x = s.opt("args")) {
+                        is String -> listOf(x)
+                        is JSONArray -> (0 until x.length()).map { x.opt(it) as? String ?: return e("start: args — тексты вида \"ключ=значение\"") }
+                        else -> return e("start: args — тексты вида \"ключ=значение\" или их список")
+                    }
+                    if (l.size > MAX_START_ARGS) return e("start: в args не больше $MAX_START_ARGS значений")
+                    for (a1 in l) {
+                        if (!Regex("""[A-Za-z_][A-Za-z0-9_.]*=.*""", RegexOption.DOT_MATCHES_ALL).matches(a1)) return e("start: args «${a1.take(40)}» — нужен вид \"ключ=значение\" (имя дополнительного параметра намерения)")
+                        tpl(a1, c)?.let { return e("start: args: $it") }
+                    }
+                }
+                if (s.has("assign")) {
+                    val n = s.opt("assign")
+                    if (n !is String || !VAR_RE.matches(n)) return e("start: assign — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("start: имя «$n» занято встроенной подстановкой")
                 }
             }
             "kiosk" -> if (v != "show") return e("kiosk: поддерживается только kiosk show (вывести киоск на экран)")

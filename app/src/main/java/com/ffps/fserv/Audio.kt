@@ -9,8 +9,46 @@ import android.os.SystemClock
 
 /** Воспроизведение звуковых файлов и системных сигналов с плавным нарастанием и затуханием. */
 object Audio {
+    /** Громкость по умолчанию (настройка voice.volume, вкладка «Звук») для голоса и звуков, у которых нет своего volume=; null — не задана. */
+    fun defaultVolume(): Int? = Settings.voice().takeIf { it.has("volume") }?.optInt("volume")?.coerceIn(0, 100)
+
+    private val scopes = ArrayList<Pair<Any, Int>>()
+    private var baseline = -1
+
+    /**
+     * Выполняет [block] с громкостью [pct] (без неё — [defaultVolume]; если нет и её, громкость не трогается). Громкость действует
+     * только на время блока: после него возвращается прежняя. Пересекающиеся блоки (звук в фоне и речь) не ломают друг друга:
+     * звучит громкость последнего начатого из идущих, прежняя возвращается, когда закончился последний.
+     */
+    fun <T> withVolume(ctx: Context, pct: Int?, block: () -> T): T {
+        val v = pct ?: defaultVolume() ?: return block()
+        val token = Any()
+        synchronized(scopes) {
+            if (scopes.isEmpty()) baseline = currentIndex(ctx)
+            scopes.add(token to v)
+            setVolume(ctx, v)
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(scopes) {
+                scopes.removeAll { it.first === token }
+                if (scopes.isEmpty()) { if (baseline >= 0) setIndex(ctx, baseline); baseline = -1 }
+                else setVolume(ctx, scopes.last().second)
+            }
+        }
+    }
+
+    private fun currentIndex(ctx: Context): Int = try {
+        (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getStreamVolume(AudioManager.STREAM_MUSIC)
+    } catch (e: Exception) { -1 }
+
+    private fun setIndex(ctx: Context, idx: Int) {
+        try { (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0) } catch (e: Exception) { FLog.w("audio", "громкость не возвращена: ${e.message}") }
+    }
+
     /** Громкость потока медиа в процентах от максимума. */
-    fun setVolume(ctx: Context, percent: Int) {
+    private fun setVolume(ctx: Context, percent: Int) {
         try {
             val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -35,8 +73,12 @@ object Audio {
     fun play(
         ctx: Context, source: String, volumePct: Int?, fadeInMs: Long, fadeOutMs: Long,
         forMs: Long?, loop: Boolean, pauses: List<Dur.Span>?, rnd: java.util.Random, cancel: () -> Boolean
+    ): String? = withVolume(ctx, volumePct) { playInner(ctx, source, fadeInMs, fadeOutMs, forMs, loop, pauses, rnd, cancel) }
+
+    private fun playInner(
+        ctx: Context, source: String, fadeInMs: Long, fadeOutMs: Long,
+        forMs: Long?, loop: Boolean, pauses: List<Dur.Span>?, rnd: java.util.Random, cancel: () -> Boolean
     ): String? {
-        if (volumePct != null) setVolume(ctx, volumePct)
         val mp = MediaPlayer()
         try {
             mp.setAudioAttributes(

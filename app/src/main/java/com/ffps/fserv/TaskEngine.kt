@@ -2,6 +2,7 @@ package com.ffps.fserv
 
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.content.Context
+import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.ArrayDeque
@@ -70,7 +71,8 @@ object TaskEngine {
         val slots = java.util.concurrent.ConcurrentHashMap<String, Slot>()
         /** Слот, в потоке которого сейчас выполняется код (null в основном ходе задачи). */
         val slotOf = ThreadLocal<Slot?>()
-        val voice: JSONObject? = root.optJSONObject("voice")
+        /** Настройки голоса: берутся из настроек приложения в момент шага, поэтому set voice.… действует на следующие шаги этого же запуска. */
+        val voice: JSONObject? get() = Settings.voice().takeIf { it.length() > 0 }
         /** Подстановка {phrase}: что человек сказал после имени помощника (запуск голосом) или assume=phrase:… в пробном запуске. */
         @Volatile var phrase = ""
         fun stopRequested(): Boolean = cancelled || System.currentTimeMillis() > deadline || slotOf.get()?.stop == true
@@ -406,10 +408,12 @@ object TaskEngine {
     }
 
     /** Подставляет {имя}; [enc] обрабатывает каждое подставленное значение (кодирование для адреса, экранирование для JSON). */
-    private fun fill(r: Run, text: String, enc: ((String) -> String)? = null): String = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)\}""").replace(text) { m ->
+    private val FILL_RE = Regex("""\{(settings(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
+
+    private fun fill(r: Run, text: String, enc: ((String) -> String)? = null): String = FILL_RE.replace(text) { m ->
         val n = m.groupValues[1]
         val cal = Calendar.getInstance()
-        val v: String = when (n) {
+        val v: String = if (n.startsWith(SettingsPath.PREFIX)) SettingsApply.read(n.removePrefix(SettingsPath.PREFIX)) else when (n) {
             "time" -> String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
             "date" -> "${cal.get(Calendar.DAY_OF_MONTH)} ${MONTHS[cal.get(Calendar.MONTH)]}"
             "weekday" -> DAYS[cal.get(Calendar.DAY_OF_WEEK) - 1]
@@ -459,7 +463,7 @@ object TaskEngine {
                 val wait = s.optBoolean("wait", true)
                 log(r, p, "say: $text" + if (!wait) " (в фоне)" else "")
                 if (!dry) {
-                    val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+                    val vol = if (s.has("volume")) s.optInt("volume") else null // без своей громкости действует «Громкость по умолчанию» (Audio.withVolume)
                     val speak = { Voice.speak(text, vol, r.voice) { r.stopRequested() }?.let { speechUnavailable(r, p, it) } }
                     if (wait) { speak(); check(r) } else startSlot(r, "say", p) { speak() }
                 }
@@ -471,6 +475,8 @@ object TaskEngine {
             s.has("photo") -> photo(r, s, p)
             s.has("request") -> request(r, s, p)
             s.has("kiosk") -> kiosk(r, p)
+            s.has("set") -> setStep(r, s, p)
+            s.has("start") -> startApp(r, s, p)
             s.has("background") -> {
                 val block = s.getJSONArray("background")
                 log(r, p, "background: ${block.length()} шаг(ов) в фоне" + if (dry) " (в пробном запуске выполняются здесь же, без звука и пауз)" else "")
@@ -563,8 +569,8 @@ object TaskEngine {
         val loop = s.optBoolean("loop", false)
         val wait = s.optBoolean("wait", true)
         val pauses = if (s.has("pause")) Dur.parseList(s.opt("pause"), "pause") else null
-        val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
-        log(r, p, "play: $name, громкость ${vol ?: "как есть"}, нарастание ${Dur.human(fadeIn)}, затухание ${Dur.human(fadeOut)}" +
+        val vol = if (s.has("volume")) s.optInt("volume") else null // без своей громкости действует «Громкость по умолчанию» (Audio.withVolume)
+        log(r, p, "play: $name, громкость ${vol ?: Audio.defaultVolume() ?: "как есть"}, нарастание ${Dur.human(fadeIn)}, затухание ${Dur.human(fadeOut)}" +
             (forMs?.let { ", ${Dur.human(it)}" } ?: "") + (if (loop) ", по кругу" else "") + (pauses?.let { l -> ", паузы " + l.joinToString(", ") { Dur.human(it.minMs) + if (it.isRange) "…${Dur.human(it.maxMs)}" else "" } } ?: "") + (if (!wait) ", не ждать конца" else ""))
         if (r.info.dry) return
         val job = {
@@ -636,7 +642,7 @@ object TaskEngine {
             log(r, p, "пробный запуск: ответ ${value ?: "не получен"} (задайте assume=$name:${when (kind) { "number" -> "120"; "text" -> "купить хлеб"; else -> "true" }}, чтобы проверить другую ветку)")
             return
         }
-        val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+        val vol = if (s.has("volume")) s.optInt("volume") else null // без своей громкости действует «Громкость по умолчанию» (Audio.withVolume)
         Stt.check(r.ctx)?.let { throw StepError(it) } // не спрашиваем, если слушать всё равно нечем
         Stt.prepareAsync(sttKind(kind)) // модель и распознаватель готовятся, пока звучит вопрос: слушание начнётся сразу после него
         var attempt = 0
@@ -719,7 +725,7 @@ object TaskEngine {
         }
         Stt.check(r.ctx)?.let { throw StepError(it) }
         Stt.prepareAsync("free")
-        val vol = if (s.has("volume")) s.optInt("volume") else r.voice?.takeIf { it.has("volume") }?.optInt("volume")
+        val vol = if (s.has("volume")) s.optInt("volume") else null // без своей громкости действует «Громкость по умолчанию» (Audio.withVolume)
         val hist = ArrayList<Chat.Msg>()
         val said = ArrayList<String>()
         if (fromUser) { hist.add(Chat.Msg("user", topic)); said.add(topic) } // текст шага — первая реплика человека: модель отвечает на неё
@@ -820,6 +826,64 @@ object TaskEngine {
         if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); FLog.i("task", "«${r.title()}»: слайд не показан, киоск не на переднем плане"); return }
         slideScope.get()?.add(token)
         r.slideTokens.add(token)
+    }
+
+    private val SECRET_PATH = Regex("""(^|\.)(password|token|key)$""", RegexOption.IGNORE_CASE)
+
+    /** Изменение настроек приложения из задачи: любой параметр по пути (voice.volume); значения проверяет та же проверка, что и в веб-интерфейсе. */
+    private fun setStep(r: Run, s: JSONObject, p: String) {
+        val o = s.getJSONObject("set")
+        for (path in o.keys().asSequence().toList()) {
+            check(r)
+            val raw = o.opt(path)
+            val value: Any? = if (raw is String) fill(r, raw).let { f ->
+                // подставленное число или true/false записывается как число и логическое значение, а не как текст
+                if (!raw.contains('{')) f else f.trim().toIntOrNull() ?: f.trim().toDoubleOrNull()?.takeIf { "." in f } ?: when (f.trim()) { "true" -> true; "false" -> false; else -> f }
+            } else raw
+            val shown = if (SECRET_PATH.containsMatchIn(path)) "***" else value.toString()
+            if (r.info.dry) { log(r, p, "set $path=$shown (в пробном запуске настройки не меняются)"); continue }
+            val before = if (SECRET_PATH.containsMatchIn(path)) "***" else SettingsApply.read(path).ifEmpty { "не задано" }
+            SettingsApply.setOne(r.ctx, path, value)?.let { throw StepError("set $path: $it") }
+            log(r, p, "set $path=$shown (было $before)")
+            FLog.i("task", "«${r.title()}»: настройка $path изменена на $shown")
+        }
+    }
+
+    /**
+     * Запуск приложения или просмотр адреса. Окно открывается поверх киоска (Android 10+ разрешает это только при праве «Поверх других окон»).
+     * assign — запуск выдан без ошибки; дождаться, чем всё кончится, и закрыть чужое приложение нельзя. Сбой задачу не роняет.
+     */
+    private fun startApp(r: Run, s: JSONObject, p: String) {
+        val pkg = s.optString("start").ifEmpty { s.optString("package") }
+        val url = if (s.has("url")) fill(r, s.optString("url"), ::urlEnc) else null
+        val action = s.optString("action").ifEmpty { null }
+        val args = when (val a = s.opt("args")) { is String -> listOf(a); is JSONArray -> (0 until a.length()).map { a.optString(it) }; else -> emptyList() }
+        val name = s.optString("assign")
+        log(r, p, "start: " + listOfNotNull(pkg.ifEmpty { null }, action?.let { "action=$it" }, url?.let { "url=${safeUrl(it)}" }, if (args.isNotEmpty()) "args: ${args.size}" else null).joinToString(" ") + if (r.info.dry) " (в пробном запуске не выполняется)" else "")
+        if (r.info.dry) { if (name.isNotEmpty()) r.vars[name] = r.assume[name] != false; return }
+        var err = ""
+        try {
+            val i: Intent
+            if (pkg.isNotEmpty() && url == null && action == null) {
+                i = r.ctx.packageManager.getLaunchIntentForPackage(pkg) ?: throw IllegalStateException("приложения «$pkg» нет на устройстве (или у него нет значка запуска)")
+            } else {
+                i = Intent(action ?: if (url != null) Intent.ACTION_VIEW else Intent.ACTION_MAIN)
+                if (url != null) i.data = android.net.Uri.parse(url)
+                if (pkg.isNotEmpty()) i.setPackage(pkg)
+            }
+            for (a in args) {
+                val f = fill(r, a)
+                i.putExtra(f.substringBefore('='), f.substringAfter('='))
+            }
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            r.ctx.startActivity(i)
+        } catch (e: android.content.ActivityNotFoundException) {
+            err = "нет приложения, которое откроет это" + (if (pkg.isNotEmpty()) " («$pkg»)" else "")
+        } catch (e: Exception) {
+            err = e.message ?: e.javaClass.simpleName
+        }
+        if (err.isEmpty()) log(r, p, "запуск выдан") else { log(r, p, "не запущено: $err"); FLog.w("task", "«${r.title()}»: start не удался: $err") }
+        if (name.isNotEmpty()) r.vars[name] = err.isEmpty()
     }
 
     /** Вывод киоска на передний план; без права «Поверх других окон» (Android 10+) система может не разрешить. */

@@ -104,21 +104,20 @@ object Voice {
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
         speaking++
         try {
-            return speakInner(text, volumePct, cfg, cancel)
+            return Audio.withVolume(app, volumePct) { speakInner(text, cfg, cancel) }
         } finally {
             speaking--
             lastUse = System.currentTimeMillis()
         }
     }
 
-    private fun speakInner(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
+    private fun speakInner(text: String, cfg: JSONObject?, cancel: () -> Boolean): String? {
         val t0 = System.currentTimeMillis()
         ensure()?.let { return it }
         val t = tts ?: return "синтезатор не готов"
         apply(t, cfg)?.let { return it }
         val prepMs = System.currentTimeMillis() - t0
         var firstDelay = -1L
-        if (volumePct != null) Audio.setVolume(app, volumePct)
         val max = try { TextToSpeech.getMaxSpeechInputLength() } catch (e: Throwable) { 3900 }
         val rnd = java.util.Random()
         // куски: текст (pause = -1) и паузы (text = null)

@@ -369,4 +369,30 @@ class ScriptTest {
         bad("только kiosk show", "kiosk hide")
         bad("kiosk", "kiosk")
     }
+
+    @Test fun setAndStartSteps() {
+        fun ok(vararg steps: String) = Script.validate("task voice=\"свет\"\n" + steps.joinToString("\n") { "  $it" })
+        fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
+        assertNull(ok("set voice.volume=30", "set listen.hours=\"22..6\" listen.level=2 autostart=true", "say \"Тише: {settings.voice.volume}\"", "log \"{settings.listen.hours}\""))
+        assertNull(ok("ask \"Громкость?\" assign=v kind=number", "set voice.volume=\"{v}\""))
+        assertNull(ok("start com.sec.android.app.sbrowser url=\"https://google.com/\" assign=started", "if started", "  say \"Открыл\""))
+        assertNull(ok("start url=\"https://example.com/?q={phrase}\"", "start com.android.settings", "start action=android.settings.WIFI_SETTINGS", "start com.a.b args=[\"k=v\", \"x={phrase}\"]"))
+        val p = Script.parse("task \"t\"\n  set voice.volume=30 listen.tail=8\n  start com.a.b url=\"https://x/\"\n  say \"a\"\n").root
+        val steps = p.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps")
+        assertEquals(30, steps.getJSONObject(0).getJSONObject("set").getInt("voice.volume"))
+        assertEquals("com.a.b", steps.getJSONObject(1).getString("start"))
+        bad("путь=значение", "set")
+        bad("путь=значение", "set voice.volume")
+        bad("списком", "set voice.volume=[1,2]")
+        bad("дважды", "set voice.volume=1 voice.volume=2")
+        bad("только для чтения".take(0) + "переменной", "say \"{nothing}\"")
+        bad("{settings", "say \"{settings}\"")
+        bad("имя пакета", "start")
+        bad("не похоже на имя пакета", "start abc")
+        bad("дважды", "start com.a.b package=com.c.d")
+        bad("схемы", "start url=\"google.com\"")
+        bad("ключ=значение", "start com.a.b args=\"без равно\"")
+        bad("assign", "start com.a.b assign=1x")
+        bad("нет параметра", "start com.a.b wait=false")
+    }
 }

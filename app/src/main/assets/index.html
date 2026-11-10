@@ -156,7 +156,6 @@
     html.phone #clMsg.ok { color:#a5d6a7; } html.phone #clMsg.err { color:#ef9a9a; }
   </style>
   <h2>Звонок</h2>
-  <p class="hint" id="clNote" style="display:none"></p>
   <div class="clbox" id="clBox">
     <video id="clRemote" autoplay playsinline></video>
     <div class="clstatus" id="clStatus">Готов к звонку</div>
@@ -176,6 +175,7 @@
   </div>
   <div class="row" style="margin-top:12px"><button class="btn" id="clSave">Сохранить</button></div>
   <div class="msg" id="clPMsg"></div>
+  <p class="hint" id="clNote" style="display:none"></p>
   <p class="hint">Видеосвязь идёт напрямую между этой страницей и устройством (WebRTC), подтверждение на устройстве не нужно: оно сразу показывает ваше видео во весь экран, а своё в углу. Работает только в одной сети с устройством и только по адресу https:// (браузер даёт камеру и микрофон лишь защищённым страницам; сертификат самоподписанный, его нужно один раз подтвердить). На время звонка камера и микрофон устройства принадлежат звонку: задачи, которым они нужны, получают ошибку. Кнопки слева направо: вызов и завершение, микрофон, колокольчик (только во время звонка запускает задачу <code>ring</code>, если она есть и включена: сигнал, если собеседник отошёл или не слышит), переключение камеры звонящего. Окошко своего видео можно перетащить. Разрешение: браузер и камера выбирают ближайшее поддерживаемое. Если позвонить с другого адреса, идущий звонок можно прервать после подтверждения; в журнал пишутся оба адреса.</p>
 </section>
 
@@ -498,7 +498,6 @@
     <button class="btn sec" id="upUpload" title="Установить APK, скачанный на этот компьютер: проверяются пакет, подпись и что версия новее установленной">Загрузить</button>
     <input type="file" id="upFile" accept=".apk,application/vnd.android.package-archive" style="display:none">
   </div>
-  <p class="hint">«Загрузить» ставит APK с этого компьютера (например, когда GitHub не отдаёт файл): нужен APK этого же приложения новее установленного, подписанный тем же ключом.</p>
   <div class="msg" id="upMsg"></div>
   <pre id="upNotes" style="display:none"></pre>
   <div class="f" style="margin-top:14px">
@@ -509,7 +508,7 @@
   </div>
   <div class="row" style="margin-top:14px"><button class="btn" id="upSave">Сохранить</button></div>
   <div class="msg" id="upSMsg"></div>
-  <p class="hint">По расписанию выполняется только проверка: о новой версии придёт сообщение в Telegram. Устанавливается обновление только по кнопке. На устройстве должна быть разрешена установка из этого приложения (окно настроек, кнопка «Allow app updates»); если система запросит подтверждение, нажмите «Установить» на экране устройства. Откатиться на старую версию Android не даёт: чтобы вернуть прежнее поведение, выпускается новая версия с исправлением.</p>
+  <p class="hint">Кнопка «Загрузить» ставит APK с этого компьютера (например, когда GitHub не отдаёт файл): нужен APK этого же приложения новее установленного, подписанный тем же ключом. По расписанию выполняется только проверка: о новой версии придёт сообщение в Telegram. Устанавливается обновление только по кнопке. На устройстве должна быть разрешена установка из этого приложения (окно настроек, кнопка «Allow app updates»); если система запросит подтверждение, нажмите «Установить» на экране устройства. Откатиться на старую версию Android не даёт: чтобы вернуть прежнее поведение, выпускается новая версия с исправлением.</p>
 
   <h2 style="margin-top:26px">Страницы</h2>
   <div class="row">
@@ -938,7 +937,7 @@ $("#ctToggle").onclick = () => run("#ctMsg", async () => {
   const q = "mode=" + $("#ctMode").value + "&minutes=" + $("#ctMin").value + "&count=" + $("#ctCnt").value + "&gap=" + $("#ctGap").value;
   const r = await post("/api/camera/test?" + q); loadCamera(false); return r.json.message;
 });
-setInterval(() => { if (current === "camera") loadCamera(false); }, 1500);
+setInterval(() => { if (current === "camera" && !document.hidden) loadCamera(false); }, 1500);
 
 // ---- обновления ----
 let upTimer = null, upVer = null, upBusy = false;

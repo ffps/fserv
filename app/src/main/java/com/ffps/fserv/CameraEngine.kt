@@ -177,7 +177,27 @@ object CameraEngine {
     fun start(owner: String) {
         ensureThread()
         synchronized(owners) { owners.add(owner) }
+        if (owner == MANUAL) { manualTouch = System.currentTimeMillis(); h.removeCallbacks(manualCheck); h.postDelayed(manualCheck, MANUAL_CHECK_MS) }
         h.post { openIfNeeded() }
+    }
+
+    /** Ручное включение (кнопка в админке) само выключается, если админка час не обращалась к камере. */
+    const val MANUAL = "manual"
+    const val MANUAL_IDLE_MS = 3_600_000L
+    private const val MANUAL_CHECK_MS = 60_000L
+    @Volatile private var manualTouch = 0L
+
+    /** Админка обратилась к камере (состояние, кадр, история): срок ручного включения продлевается. */
+    fun touchManual() { manualTouch = System.currentTimeMillis() }
+
+    private val manualCheck = object : Runnable {
+        override fun run() {
+            if (!synchronized(owners) { owners.contains(MANUAL) }) return
+            if (System.currentTimeMillis() - manualTouch >= MANUAL_IDLE_MS) {
+                FLog.i("camera", "камера, включённая вручную, выключена: админка не обращалась к ней ${MANUAL_IDLE_MS / 60_000} мин")
+                stop(MANUAL)
+            } else h.postDelayed(this, MANUAL_CHECK_MS)
+        }
     }
 
     fun stop(owner: String) {
