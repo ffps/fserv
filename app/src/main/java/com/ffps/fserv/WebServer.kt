@@ -232,6 +232,16 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
             post && uri == "/api/say/stop" -> { sayStop = true; Voice.stop(); ok("остановлено") }
 
 
+            get && uri == "/api/notices" -> json(Response.Status.OK, obj("types" to Notices.listJson(), "configured" to Settings.telegramConfigured))
+            post && uri == "/api/notices" -> {
+                val errs = Notices.save(JSONObject(body(s)))
+                if (errs.isNotEmpty()) fail(Response.Status.BAD_REQUEST, errs.joinToString("; "))
+                else json(Response.Status.OK, obj("ok" to true, "types" to Notices.listJson()))
+            }
+            post && uri == "/api/notices/test" -> {
+                val id = Notices.test(ctx, q(s, "id") ?: "", body(s).takeIf { it.isNotBlank() }?.let { JSONObject(it).optString("text") })
+                json(Response.Status.OK, obj("ok" to true, "id" to id, "pending" to Telegram.pending()))
+            }
             post && uri == "/api/listen/on" -> { VoiceTrigger.unmute(); ok("слушание включено") }
             post && uri == "/api/listen/off" -> {
                 val min = (q(s, "minutes")?.toIntOrNull() ?: 60).coerceIn(1, 1440)
@@ -641,6 +651,9 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         "POST /api/stt/download" to "скачать модель распознавания (около 45 МБ)",
         "POST /api/stt/upload" to "установить модель из zip, загруженного с компьютера (тело запроса — файл vosk-model-small-ru-0.22.zip)",
         "POST /api/stt/delete" to "удалить модель распознавания",
+        "GET /api/notices" to "уведомления в Telegram: типы, тексты, включение",
+        "POST /api/notices" to "сохранить уведомления: {тип: {on, text}}",
+        "POST /api/notices/test" to "тестовое уведомление: ?id=taskError, тело {text} (необязательно)",
         "POST /api/listen/off" to "отключить слушание голосовых команд на время: ?minutes=60 (1..1440)",
         "POST /api/listen/on" to "включить слушание голосовых команд сразу",
         "POST /api/stt/test" to "проверка микрофона: ?kind=yesno|number|free (свободная речь)&listen=10 (секунд); возвращает услышанное и значение",

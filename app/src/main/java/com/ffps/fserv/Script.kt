@@ -62,7 +62,7 @@ object Script {
         "stop" to emptyList(),
         "log" to emptyList()
     )
-    val TASK_SETTINGS = listOf("title", "cron", "voice", "enabled", "late_ok", "timeout", "preempt")
+    val TASK_SETTINGS = listOf("title", "cron", "voice", "enabled", "late_ok", "timeout", "preempt", "notify")
 
     private val KEY_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*=""")
     /** Ключ шага set: путь к настройке через точку (voice.volume=). */

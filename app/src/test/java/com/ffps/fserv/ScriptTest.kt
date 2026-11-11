@@ -370,6 +370,13 @@ class ScriptTest {
         bad("kiosk", "kiosk")
     }
 
+    @Test fun taskNotifySetting() {
+        assertNull(Script.validate("task \"t\" notify=false\n  log \"x\""))
+        assertNull(Script.validate("task \"t\" notify=true\n  log \"{info.device.ips[0]}\""))
+        val e = Script.validate("task \"t\" notify=2\n  log \"x\"")
+        assertTrue(e, e != null && e.contains("notify"))
+    }
+
     @Test fun listenStep() {
         fun ok(vararg steps: String) = Script.validate("task voice=\"не мешай\"\n" + steps.joinToString("\n") { "  $it" })
         fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }

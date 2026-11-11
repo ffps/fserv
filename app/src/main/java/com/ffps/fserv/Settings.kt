@@ -73,6 +73,14 @@ object Settings {
     @get:Synchronized val autostart: Boolean get() = o.optBoolean("autostart", false)
 
     /** Желаемое состояние службы: true после START SERVICE, false после STOP SERVICE. */
+    /** Раздел notices: {тип: {on, text}} для уведомлений в Telegram (см. Notices). */
+    @Synchronized fun noticesJson(): JSONObject = JSONObject((o.optJSONObject("notices") ?: JSONObject()).toString())
+
+    @Synchronized fun setNotices(n: JSONObject) {
+        if (n.length() == 0) o.remove("notices") else o.put("notices", n)
+        save()
+    }
+
     @get:Synchronized val serviceEnabled: Boolean get() = o.optBoolean("serviceEnabled", false)
 
     /** До какого момента (мс с 1970) слушатель голосовых команд временно отключён шагом listen off; 0 — не отключён. Хранится, чтобы пережить перезапуск. */

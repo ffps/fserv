@@ -21,9 +21,11 @@ object SettingsPath {
     const val INFO_PREFIX = "info."
 
     /** Значение по пути [path] или null, если такого нет. Числа в путях — номера в списках. */
+    private val INDEX_RE = Regex("""\[(\d+)]""")
+
     fun lookup(root: JSONObject, path: String): Any? {
         var cur: Any? = root
-        for (seg in path.split('.')) {
+        for (seg in path.replace(INDEX_RE, ".$1").split('.')) {
             cur = when (cur) {
                 is JSONObject -> if (cur.has(seg)) cur.opt(seg) else return null
                 is JSONArray -> seg.toIntOrNull()?.takeIf { it in 0 until cur.length() }?.let { cur.opt(it) } ?: return null

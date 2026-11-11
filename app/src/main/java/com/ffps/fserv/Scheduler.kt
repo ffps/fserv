@@ -59,7 +59,7 @@ class Scheduler(private val ctx: Context) {
         }
         if (due("updateCheck", Settings.updateCheckCron, minute)) {
             Settings.setLastFired("updateCheck", minute)
-            Thread { Updater.scheduledCheck() }.start()
+            Thread { Updater.scheduledCheck(ctx) }.start()
         }
         if (due("appRestart", Settings.appRestartCron, minute)) {
             Settings.setLastFired("appRestart", minute)

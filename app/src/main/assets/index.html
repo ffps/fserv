@@ -321,6 +321,22 @@
   <div class="msg" id="tgMsg"></div>
   <p class="hint" id="tgState"></p>
   <p class="hint">Тест ставится в обычную очередь и ждёт доставки до таймаута сети; если не ушёл, остаётся в очереди и повторяется. Результат пишется в лог.</p>
+  <h2 style="margin-top:22px">Уведомления</h2>
+  <div class="f">
+    <label for="ntSel">Уведомление</label>
+    <select id="ntSel"></select>
+  </div>
+  <label id="ntOnRow" style="display:block;margin:8px 0"><input type="checkbox" id="ntOn"> Активно</label>
+  <textarea id="ntText" rows="5" spellcheck="false" style="font-family:inherit;font-size:14px;white-space:pre-wrap"></textarea>
+  <p class="hint" id="ntHint"></p>
+  <p class="hint" id="ntVars"></p>
+  <div class="row" style="margin-top:10px">
+    <button class="btn" id="ntSave">Сохранить</button>
+    <button class="btn sec" id="ntTest">Тест</button>
+    <button class="btn sec" id="ntDef">По умолчанию</button>
+  </div>
+  <div class="msg" id="ntMsg"></div>
+  <p class="hint">Сообщение уходит как HTML (<code>&lt;b&gt;жирный&lt;/b&gt;</code>), подставляемые значения экранируются. Кроме перечисленных подстановок доступны <code>{time}</code>, <code>{date}</code>, <code>{info.путь}</code> (например <code>{info.device.model}</code>, <code>{info.device.ips[0]}</code>) и <code>{settings.путь}</code>. «Тест» отправляет текст из поля с образцами значений, без сохранения. Пустое поле — текст по умолчанию. Задача с <code>notify=false</code> не шлёт уведомления об ошибке и недоступности речи.</p>
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
   <div class="row" style="margin-top:10px"><button class="ib del" id="obClear" title="Очистить очередь"></button></div>
@@ -608,6 +624,7 @@ track("sSave", ["sCity", "sWx", "sLevel", "sTmo", "sApp", "sReboot", "sPort", "s
 track("vcSave", ["vcHours", "vcPrefix", "vcLevel", "vcTail", "vcAck", "vcMiss"]);
 track("upSave", ["upRepo", "upCron"]);
 track("tgSave", ["tgToken", "tgChat"]);
+track("ntSave", [], () => NT0 !== "" && ntState() !== NT0);
 track("pxSave", ["pxHost", "pxPort", "pxUser", "pxPass"]);
 track("cmSave", ["cmInt", "cmThr", "cmArea", "cmRot", "cmRes", "cmKeep"]);
 track("vsSave", ["vsVol", "vsLang", "vsVoice", "vsRate", "vsPitch"]);
@@ -810,7 +827,49 @@ $("#chSend").onclick = chSend;
 $("#chInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); chSend(); } });
 
 // ---- связь ----
+// ---- уведомления в Telegram (вкладка «Связь») ----
+let NT = {}, NT0 = "", NTI = {}, NTcur = "";
+const ntState = () => JSON.stringify(NT);
+function ntStore() { if (NTcur) NT[NTcur] = {on: $("#ntOn").checked, text: $("#ntText").value}; }
+function ntLabels() { const sel = $("#ntSel"); for (const o of sel.options) { const t = NTI[o.value]; o.textContent = t.title + (t.hasActive && !(NT[o.value] || t).on ? " (выкл.)" : ""); } }
+function ntShow(id) {
+  NTcur = id; const t = NTI[id], d = NT[id];
+  $("#ntSel").value = id;
+  $("#ntOnRow").style.display = t.hasActive ? "" : "none";
+  $("#ntOn").checked = d.on; $("#ntText").value = d.text;
+  $("#ntHint").textContent = t.hint;
+  $("#ntVars").innerHTML = "Подстановки: " + t.vars.map(v => "<code>{" + v + "}</code>").join(", ") + ", <code>{info.…}</code>, <code>{settings.…}</code>";
+  ntLabels();
+}
+function ntLoad(types) {
+  NTI = {}; NT = {};
+  types.forEach(t => { NTI[t.id] = t; NT[t.id] = {on: t.on, text: t.text}; });
+  const sel = $("#ntSel"), keep = NTcur && NTI[NTcur] ? NTcur : types[0].id;
+  sel.innerHTML = types.map(t => '<option value="' + t.id + '"></option>').join("");
+  ntShow(keep); NT0 = ntState();
+}
+$("#ntSel").onchange = () => { ntStore(); ntShow($("#ntSel").value); };
+$("#ntOn").onchange = () => { ntStore(); ntLabels(); };
+$("#ntText").oninput = ntStore;
+$("#ntDef").onclick = () => { $("#ntText").value = NTI[NTcur].default; ntStore(); };
+$("#ntSave").onclick = () => run("#ntMsg", async () => {
+  ntStore();
+  const r = (await post("/api/notices", JSON.stringify(NT))).json;
+  ntLoad(r.types); return "сохранено";
+});
+$("#ntTest").onclick = () => run("#ntMsg", async () => {
+  ntStore();
+  say("#ntMsg", "отправляю через очередь…", true);
+  await post("/api/notices/test?id=" + encodeURIComponent(NTcur), JSON.stringify({text: NT[NTcur].text}));
+  return "тестовое уведомление поставлено в очередь (проверьте Telegram и очередь ниже)";
+});
+async function loadNotices() {
+  if (NT0 !== "" && ntState() !== NT0) return; // есть несохранённые правки: не затираем
+  try { ntLoad((await api("/api/notices")).json.types); } catch (e) { $("#ntMsg").textContent = e.message; }
+}
+
 async function loadComm() {
+  loadNotices();
   try {
     const st = (await api("/api/settings")).json;
     $("#tgChat").value = st.telegram.chatId; $("#tgToken").value = "";

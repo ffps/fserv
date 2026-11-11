@@ -357,7 +357,9 @@ object TaskEngine {
         val endMsg = "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}"
         if (info.status == "error" || info.status == "timeout") FLog.e("task", endMsg) else FLog.i("task", endMsg)
         if (!req.dry && (req.source == "cron" || req.source == "voice") && (info.status == "error" || info.status == "timeout")) {
-            Telegram.enqueue("fServe: задача «$title» не выполнена: ${info.message}")
+            if (run.task.optBoolean("notify", true)) {
+                Notices.send(run.ctx, "taskError", mapOf("task" to title, "message" to info.message, "status" to info.status, "source" to req.source, "duration" to Dur.human(info.endedAt - info.startedAt)))
+            } else FLog.d("task", "«$title»: notify=false, уведомление об ошибке не отправлено")
         }
     }
 
@@ -408,7 +410,7 @@ object TaskEngine {
     }
 
     /** Подставляет {имя}; [enc] обрабатывает каждое подставленное значение (кодирование для адреса, экранирование для JSON). */
-    private val FILL_RE = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+)+|[A-Za-z_][A-Za-z0-9_]*)\}""")
+    private val FILL_RE = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+|\[\d+\])+|[A-Za-z_][A-Za-z0-9_]*)\}""")
 
     private fun fill(r: Run, text: String, enc: ((String) -> String)? = null): String = FILL_RE.replace(text) { m ->
         val n = m.groupValues[1]
@@ -682,7 +684,7 @@ object TaskEngine {
         if (r.info.message.isEmpty()) r.info.message = "речь недоступна: $err"
         if (!r.info.dry && !r.speechWarned && (r.info.source == "cron" || r.info.source == "voice")) {
             r.speechWarned = true
-            Telegram.enqueue("fServe: задача «${r.title()}»: речь недоступна ($err). Остальные шаги выполнены. Проверьте синтезатор речи на устройстве.")
+            if (r.task.optBoolean("notify", true)) Notices.send(r.ctx, "speech", mapOf("task" to r.title(), "error" to err))
         }
     }
 
@@ -757,7 +759,7 @@ object TaskEngine {
                 alert = true
                 val lastSaid = said.lastOrNull() ?: ""
                 FLog.w("task", "«${r.title()}»: тревога в разговоре: «$lastSaid»")
-                Telegram.enqueue("<b>Тревога в разговоре с устройством.</b> Задача «${r.title()}». Человек сказал: «$lastSaid». Ответ помощника: «${rep.text}».")
+                Notices.send(r.ctx, "alarm", mapOf("task" to r.title(), "said" to lastSaid, "reply" to rep.text))
                 break
             }
             if (rep.end || last) break

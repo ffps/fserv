@@ -94,13 +94,13 @@ object Updater {
     }
 
     /** Проверка по расписанию: при новой версии один раз пишет в Telegram. */
-    fun scheduledCheck() {
+    fun scheduledCheck(ctx: Context) {
         try {
             val l = check()
             if (l.optLong("versionCode") > BuildConfig.VERSION_CODE && Settings.getStr("notifiedVersion") != l.optString("versionName")) {
                 Settings.putStr("notifiedVersion", l.optString("versionName"))
                 FLog.i("update", "доступно обновление ${l.optString("versionName")}")
-                Telegram.enqueue("fServe: доступно обновление ${l.optString("versionName")} (установлена ${BuildConfig.VERSION_NAME}). Установить можно из веб-интерфейса, вкладка «Обновления».")
+                Notices.send(ctx, "update", mapOf("version" to l.optString("versionName"), "current" to BuildConfig.VERSION_NAME))
             }
         } catch (e: Exception) {
             // уже записано в лог

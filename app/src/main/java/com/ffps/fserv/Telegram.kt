@@ -44,7 +44,10 @@ object Telegram {
     @Volatile var lastError = ""
     @Volatile var lastSentAt = 0L
 
+    private lateinit var app: Context
+
     fun init(ctx: Context) {
+        app = ctx.applicationContext
         file = File(ctx.filesDir, "outbox.json")
         try {
             if (file.exists()) {
@@ -328,7 +331,7 @@ object Telegram {
      */
     fun test(): String {
         require(Settings.telegramConfigured) { "не заданы токен бота и chat id" }
-        val id = enqueue("fServe: проверка связи (${android.os.Build.MODEL}, версия ${BuildConfig.VERSION_NAME})")
+        val id = enqueue(Notices.render(app, Notices.text("ping"), mapOf("model" to android.os.Build.MODEL, "version" to BuildConfig.VERSION_NAME)))
         val deadline = System.currentTimeMillis() + Settings.netTimeoutSec * 1000L + 3000
         while (System.currentTimeMillis() < deadline) {
             val queued = synchronized(lock) { items.any { it.id == id } }
