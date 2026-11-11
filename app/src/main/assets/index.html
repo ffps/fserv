@@ -198,7 +198,6 @@
   <table><thead><tr><th>Задача</th><th>Расписание</th><th>Ближайший запуск</th><th>Состояние</th><th></th></tr></thead><tbody id="tkBody"></tbody></table>
   <div class="row" style="margin-top:10px">
     <button class="ib add" id="tkAdd" title="Добавить задачу"></button>
-    <button class="btn sec sm" id="tkExample">Добавить пример</button>
   </div>
   <div class="msg" id="tkMsg"></div>
 
@@ -1123,23 +1122,6 @@ $("#cfgRestore").onclick = () => { const n = $("#cfgHist").value; if (n && confi
 
 
 // ---- задачи: список, редактор одной задачи ----
-const EXAMPLE_TASK = `task "Подъём" cron="0 9 * * *" timeout=40m
-
-  repeat 6 until=moved
-    watch 30s poll=600ms assign=moved
-    if not moved
-      background
-        play system:alarm volume=80 fade_in=5s
-        delay 10s
-        say "Просыпайся! Пора вставать."
-  stop_background
-  if moved
-    say "Доброе утро! Не забудьте измерить давление и принять таблетки."
-    photo assign=photo1
-    telegram "Встала в <b>{time}</b>" files=[photo1]
-  else
-    telegram "К {time} движения нет, <u>не вставала</u>"
-`;
 let cfgObj = {tasks: []};   // последнее, что прочитано с сервера
 let tkOrig = "";               // id редактируемой задачи на сервере ("" = новая, ещё не сохранена)
 let tkOpen = false;            // открыт ли редактор
@@ -1177,11 +1159,6 @@ $("#tkAdd").onclick = () => {
   if (!confirmDiscard()) return;
   showTask('task "Новая задача" enabled=false cron="0 9 * * *" timeout=30m\n  log "привет из {task}"\n', "", newId());
   say("#tkMsg", "новая задача создана в редакторе, нажмите «Сохранить задачу»", true);
-};
-$("#tkExample").onclick = () => {
-  if (!confirmDiscard()) return;
-  showTask(EXAMPLE_TASK, "", (cfgObj.tasks || []).some(x => x.id === "wakeup") ? newId() : "wakeup");
-  say("#tkMsg", "пример загружен в редактор, нажмите «Сохранить задачу»", true);
 };
 $("#tkClose").onclick = () => { if (confirmDiscard()) closeEditor(); };
 $("#tkSave").onclick = () => run("#tkMsg", async () => {

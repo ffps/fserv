@@ -913,6 +913,8 @@ object TaskEngine {
         log(r, p, if (MainActivity.isVisible()) "киоск на экране" else "киоск не вышел на экран за 3 с (проверьте «Поверх других окон» в окне настроек)")
     }
 
+    private const val SHELL_PATH = "/system/bin:/system/xbin:/vendor/bin:/sbin"
+
     /**
      * Команды оболочки (по очереди). Без root — `sh -c` от имени приложения, с root=true — `su -c`. Сбой запуска и тайм-аут задачу не роняют:
      * assign ложно (код не 0 или не запустилось), body — stdout, error — stderr, code — код возврата последней команды (-1, если не запустилась или убита по тайм-ауту).
@@ -946,7 +948,10 @@ object TaskEngine {
             var err = ""
             val t0 = System.currentTimeMillis()
             try {
-                val proc = ProcessBuilder(if (root) listOf("su", "-c", cmd) else listOf("sh", "-c", cmd)).redirectErrorStream(false).start()
+                val pb = ProcessBuilder(if (root) listOf("su", "-c", cmd) else listOf("sh", "-c", cmd)).redirectErrorStream(false)
+                // без root: системные каталоги впереди (у некоторых прошивок первым стоит /vendor/bin, откуда приложению запускать нельзя); с root среду задаёт su
+                if (!root) pb.environment()["PATH"] = SHELL_PATH
+                val proc = pb.start()
                 proc.outputStream.close()
                 val po = StringBuilder(); val pe = StringBuilder()
                 fun drain(st: java.io.InputStream, sb: StringBuilder) = Thread {
