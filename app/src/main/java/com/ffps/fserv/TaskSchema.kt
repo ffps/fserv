@@ -16,6 +16,7 @@ object TaskSchema {
     private val VAR_RE = Regex("[A-Za-z_][A-Za-z0-9_]{0,30}")
     private val URL_RE = Regex("""^https?://[^\s/?#]+""", RegexOption.IGNORE_CASE)
     const val MAX_REQUESTS = 50
+    const val MAX_SHELL = 20
     private val TPL_RE = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+|\[\d+\])+|[A-Za-z_][A-Za-z0-9_]*)\}""")
     private val PKG_RE = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+""")
     private val ACTION_RE = Regex("""[A-Za-z][A-Za-z0-9_.]*""")
@@ -137,6 +138,7 @@ object TaskSchema {
                 steps.optJSONObject("watch")?.optString("assign")?.takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("telegram")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("request")) for (k in listOf("assign", "body", "code")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
+                if (steps.has("shell")) for (k in listOf("assign", "body", "code", "error")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("start")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("ask")) steps.optString("assign").takeIf { it.isNotEmpty() }?.let { vars.add(it) }
                 if (steps.has("chat")) for (k in listOf("assign", "alert", "ok")) steps.optString(k).takeIf { it.isNotEmpty() }?.let { vars.add(it) }
@@ -360,6 +362,32 @@ object TaskSchema {
                     n
                 }
                 if (names.size != names.toSet().size) return e("request: assign, body и code должны называться по-разному")
+            }
+            "shell" -> {
+                val cmds = when (v) {
+                    is String -> listOf(v)
+                    is JSONArray -> (0 until v.length()).map { v.opt(it) as? String ?: return e("shell: в списке должны быть команды в кавычках") }
+                    else -> return e("shell: нужна команда в кавычках или список команд")
+                }
+                if (cmds.isEmpty()) return e("shell: список команд пуст")
+                if (cmds.size > MAX_SHELL) return e("shell: не больше $MAX_SHELL команд в одном шаге")
+                for (cm in cmds) {
+                    if (cm.isBlank()) return e("shell: пустая команда")
+                    if (cm.length > 1000) return e("shell: команда не длиннее 1000 знаков")
+                    tpl(cm, c)?.let { return e("shell: $it") }
+                }
+                if (s.has("root") && s.opt("root") !is Boolean) return e("shell: root — true или false (true: выполнить через su, нужны root-права)")
+                if (s.has("timeout")) {
+                    val d = try { Dur.parse(s.opt("timeout"), "timeout") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "timeout") }
+                    if (d.minMs < 1_000 || d.maxMs > 60_000) return e("shell: timeout — от 1 до 60 секунд, например timeout=3 (на каждую команду)")
+                }
+                val names = listOf("assign", "body", "code", "error").filter { s.has(it) }.map { k ->
+                    val n = s.opt(k)
+                    if (n !is String || !VAR_RE.matches(n)) return e("shell: $k — имя из латинских букв, цифр и _")
+                    if (n in BUILTINS) return e("shell: имя «$n» занято встроенной подстановкой")
+                    n
+                }
+                if (names.size != names.toSet().size) return e("shell: assign, body, code и error должны называться по-разному")
             }
             "stop_background", "photo" -> {
                 if (a == "photo" && s.has("assign")) {

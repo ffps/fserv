@@ -370,6 +370,25 @@ class ScriptTest {
         bad("kiosk", "kiosk")
     }
 
+    @Test fun shellStep() {
+        fun ok(vararg steps: String) = Script.validate("task \"t\"\n" + steps.joinToString("\n") { "  $it" })
+        fun bad(part: String, vararg steps: String) { val e = ok(*steps); assertTrue("ожидалась ошибка с «$part»: $e", e != null && e.contains(part)) }
+        assertNull(ok("shell \"ping -c1 192.168.1.1\" timeout=3 assign=up body=out code=rc error=err", "log \"{up} {out} {rc} {err}\""))
+        assertNull(ok("shell [\"sudo reboot\", \"echo {info.device.model}\"] root=true timeout=3"))
+        assertNull(ok("ask \"Что пинговать?\" assign=h kind=text", "shell \"ping -c1 {h}\""))
+        val st = Script.parse("task \"t\"\n  shell [\"a\", \"b\"] root=true\n").root.getJSONArray("tasks").getJSONObject(0).getJSONArray("steps").getJSONObject(0)
+        assertEquals(2, st.getJSONArray("shell").length()); assertEquals(true, st.get("root"))
+        bad("нужна команда", "shell")
+        bad("в кавычках", "shell ping")
+        bad("root", "shell \"x\" root=1")
+        bad("от 1 до 60", "shell \"x\" timeout=100s")
+        bad("по-разному", "shell \"x\" body=a error=a")
+        bad("занято", "shell \"x\" code=time")
+        bad("нет параметра", "shell \"x\" proxy=true")
+        bad("не больше", "shell [" + (1..21).joinToString(",") { "\"c$it\"" } + "]")
+        bad("{nope}", "shell \"echo {nope}\"")
+    }
+
     @Test fun taskNotifySetting() {
         assertNull(Script.validate("task \"t\" notify=false\n  log \"x\""))
         assertNull(Script.validate("task \"t\" notify=true\n  log \"{info.device.ips[0]}\""))

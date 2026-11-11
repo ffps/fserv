@@ -1077,7 +1077,9 @@ async function loadStatus() {
     const sc = i.screen;
     $("#cards").innerHTML =
       kvRow("Время на устройстве", dt(i.time.now)) +
-      kvRow("Экран", (sc.on ? "включён" : "выключен") + (sc.locked ? ", заблокирован" : "")) +
+      kvRow("Экран", (sc.on ? "включён" : "выключен") + (sc.locked ? ", заблокирован" : "") + (() => { const br = sc.slideBrightness != null ? sc.slideBrightness : sc.brightness; return br != null ? ", яркость " + br + "%" + (sc.autoBrightness && sc.slideBrightness == null ? " (авто)" : "") : ""; })()) +
+      kvRow("Звук", "громкость медиа " + (i.audio.mediaVolume != null ? i.audio.mediaVolume + "%" : "?") + ", по умолчанию " + (i.audio.defaultVolume != null ? i.audio.defaultVolume + "%" : "не задана")) +
+      kvRow("Голосовые команды", i.listen.text) +
       kvRow("Киоск", sc.kioskVisible ? "на экране" : "не на экране") +
       kvRow("Домашнее приложение", sc.isHome ? "fServe" : (sc.homeApp || "?")) +
       (sc.overlayAllowed ? "" : kvRow("Поверх других окон", "не разрешено")) +

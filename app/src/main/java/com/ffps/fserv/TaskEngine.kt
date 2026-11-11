@@ -477,6 +477,7 @@ object TaskEngine {
             s.has("photo") -> photo(r, s, p)
             s.has("request") -> request(r, s, p)
             s.has("kiosk") -> kiosk(r, p)
+            s.has("shell") -> shell(r, s, p)
             s.has("listen") -> listenStep(r, s, p)
             s.has("set") -> setStep(r, s, p)
             s.has("start") -> startApp(r, s, p)
@@ -910,6 +911,72 @@ object TaskEngine {
         val end = System.currentTimeMillis() + 3_000
         while (!MainActivity.isVisible() && System.currentTimeMillis() < end) { Thread.sleep(100); check(r) }
         log(r, p, if (MainActivity.isVisible()) "киоск на экране" else "киоск не вышел на экран за 3 с (проверьте «Поверх других окон» в окне настроек)")
+    }
+
+    /**
+     * Команды оболочки (по очереди). Без root — `sh -c` от имени приложения, с root=true — `su -c`. Сбой запуска и тайм-аут задачу не роняют:
+     * assign ложно (код не 0 или не запустилось), body — stdout, error — stderr, code — код возврата последней команды (-1, если не запустилась или убита по тайм-ауту).
+     */
+    private fun shell(r: Run, s: JSONObject, p: String) {
+        val cmds = when (val v = s.opt("shell")) {
+            is JSONArray -> (0 until v.length()).map { v.optString(it) }
+            else -> listOf(s.optString("shell"))
+        }
+        val root = s.optBoolean("root", false)
+        val tmoMs = if (s.has("timeout")) Dur.parse(s.opt("timeout"), "timeout").sample(r.rnd) else 5_000L
+        val nOk = s.optString("assign"); val nBody = s.optString("body"); val nCode = s.optString("code"); val nErr = s.optString("error")
+        if (r.info.dry) {
+            log(r, p, "shell${if (root) " (root)" else ""}: ${cmds.size} команд(ы), в пробном запуске не выполняется (значения берутся из assume)")
+            if (nOk.isNotEmpty()) r.vars[nOk] = r.assume[nOk] != false
+            if (nBody.isNotEmpty()) r.vars[nBody] = r.assume[nBody]?.toString() ?: ""
+            if (nCode.isNotEmpty()) r.vars[nCode] = (r.assume[nCode] as? Number)?.toInt() ?: 0
+            if (nErr.isNotEmpty()) r.vars[nErr] = r.assume[nErr]?.toString() ?: ""
+            return
+        }
+        var all = true
+        var lastCode = 0
+        var lastOut = ""
+        var lastErr = ""
+        for ((i, raw) in cmds.withIndex()) {
+            check(r)
+            val cmd = fill(r, raw, Sh::quote)
+            log(r, p, "shell${if (root) " (root)" else ""}${if (cmds.size > 1) " ${i + 1}/${cmds.size}" else ""}: $cmd, ждать до ${tmoMs / 1000} с")
+            var code = -1
+            var out = ""
+            var err = ""
+            val t0 = System.currentTimeMillis()
+            try {
+                val proc = ProcessBuilder(if (root) listOf("su", "-c", cmd) else listOf("sh", "-c", cmd)).redirectErrorStream(false).start()
+                proc.outputStream.close()
+                val po = StringBuilder(); val pe = StringBuilder()
+                fun drain(st: java.io.InputStream, sb: StringBuilder) = Thread {
+                    try {
+                        val buf = ByteArray(1024)
+                        val keep = java.io.ByteArrayOutputStream()
+                        while (true) { val n = st.read(buf); if (n < 0) break; if (keep.size() < 4096) keep.write(buf, 0, minOf(n, 4096 - keep.size())) }
+                        synchronized(sb) { sb.append(keep.toString("UTF-8")) }
+                    } catch (e: Exception) { }
+                }.also { it.isDaemon = true; it.start() }
+                val to = drain(proc.inputStream, po); val te = drain(proc.errorStream, pe)
+                val end = t0 + tmoMs
+                var done = false
+                while (System.currentTimeMillis() < end) { if (proc.waitFor(100, java.util.concurrent.TimeUnit.MILLISECONDS)) { done = true; break }; try { check(r) } catch (e: Throwable) { proc.destroyForcibly(); throw e } }
+                if (done) { code = proc.exitValue(); to.join(500); te.join(500) } else { proc.destroyForcibly(); err = "не завершилась за ${tmoMs / 1000} с, остановлена" }
+                val outText = synchronized(po) { po.toString().trimEnd() }
+                val errText = synchronized(pe) { pe.toString().trimEnd() }
+                out = outText
+                err = if (err.isEmpty()) errText else (errText + "\n" + err).trim()
+            } catch (e: java.io.IOException) {
+                err = (if (root) "не удалось запустить su (нет root-прав?): " else "не удалось запустить: ") + (e.message ?: e.javaClass.simpleName)
+            }
+            lastCode = code; lastOut = out; lastErr = err
+            if (code != 0) all = false
+            log(r, p, "shell: код $code за ${System.currentTimeMillis() - t0} мс" + (if (out.isNotEmpty()) ", вывод: ${out.take(4096)}" else "") + (if (err.isNotEmpty()) ", ошибки: ${err.take(4096)}" else ""))
+        }
+        if (nOk.isNotEmpty()) r.vars[nOk] = all
+        if (nBody.isNotEmpty()) r.vars[nBody] = lastOut
+        if (nCode.isNotEmpty()) r.vars[nCode] = lastCode
+        if (nErr.isNotEmpty()) r.vars[nErr] = lastErr
     }
 
     private fun urlEnc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")

@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "kiosk", "listen", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "shell", "kiosk", "listen", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
@@ -48,6 +48,7 @@ object Script {
         "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
         "telegram" to listOf("files", "confirm", "assign"),
         "photo" to listOf("assign", "size"),
+        "shell" to listOf("root", "timeout", "assign", "body", "code", "error"),
         "request" to listOf("post", "method", "type", "header", "proxy", "timeout", "assign", "body", "code"),
         "kiosk" to emptyList(),
         "listen" to listOf("for"),
@@ -281,6 +282,16 @@ object Script {
                     } else {
                         if (pv !is Q) fail(l.no, "request: адрес нужно написать в кавычках, например request \"http://192.168.1.5/on\"")
                         s.put("request", pv.s)
+                    }
+                }
+                "shell" -> {
+                    if (pv == null) fail(l.no, "shell: нужна команда в кавычках, например shell \"ping -c1 192.168.1.1\" или список команд shell [\"cmd1\", \"cmd2\"]")
+                    if (pv is List<*>) {
+                        if (pv.isEmpty() || pv.any { it !is Q }) fail(l.no, "shell: в списке должны быть команды в кавычках, например shell [\"cmd1\", \"cmd2\"]")
+                        s.put("shell", JSONArray().also { a -> pv.forEach { a.put((it as Q).s) } })
+                    } else {
+                        if (pv !is Q) fail(l.no, "shell: команду нужно написать в кавычках, например shell \"ping -c1 192.168.1.1\"")
+                        s.put("shell", pv.s)
                     }
                 }
                 "kiosk" -> s.put("kiosk", unwrap(pv ?: fail(l.no, "kiosk: нужно действие, например kiosk show")))
