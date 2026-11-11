@@ -136,6 +136,33 @@ object Voice {
         }
     }
 
+    private fun apply(t: TextToSpeech, cfg: JSONObject?): String? {
+        val lang = cfg?.optString("lang").orEmpty().ifEmpty { "ru-RU" }
+        val r = t.setLanguage(Locale.forLanguageTag(lang.replace('_', '-')))
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            return "для языка $lang нет голоса: установите его в настройках устройства (Язык и ввод, Синтез речи) или выберите другой язык в voice.lang"
+        }
+        val name = cfg?.optString("voice").orEmpty()
+        if (name.isNotEmpty()) {
+            val v = t.voices?.firstOrNull { it.name == name } ?: return "голос «$name» не найден (список на вкладке «Звук»)"
+            t.voice = v
+        }
+        t.setSpeechRate((cfg?.optInt("rate", 100) ?: 100) / 100f)
+        t.setPitch((cfg?.optInt("pitch", 100) ?: 100) / 100f)
+        return null
+    }
+
+    /** Синтезатор сейчас говорит. */
+    fun isSpeaking(): Boolean = speaking > 0
+
+    /** Сколько миллисекунд прошло с конца последней речи (0, пока говорит): слушатель команд ждёт, пока смолкнет эхо. */
+    fun msSinceSpeech(): Long = if (speaking > 0) 0L else System.currentTimeMillis() - lastUse
+
+    /**
+     * Произносит текст и ждёт конца. В тексте можно писать паузы {pause:5s} (длительность или диапазон «2s..5s»):
+     * текст режется на куски, между ними выдерживается пауза (её отмеряем сами, поэтому она одинакова у любого движка
+     * речи и обрывается по [cancel]). Возвращает текст ошибки или null.
+     */
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
         speaking++
         try {
