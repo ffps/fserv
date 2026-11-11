@@ -47,7 +47,8 @@ object NoticeText {
     const val MAX_LEN = 1000
 
     /** Имя в фигурных скобках: переменная либо путь settings./info. (допускается индекс: ips[0] или ips.0). */
-    val TPL = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+|\[\d+])+|[A-Za-z_][A-Za-z0-9_]*)}""")
+    // Android (ICU) требует экранировать и закрывающие } и ]: на JVM без экранирования проходит, на устройстве — PatternSyntaxException
+    val TPL = Regex("""\{((?:settings|info)(?:\.[A-Za-z0-9_]+|\[\d+\])+|[A-Za-z_][A-Za-z0-9_]*)\}""")
 
     /** Текст ошибки или null. */
     fun validate(t: Type, text: String): String? {

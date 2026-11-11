@@ -21,7 +21,7 @@ object SettingsPath {
     const val INFO_PREFIX = "info."
 
     /** Значение по пути [path] или null, если такого нет. Числа в путях — номера в списках. */
-    private val INDEX_RE = Regex("""\[(\d+)]""")
+    private val INDEX_RE = Regex("""\[(\d+)\]""")
 
     fun lookup(root: JSONObject, path: String): Any? {
         var cur: Any? = root
