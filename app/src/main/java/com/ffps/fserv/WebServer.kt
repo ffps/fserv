@@ -48,6 +48,8 @@ class WebServer(private val ctx: Context, port: Int, private val secure: Boolean
         val post = s.method == Method.POST
 
         if (get && uri == "/health") return health()
+        // значок страницы браузер запрашивает без входа: отвечаем пустым успехом, чтобы не засорять журнал предупреждениями о доступе
+        if (get && uri == "/favicon.ico") return newFixedLengthResponse(Response.Status.NO_CONTENT, "image/x-icon", "")
         if (get && uri == "/login") {
             if (authorized(s)) return redirect("/")
             return text(Response.Status.OK, "text/html", defaultHtml("login"))

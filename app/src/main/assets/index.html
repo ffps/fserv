@@ -335,7 +335,7 @@
     <button class="btn sec" id="ntDef">По умолчанию</button>
   </div>
   <div class="msg" id="ntMsg"></div>
-  <p class="hint">Сообщение уходит как HTML (<code>&lt;b&gt;жирный&lt;/b&gt;</code>), подставляемые значения экранируются. Кроме перечисленных подстановок доступны <code>{time}</code>, <code>{date}</code>, <code>{info.путь}</code> (например <code>{info.device.model}</code>, <code>{info.device.ips[0]}</code>) и <code>{settings.путь}</code>. «Тест» отправляет текст из поля с образцами значений, без сохранения. Пустое поле — текст по умолчанию. Задача с <code>notify=false</code> не шлёт уведомления об ошибке и недоступности речи.</p>
+  <p class="hint">Сообщение уходит как HTML (<code>&lt;b&gt;жирный&lt;/b&gt;</code>), подставляемые значения экранируются. Кроме перечисленных подстановок доступны <code>{time}</code>, <code>{date}</code>, <code>{info.путь}</code> (например <code>{info.device.model}</code>, <code>{info.device.ips[0]}</code>) и <code>{settings.путь}</code>. «Тест» отправляет текст из поля с образцами значений, без сохранения. Пустое поле — текст по умолчанию. Параметр задачи <code>notify=true</code> или <code>notify=false</code>, если он задан, сильнее галочки «Активно» для уведомлений об ошибке и недоступности речи.</p>
   <h2 style="margin-top:22px">Очередь отправки</h2>
   <table><thead><tr><th>Создано</th><th>Текст</th><th>Попыток</th><th>Следующая</th><th>Ошибка</th></tr></thead><tbody id="obBody"></tbody></table>
   <div class="row" style="margin-top:10px"><button class="ib del" id="obClear" title="Очистить очередь"></button></div>

@@ -32,9 +32,11 @@ object Notices {
     }
 
     /** Ставит уведомление в очередь Telegram, если оно включено; возвращает id или null. Не бросает исключений: уведомление не должно ронять задачу. */
-    fun send(ctx: Context, id: String, vars: Map<String, String>): Long? {
+    fun send(ctx: Context, id: String, vars: Map<String, String>, force: Boolean? = null): Long? {
         val t = NoticeText.byId(id) ?: return null
-        if (!isOn(id)) { FLog.d("telegram", "уведомление «${t.title}» выключено, не отправляю"); return null }
+        // force — notify задачи, заданный явно: true отправляет даже при снятой галочке, false не отправляет даже при включённой; null — решает галочка
+        val on = force ?: isOn(id)
+        if (!on) { FLog.d("telegram", "уведомление «${t.title}» ${if (force == false) "выключено параметром notify=false задачи" else "выключено"}, не отправляю"); return null }
         return try { Telegram.enqueue(render(ctx, text(id), vars)) } catch (e: Exception) { FLog.w("telegram", "уведомление «${t.title}» не поставлено: ${e.message}"); null }
     }
 

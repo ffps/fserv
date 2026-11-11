@@ -345,9 +345,16 @@ object TaskEngine {
             info.status = "timeout"; info.message = "не уложилась в timeout (${Dur.human(timeout)})"
         } catch (e: StepError) {
             info.status = "error"; info.message = "шаг ${info.step}: ${e.message}"
+        } catch (e: InterruptedException) {
+            // служба остановлена или перезапущена (stop() прерывает рабочий поток): это не ошибка задачи
+            info.status = "cancelled"; info.message = "прервана остановкой или перезапуском службы"
         } catch (e: Throwable) {
-            FLog.e("task", "задача $title", e)
-            info.status = "error"; info.message = "шаг ${info.step}: ${e.javaClass.simpleName}: ${e.message}"
+            if (run.cancelled) {
+                info.status = "cancelled"; info.message = run.preemptedBy?.let { "прервана задачей «$it» (preempt)" } ?: "остановлена вручную"
+            } else {
+                FLog.e("task", "задача $title", e)
+                info.status = "error"; info.message = "шаг ${info.step}: ${e.javaClass.simpleName}: ${e.message}"
+            }
         } finally {
             cleanup(run)
             info.endedAt = System.currentTimeMillis()
@@ -357,9 +364,8 @@ object TaskEngine {
         val endMsg = "Задача «$title» завершена: ${info.status}${if (info.message.isNotEmpty()) " (${info.message})" else ""}"
         if (info.status == "error" || info.status == "timeout") FLog.e("task", endMsg) else FLog.i("task", endMsg)
         if (!req.dry && (req.source == "cron" || req.source == "voice") && (info.status == "error" || info.status == "timeout")) {
-            if (run.task.optBoolean("notify", true)) {
-                Notices.send(run.ctx, "taskError", mapOf("task" to title, "message" to info.message, "status" to info.status, "source" to req.source, "duration" to Dur.human(info.endedAt - info.startedAt)))
-            } else FLog.d("task", "«$title»: notify=false, уведомление об ошибке не отправлено")
+            // notify у задачи, заданный явно, сильнее общей галочки на вкладке «Связь»; не задан — действует она
+            Notices.send(run.ctx, "taskError", mapOf("task" to title, "message" to info.message, "status" to info.status, "source" to req.source, "duration" to Dur.human(info.endedAt - info.startedAt)), run.task.opt("notify") as? Boolean)
         }
     }
 
@@ -685,7 +691,7 @@ object TaskEngine {
         if (r.info.message.isEmpty()) r.info.message = "речь недоступна: $err"
         if (!r.info.dry && !r.speechWarned && (r.info.source == "cron" || r.info.source == "voice")) {
             r.speechWarned = true
-            if (r.task.optBoolean("notify", true)) Notices.send(r.ctx, "speech", mapOf("task" to r.title(), "error" to err))
+            Notices.send(r.ctx, "speech", mapOf("task" to r.title(), "error" to err), r.task.opt("notify") as? Boolean)
         }
     }
 
