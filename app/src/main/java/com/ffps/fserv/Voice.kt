@@ -36,71 +36,106 @@ object Voice {
         app = ctx.applicationContext
     }
 
+    private const val INIT_WAIT_SEC = 15L // столько ждёт готовности один вызов
+    private const val INIT_ABANDON_MS = 90_000L // дольше этого запуск считается зависшим: синтезатор пересоздаём
+
+    @Volatile private var initLatch = CountDownLatch(0)
+    @Volatile private var initStartedAt = 0L
+    @Volatile private var initDoneAfterMs = -1L
+    private val gaveUp = java.util.concurrent.ConcurrentHashMap<String, Long>() // фразы, которых не дождались: id -> время вызова
+    @Volatile private var listenerOwner: TextToSpeech? = null
+
+    private val progress = object : UtteranceProgressListener() {
+        override fun onStart(id: String?) {
+            if (id == null) return
+            val gave = gaveUp.remove(id)
+            if (gave != null) { FLog.d("voice", "речь началась с опозданием на ${(System.currentTimeMillis() - gave) / 1000} с (мы уже сдались)"); return }
+            startedAt[id] = System.currentTimeMillis()
+        }
+        override fun onDone(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
+        override fun onStop(id: String?, interrupted: Boolean) { id?.let { waiting.remove(it)?.countDown() } }
+        @Deprecated("Deprecated in Java")
+        override fun onError(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
+        override fun onError(id: String?, code: Int) { id?.let { waiting.remove(it)?.countDown() } }
+    }
+
+    /** Прослушиватель событий речи должен стоять на любом готовом синтезаторе, иначе не приходят «началась» и «закончилась». */
+    private fun attachListener(t: TextToSpeech) {
+        if (listenerOwner === t) return
+        t.setOnUtteranceProgressListener(progress)
+        listenerOwner = t
+    }
+
+    /** Сбрасывает синтезатор: при следующей речи создаётся заново. */
+    private fun reset(why: String) {
+        synchronized(lock) {
+            FLog.d("voice", "синтезатор сброшен: $why")
+            try { tts?.shutdown() } catch (e: Exception) {}
+            tts = null; initStatus = -2; listenerOwner = null
+        }
+    }
+
     /** Создаёт синтезатор (в главном потоке) и ждёт готовности. Возвращает текст ошибки или null. */
     private fun ensure(): String? {
         synchronized(lock) {
-            if (tts != null && initStatus == 0) return null
-            if (tts == null || initStatus != -2) {
+            val cur = tts
+            if (cur != null && initStatus == 0) { attachListener(cur); return null }
+            if (cur != null && initStatus == -2) {
+                // запуск идёт (движок отвечает медленно, например сразу после обновления приложения): дожидаемся, а не создаём второй
+                val age = System.currentTimeMillis() - initStartedAt
+                if (age < INIT_ABANDON_MS) {
+                    initLatch.await(INIT_WAIT_SEC, TimeUnit.SECONDS)
+                    if (initStatus == 0) { tts?.let { attachListener(it) }; return null }
+                    if (initStatus == -2) return "синтезатор речи ещё запускается (${(System.currentTimeMillis() - initStartedAt) / 1000} с)"
+                } else {
+                    FLog.d("voice", "синтезатор не запустился за ${age / 1000} с, создаю заново")
+                    try { cur.shutdown() } catch (e: Exception) {}
+                    tts = null
+                }
+            }
+            if (tts == null || initStatus == -1) {
                 try { tts?.shutdown() } catch (e: Exception) {}
-                tts = null
+                tts = null; listenerOwner = null
                 initStatus = -2
+                initDoneAfterMs = -1L
                 val latch = CountDownLatch(1)
+                initLatch = latch
+                initStartedAt = System.currentTimeMillis()
+                val started = initStartedAt
+                val holder = arrayOfNulls<TextToSpeech>(1)
                 Handler(Looper.getMainLooper()).post {
                     try {
-                        tts = TextToSpeech(app) { status ->
-                            initStatus = if (status == TextToSpeech.SUCCESS) 0 else -1
+                        holder[0] = TextToSpeech(app) { status ->
+                            val ms = System.currentTimeMillis() - started
+                            if (status == TextToSpeech.SUCCESS) {
+                                // слушатель ставим сразу в обратном вызове: он мог прийти уже после того, как вызывающий перестал ждать
+                                (holder[0] ?: tts)?.let { attachListener(it) }
+                                initDoneAfterMs = ms
+                                initStatus = 0
+                                FLog.d("voice", "синтезатор готов за $ms мс" + if (ms > INIT_WAIT_SEC * 1000) " (инициализация закончилась после ожидания, слушатель установлен)" else "")
+                            } else {
+                                initStatus = -1
+                                FLog.d("voice", "синтезатор: ошибка запуска, код $status, через $ms мс")
+                            }
                             latch.countDown()
                         }
+                        tts = holder[0]
                     } catch (e: Exception) {
                         initStatus = -1
+                        FLog.d("voice", "синтезатор: не удалось создать: ${e.javaClass.simpleName}: ${e.message}")
                         latch.countDown()
                     }
                 }
-                if (!latch.await(15, TimeUnit.SECONDS)) return "синтезатор речи не запустился за 15 с"
+                if (!latch.await(INIT_WAIT_SEC, TimeUnit.SECONDS)) return "синтезатор речи не запустился за ${INIT_WAIT_SEC} с (запуск продолжается, повторите позже)"
                 if (initStatus != 0) {
                     tts = null
                     return "синтезатор речи недоступен (на устройстве не установлен движок TextToSpeech)"
                 }
-                tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) { id?.let { startedAt[it] = System.currentTimeMillis() } }
-                    override fun onDone(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
-                    override fun onStop(id: String?, interrupted: Boolean) { id?.let { waiting.remove(it)?.countDown() } }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(id: String?) { id?.let { waiting.remove(it)?.countDown() } }
-                    override fun onError(id: String?, code: Int) { id?.let { waiting.remove(it)?.countDown() } }
-                })
             }
             return null
         }
     }
 
-    private fun apply(t: TextToSpeech, cfg: JSONObject?): String? {
-        val lang = cfg?.optString("lang").orEmpty().ifEmpty { "ru-RU" }
-        val r = t.setLanguage(Locale.forLanguageTag(lang.replace('_', '-')))
-        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-            return "для языка $lang нет голоса: установите его в настройках устройства (Язык и ввод, Синтез речи) или выберите другой язык в voice.lang"
-        }
-        val name = cfg?.optString("voice").orEmpty()
-        if (name.isNotEmpty()) {
-            val v = t.voices?.firstOrNull { it.name == name } ?: return "голос «$name» не найден (список на вкладке «Звук»)"
-            t.voice = v
-        }
-        t.setSpeechRate((cfg?.optInt("rate", 100) ?: 100) / 100f)
-        t.setPitch((cfg?.optInt("pitch", 100) ?: 100) / 100f)
-        return null
-    }
-
-    /** Синтезатор сейчас говорит. */
-    fun isSpeaking(): Boolean = speaking > 0
-
-    /** Сколько миллисекунд прошло с конца последней речи (0, пока говорит): слушатель команд ждёт, пока смолкнет эхо. */
-    fun msSinceSpeech(): Long = if (speaking > 0) 0L else System.currentTimeMillis() - lastUse
-
-    /**
-     * Произносит текст и ждёт конца. В тексте можно писать паузы {pause:5s} (длительность или диапазон «2s..5s»):
-     * текст режется на куски, между ними выдерживается пауза (её отмеряем сами, поэтому она одинакова у любого движка
-     * речи и обрывается по [cancel]). Возвращает текст ошибки или null.
-     */
     fun speak(text: String, volumePct: Int?, cfg: JSONObject?, cancel: () -> Boolean): String? {
         speaking++
         try {
@@ -168,7 +203,10 @@ object Voice {
                         // движок принял фразу, но не начал говорить (завис, нет голоса): не ждём, при следующей речи синтезатор создаётся заново
                         try { t.stop() } catch (e: Exception) {}
                         waiting.remove(id)
-                        synchronized(lock) { try { tts?.shutdown() } catch (e: Exception) {}; tts = null; initStatus = -1 }
+                        gaveUp[id] = tCall
+                        if (gaveUp.size > 20) gaveUp.clear()
+                        FLog.d("voice", "синтезатор не начал говорить: слушатель событий ${if (listenerOwner === t) "стоит" else "НЕ стоял"}, запуск занял ${initDoneAfterMs} мс")
+                        reset("не начал говорить за ${START_TIMEOUT_MS / 1000} с")
                         return "синтезатор не начал говорить за ${START_TIMEOUT_MS / 1000} с (движок речи не отвечает)"
                     }
                     if (System.currentTimeMillis() > end) { try { t.stop() } catch (e: Exception) {}; waiting.remove(id); return "речь не закончилась за 5 минут" }
@@ -219,7 +257,12 @@ object Voice {
             return
         }
         val done = latch.await(20, TimeUnit.SECONDS)
-        if (!done) waiting.remove(id)
+        if (!done) {
+            waiting.remove(id)
+            // сильнее простого повтора: зависший синтезатор сбрасываем, следующая попытка (прогрев или речь) создаёт его заново
+            FLog.d("voice", "прогрев ($reason): слушатель событий ${if (listenerOwner === t) "стоит" else "НЕ стоял"}, запуск занял ${initDoneAfterMs} мс")
+            reset("прогрев не получил ответа за 20 с")
+        }
         startedAt.remove(id)
         f.delete()
         lastUse = System.currentTimeMillis()
