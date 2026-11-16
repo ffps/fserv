@@ -114,6 +114,8 @@ class MainActivity : Activity() {
 
     // ---------------- слайд поверх киоска (шаг slide) ----------------
 
+    private val SLIDE_TAG = "fserv-slide"
+
     private fun showSlideUi(spec: Slide.Spec) {
         var w = slideWeb
         if (w == null) {
@@ -143,14 +145,18 @@ class MainActivity : Activity() {
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
+                        // страница могла догрузиться уже после скрытия слайда: чужой (отпущенный) вид не показываем
+                        if (view !== slideWeb) return
                         val sp = slideSpec ?: return
                         if (sp.fadeInMs > 0) view?.animate()?.alpha(1f)?.setDuration(sp.fadeInMs)?.start() else view?.alpha = 1f
                     }
                 }
             }
+            w.tag = SLIDE_TAG
             slideWeb = w
             root.addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
+        removeStraySlides(w)
         slideSpec = spec
         gestures(w, if (spec.tapHide) ({ Slide.off() }) else null)
         w.animate().cancel()
@@ -162,10 +168,22 @@ class MainActivity : Activity() {
         w.loadUrl("https://slide.local/slide.html?f=" + java.net.URLEncoder.encode(spec.file, "UTF-8") + "&fit=" + spec.fit + "&bg=" + java.net.URLEncoder.encode(spec.bg, "UTF-8"))
     }
 
+    /** Убирает слайдовые виды, на которые уже никто не ссылается (остались после быстрого показа и скрытия). */
+    private fun removeStraySlides(keep: View?) {
+        for (i in root.childCount - 1 downTo 0) {
+            val v = root.getChildAt(i)
+            if (v !== keep && v.tag == SLIDE_TAG) {
+                try { v.animate().cancel(); root.removeView(v); (v as? WebView)?.destroy() } catch (e: Exception) {}
+            }
+        }
+    }
+
     private fun hideSlideUi() {
-        val w = slideWeb ?: return
-        val out = slideSpec?.fadeOutMs ?: 0L
+        val w = slideWeb
+        if (w == null) { removeStraySlides(null); return } // слайда нет, но мог остаться брошенный вид: slide off его убирает
+        val out = if (w.alpha > 0f) (slideSpec?.fadeOutMs ?: 0L) else 0L // не успел показаться: затухать нечему
         slideWeb = null
+        slideSpec = null
         // яркость возвращается сразу: затухание картинки её не касается
         val lp = window.attributes
         lp.screenBrightness = savedBrightness
