@@ -407,6 +407,13 @@ object TaskSchema {
                 c.inBg = true
                 try { steps(body, c, depth + 1)?.let { return it } } finally { c.inBg = was }
             }
+            "flash" -> {
+                if (s.has("for")) {
+                    val d = try { Dur.parse(s.opt("for"), "for") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "for") }
+                    if (d.minMs <= 0) return e("flash: for — длительность больше нуля, например for=1s")
+                    if (d.maxMs > 10_000) return e("flash: for — не больше 10s")
+                }
+            }
             "delay" -> try { Dur.parse(v, "delay") } catch (ex: IllegalArgumentException) { return e(ex.message ?: "delay") }
             "play" -> {
                 val names = when (v) {

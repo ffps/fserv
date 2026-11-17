@@ -48,6 +48,7 @@ class MainActivity : Activity() {
         override fun run() { updateCallButton(); handler.postDelayed(this, 1500) }
     }
     private var slideSpec: Slide.Spec? = null
+    private var flashView: View? = null
     private var savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
     private val handler = Handler(Looper.getMainLooper())
     private val retry = Runnable { loadKiosk(false) }
@@ -119,7 +120,7 @@ class MainActivity : Activity() {
     private fun showSlideUi(spec: Slide.Spec) {
         var w = slideWeb
         if (w == null) {
-            savedBrightness = window.attributes.screenBrightness
+            if (flashView == null) savedBrightness = window.attributes.screenBrightness
             w = WebView(this).apply {
                 setBackgroundColor(Color.BLACK)
                 settings.javaScriptEnabled = true
@@ -162,8 +163,9 @@ class MainActivity : Activity() {
         w.animate().cancel()
         w.alpha = 0f
         val lp = window.attributes
-        lp.screenBrightness = spec.brightness?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: savedBrightness
+        lp.screenBrightness = if (flashView != null) 1f else spec.brightness?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: savedBrightness
         slideBrightness = spec.brightness
+        flashView?.bringToFront()
         window.attributes = lp
         w.loadUrl("https://slide.local/slide.html?f=" + java.net.URLEncoder.encode(spec.file, "UTF-8") + "&fit=" + spec.fit + "&bg=" + java.net.URLEncoder.encode(spec.bg, "UTF-8"))
     }
@@ -178,6 +180,31 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Белый слой на весь экран при яркости 100%; запоминает яркость, какая была (или какую держит слайд). */
+    private fun showFlashUi() {
+        if (flashView == null) {
+            if (slideWeb == null) savedBrightness = window.attributes.screenBrightness
+            val v = View(this).apply { setBackgroundColor(Color.WHITE); isClickable = true }
+            root.addView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            flashView = v
+        }
+        flashView?.bringToFront()
+        val lp = window.attributes
+        lp.screenBrightness = 1f
+        window.attributes = lp
+    }
+
+    private fun hideFlashUi() {
+        val v = flashView ?: return
+        flashView = null
+        try { root.removeView(v) } catch (e: Exception) {}
+        val lp = window.attributes
+        val sp = slideSpec
+        val sb = if (slideWeb != null) sp?.brightness else null
+        lp.screenBrightness = if (sb != null) (sb / 100f).coerceIn(0.01f, 1f) else savedBrightness
+        window.attributes = lp
+    }
+
     private fun hideSlideUi() {
         val w = slideWeb
         if (w == null) { removeStraySlides(null); return } // слайда нет, но мог остаться брошенный вид: slide off его убирает
@@ -186,7 +213,7 @@ class MainActivity : Activity() {
         slideSpec = null
         // яркость возвращается сразу: затухание картинки её не касается
         val lp = window.attributes
-        lp.screenBrightness = savedBrightness
+        lp.screenBrightness = if (flashView != null) 1f else savedBrightness
         slideBrightness = null
         window.attributes = lp
         val finish = Runnable { try { root.removeView(w); w.destroy() } catch (e: Exception) {} }
@@ -472,6 +499,16 @@ class MainActivity : Activity() {
         }
 
         fun callStop() { current?.let { a -> a.runOnUiThread { a.callStopUi() } } }
+
+        /** Показать белую вспышку (из любого потока). false — киоск не на переднем плане. */
+        fun showFlash(): Boolean {
+            val a = current ?: return false
+            if (!(resumed && focused)) return false
+            a.runOnUiThread { a.showFlashUi() }
+            return true
+        }
+
+        fun hideFlash() { current?.let { a -> a.runOnUiThread { a.hideFlashUi() } } }
 
         fun hideSlide() { current?.let { a -> a.runOnUiThread { a.hideSlideUi() } } }
 

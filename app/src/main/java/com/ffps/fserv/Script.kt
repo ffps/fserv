@@ -37,7 +37,7 @@ object Script {
     /** Результат разбора: дерево, номера строк узлов и расположение задач в тексте. */
     class Parsed(val root: JSONObject, val lines: IdentityHashMap<Any, Int>, val tasks: List<TaskSpan>)
 
-    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "photo", "telegram", "request", "shell", "kiosk", "listen", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
+    val ACTIONS = listOf("say", "ask", "chat", "play", "slide", "flash", "photo", "telegram", "request", "shell", "kiosk", "listen", "start", "set", "delay", "watch", "background", "stop_background", "if", "repeat", "stop", "log")
 
     /** Параметры (после первого аргумента), допустимые у каждого действия. */
     val PARAMS = mapOf(
@@ -46,6 +46,7 @@ object Script {
         "chat" to listOf("for", "turns", "assign", "alert", "ok", "from", "volume"),
         "play" to listOf("volume", "fade_in", "fade_out", "for", "loop", "wait", "pause"),
         "slide" to listOf("for", "fit", "bg", "brightness", "fade_in", "fade_out", "tap"),
+        "flash" to listOf("for"),
         "telegram" to listOf("files", "confirm", "assign"),
         "photo" to listOf("assign", "size"),
         "shell" to listOf("root", "timeout", "assign", "body", "code", "error"),
@@ -258,7 +259,7 @@ object Script {
                 noChildren(l, level, "set")
                 return s
             }
-            val a = args(l, rest, word !in setOf("photo", "background", "stop_background"))
+            val a = args(l, rest, word !in setOf("photo", "flash", "background", "stop_background"))
             if (a.extra != null) fail(l.no, "лишнее значение у $word: параметры пишутся как ключ=значение")
             pos++
             val pv = a.positional
@@ -310,6 +311,7 @@ object Script {
                 "slide" -> s.put("slide", unwrap(pv ?: fail(l.no, "slide: нужно имя файла со вкладки «Слайды» или off, например slide hello.svg for=5s")))
                 "delay" -> s.put("delay", unwrap(pv ?: fail(l.no, "delay: нужна длительность, например delay 10s")))
                 "photo" -> s.put("photo", true)
+                "flash" -> s.put("flash", true)
                 "stop_background" -> s.put("stop_background", true)
                 "background" -> {}
                 "watch" -> {

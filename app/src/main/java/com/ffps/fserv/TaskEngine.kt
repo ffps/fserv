@@ -373,6 +373,7 @@ object TaskEngine {
         r.cancelled = true
         r.bg.forEach { try { it.join(2000) } catch (e: Exception) {} }
         for (t in r.slideTokens) Slide.release(t)
+        if (r.info.status == "cancelled") Flash.off() // остановка вручную или вытеснение гасит вспышку сразу; иначе она гаснет по своему сроку
         Voice.stop()
         Stt.touch()
         CameraEngine.setOverride(null)
@@ -480,6 +481,7 @@ object TaskEngine {
             s.has("chat") -> chat(r, s, p)
             s.has("play") -> play(r, s, p)
             s.has("slide") -> slide(r, s, p)
+            s.has("flash") -> flash(r, s, p)
             s.has("photo") -> photo(r, s, p)
             s.has("request") -> request(r, s, p)
             s.has("kiosk") -> kiosk(r, p)
@@ -836,6 +838,17 @@ object TaskEngine {
         if (token == 0) { log(r, p, "слайд не показан: киоск не на переднем плане"); FLog.i("task", "«${r.title()}»: слайд не показан, киоск не на переднем плане"); return }
         slideScope.get()?.add(token)
         r.slideTokens.add(token)
+    }
+
+    /** Белый экран на полной яркости: flash [for=1s]. Не блокирует; гаснет сам по for (до 10 с), конец задачи его не обрывает. */
+    private fun flash(r: Run, s: JSONObject, p: String) {
+        val forMs = (if (s.has("for")) Dur.parse(s.opt("for"), "for").sample(r.rnd) else 1000L).coerceIn(1L, 10_000L)
+        log(r, p, "flash: ${Dur.human(forMs)}" + if (r.info.dry) " (в пробном запуске не показывается)" else "")
+        if (r.info.dry) return
+        when (Flash.show(forMs)) {
+            0 -> log(r, p, "вспышка не показана: киоск не на переднем плане")
+            -1 -> log(r, p, "вспышка пропущена: между вспышками пауза не меньше ${Flash.MIN_GAP_MS / 1000} с")
+        }
     }
 
     private val SECRET_PATH = Regex("""(^|\.)(password|token|key)$""", RegexOption.IGNORE_CASE)

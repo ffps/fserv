@@ -326,6 +326,18 @@ class ScriptTest {
         assertEquals("мои правила", ok.root.getJSONObject("chat").getString("rules"))
     }
 
+    @Test fun flashStep() {
+        assertNull(Script.validate(task("flash")))
+        assertNull(Script.validate(task("flash for=3s")))
+        assertNull(Script.validate(task("flash for=1s..2s")))
+        assertNull(Script.validate(task("background\n    flash for=1s")))
+        expect(task("flash for=11s"), "10s")
+        expect(task("flash for=5s..20s"), "10s")
+        expect(task("flash for=0s"), "больше нуля")
+        expect(task("flash x=1"), "flash")
+        expect(task("flash \"a\""), "лишнее значение")
+    }
+
     @Test fun slideStep() {
         assertNull(Script.validate(task("slide hello.svg")))
         assertNull(Script.validate(task("slide [\"hello.svg\",\"hi.gif\"] for=5s fit=contain bg=auto brightness=90 fade_in=1s fade_out=2s tap=hide")))
