@@ -12,7 +12,7 @@ object SettingsPath {
     val PATH_RE = Regex("""[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*""")
 
     /** Значения, которые приложение вычисляет само: читаются, но не записываются. */
-    val READ_ONLY = setOf("passwordSet", "telegram.tokenSet", "telegram.tokenHint", "chat.defaultRules")
+    val READ_ONLY = setOf("screen.brightness.system", "screen.brightness.current", "passwordSet", "telegram.tokenSet", "telegram.tokenHint", "chat.defaultRules")
 
     /** Подстановка в тексте: `{settings.путь}`. */
     const val PREFIX = "settings."

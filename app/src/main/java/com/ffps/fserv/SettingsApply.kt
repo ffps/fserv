@@ -8,6 +8,7 @@ object SettingsApply {
     fun apply(ctx: Context, patch: JSONObject): Settings.Result {
         val r = Settings.update(patch)
         if (r.errors.isNotEmpty()) return r
+        if (patch.has("screen")) MainActivity.refreshBrightness()
         if (patch.has("camera")) {
             if (Settings.camera().keepRunning && CameraEngine.hasPermission(ctx)) CameraEngine.start("keep") else CameraEngine.stop("keep")
         }

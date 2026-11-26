@@ -97,7 +97,14 @@ object Info {
             "homeApp" to home,
             "isHome" to (home == ctx.packageName),
             "overlayAllowed" to (android.os.Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(ctx)),
-            "brightness" to systemBrightnessPct(ctx),
+            "brightness" to systemBrightnessPct(ctx).let { sys ->
+                obj(
+                    "system" to sys, // системная яркость, %
+                    "kiosk" to Settings.screenBrightness("kiosk"), // заданная для киоска (null — не задана)
+                    "call" to Settings.screenBrightness("call"), // заданная для звонка (null — не задана)
+                    "current" to (MainActivity.effectiveBrightness() ?: sys) // какая сейчас у экрана с учётом вспышки, звонка и слайда
+                )
+            },
             "autoBrightness" to autoBrightness(ctx),
             "slideBrightness" to MainActivity.slideBrightness
         )

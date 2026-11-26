@@ -49,7 +49,6 @@ class MainActivity : Activity() {
     }
     private var slideSpec: Slide.Spec? = null
     private var flashView: View? = null
-    private var savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
     private val handler = Handler(Looper.getMainLooper())
     private val retry = Runnable { loadKiosk(false) }
     private var onAsset = false
@@ -120,7 +119,6 @@ class MainActivity : Activity() {
     private fun showSlideUi(spec: Slide.Spec) {
         var w = slideWeb
         if (w == null) {
-            if (flashView == null) savedBrightness = window.attributes.screenBrightness
             w = WebView(this).apply {
                 setBackgroundColor(Color.BLACK)
                 settings.javaScriptEnabled = true
@@ -162,11 +160,9 @@ class MainActivity : Activity() {
         gestures(w, if (spec.tapHide) ({ Slide.off() }) else null)
         w.animate().cancel()
         w.alpha = 0f
-        val lp = window.attributes
-        lp.screenBrightness = if (flashView != null) 1f else spec.brightness?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: savedBrightness
         slideBrightness = spec.brightness
         flashView?.bringToFront()
-        window.attributes = lp
+        applyBrightness()
         w.loadUrl("https://slide.local/slide.html?f=" + java.net.URLEncoder.encode(spec.file, "UTF-8") + "&fit=" + spec.fit + "&bg=" + java.net.URLEncoder.encode(spec.bg, "UTF-8"))
     }
 
@@ -180,29 +176,35 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Белый слой на весь экран при яркости 100%; запоминает яркость, какая была (или какую держит слайд). */
+    /**
+     * Яркость окна по приоритетам (см. [Brightness.effective]): вспышка, звонок, слайд с brightness, яркость киоска, иначе системная.
+     * Вызывается при любом изменении этих состояний и настроек.
+     */
+    private fun applyBrightness() {
+        val pct = Brightness.effective(flashView != null, callWeb != null, if (slideWeb != null) slideSpec?.brightness else null,
+            Settings.screenBrightness("kiosk"), Settings.screenBrightness("call"))
+        effective = pct
+        val lp = window.attributes
+        val v = pct?.let { (it / 100f).coerceIn(0.01f, 1f) } ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (lp.screenBrightness != v) { lp.screenBrightness = v; window.attributes = lp }
+    }
+
+    /** Белый слой на весь экран при яркости 100% (яркость пересчитывает applyBrightness). */
     private fun showFlashUi() {
         if (flashView == null) {
-            if (slideWeb == null) savedBrightness = window.attributes.screenBrightness
             val v = View(this).apply { setBackgroundColor(Color.WHITE); isClickable = true }
             root.addView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             flashView = v
         }
         flashView?.bringToFront()
-        val lp = window.attributes
-        lp.screenBrightness = 1f
-        window.attributes = lp
+        applyBrightness()
     }
 
     private fun hideFlashUi() {
         val v = flashView ?: return
         flashView = null
         try { root.removeView(v) } catch (e: Exception) {}
-        val lp = window.attributes
-        val sp = slideSpec
-        val sb = if (slideWeb != null) sp?.brightness else null
-        lp.screenBrightness = if (sb != null) (sb / 100f).coerceIn(0.01f, 1f) else savedBrightness
-        window.attributes = lp
+        applyBrightness()
     }
 
     private fun hideSlideUi() {
@@ -212,10 +214,8 @@ class MainActivity : Activity() {
         slideWeb = null
         slideSpec = null
         // яркость возвращается сразу: затухание картинки её не касается
-        val lp = window.attributes
-        lp.screenBrightness = if (flashView != null) 1f else savedBrightness
         slideBrightness = null
-        window.attributes = lp
+        applyBrightness()
         val finish = Runnable { try { root.removeView(w); w.destroy() } catch (e: Exception) {} }
         w.animate().cancel()
         if (out > 0) w.animate().alpha(0f).setDuration(out).withEndAction(finish).start() else finish.run()
@@ -306,6 +306,8 @@ class MainActivity : Activity() {
         }
         callWeb = w
         root.addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        flashView?.bringToFront()
+        applyBrightness()
         w.loadUrl("https://call.local/call.html")
     }
 
@@ -314,11 +316,13 @@ class MainActivity : Activity() {
         val w = callWeb ?: return
         callWeb = null
         try { w.loadUrl("about:blank"); root.removeView(w); w.destroy() } catch (e: Exception) {}
+        applyBrightness()
     }
 
     override fun onResume() {
         super.onResume()
         resumed = true
+        applyBrightness() // настройка могла измениться, пока киоск был не на экране
     }
 
     override fun onPause() {
@@ -422,6 +426,15 @@ class MainActivity : Activity() {
         /** Яркость окна, заданная показанным слайдом (1..100), либо null (для /api/info). */
         @Volatile
         var slideBrightness: Int? = null
+
+        /** Яркость (%), которую сейчас держит окно киоска, либо null (системная). Имеет смысл, пока киоск на экране. */
+        @Volatile private var effective: Int? = null
+
+        /** Для info: яркость, заданная окну киоска; null, если киоск не на переднем плане или действует системная. */
+        fun effectiveBrightness(): Int? = if (isVisible()) effective else null
+
+        /** Пересчитать яркость окна (после изменения настроек). */
+        fun refreshBrightness() { current?.let { a -> a.runOnUiThread { a.applyBrightness() } } }
 
         private const val ASSET_URL = "file:///android_asset/kiosk.html"
 

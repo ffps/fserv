@@ -172,6 +172,7 @@
   <div class="f">
     <label for="clAdminRes" title="Эта страница: камера компьютера или телефона, с которого вы звоните">Камера звонящего</label><select id="clAdminRes" title="Эта страница: камера компьютера или телефона, с которого вы звоните"></select>
     <label for="clDeviceRes">Камера устройства</label><select id="clDeviceRes"></select>
+    <label for="clBright" title="Яркость экрана устройства во время звонка">Яркость, %</label><input id="clBright" type="number" min="1" max="100" placeholder="пусто = как у киоска">
   </div>
   <div class="row" style="margin-top:12px"><button class="btn" id="clSave">Сохранить</button></div>
   <div class="msg" id="clPMsg"></div>
@@ -486,6 +487,8 @@
     <select id="sLevel"><option>DEBUG</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
     <label for="sTmo">Таймаут сети, секунд</label>
     <input id="sTmo" type="number" min="2" max="120">
+    <label for="sBright" title="Яркость окна киоска (слайды с brightness= и звонок могут её менять на время)">Яркость киоска, %</label>
+    <input id="sBright" type="number" min="1" max="100" placeholder="пусто = системная">
     <label for="sCity">Город (для погоды)</label>
     <input id="sCity" placeholder="например Екатеринбург или 56.84, 60.61 (пусто = погода не нужна)">
     <label for="sWx">Обновлять погоду, минут</label>
@@ -1076,7 +1079,7 @@ async function loadStatus() {
     const sc = i.screen;
     $("#cards").innerHTML =
       kvRow("Время на устройстве", dt(i.time.now)) +
-      kvRow("Экран", (sc.on ? "включён" : "выключен") + (sc.locked ? ", заблокирован" : "") + (() => { const br = sc.slideBrightness != null ? sc.slideBrightness : sc.brightness; return br != null ? ", яркость " + br + "%" + (sc.autoBrightness && sc.slideBrightness == null ? " (авто)" : "") : ""; })()) +
+      kvRow("Экран", (sc.on ? "включён" : "выключен") + (sc.locked ? ", заблокирован" : "") + (() => { const b = sc.brightness || {}, br = b.current; return br != null ? ", яркость " + br + "%" + (sc.autoBrightness && br === b.system ? " (авто)" : "") : ""; })()) +
       kvRow("Звук", "громкость медиа " + (i.audio.mediaVolume != null ? i.audio.mediaVolume + "%" : "?") + ", по умолчанию " + (i.audio.defaultVolume != null ? i.audio.defaultVolume + "%" : "не задана")) +
       kvRow("Голосовые команды", i.listen.text) +
       kvRow("Киоск", sc.kioskVisible ? "на экране" : "не на экране") +
@@ -1446,6 +1449,7 @@ function clFillRes(sel, value) {
 }
 async function loadCall() {
   try { CL.st = (await api("/api/call")).json; } catch (e) { CL.st = null; }
+  if (!clInCall()) { try { $("#clBright").value = (await api("/api/settings")).json.screen.brightness.call; } catch (e) {} }
   if (CL.st && !clInCall()) { clFillRes($("#clAdminRes"), CL.st.call.adminRes); clFillRes($("#clDeviceRes"), CL.st.call.deviceRes); }
   if (!clInCall() && !CL.busy) clStatus(CL.st ? (CL.st.active ? "Занято: идёт звонок с адреса " + CL.st.from : "Готов к звонку") : "Устройство не отвечает");
   clRender();
@@ -1577,7 +1581,8 @@ $("#clCam").onclick = async () => {
   } catch (e) { say("#clMsg", "не удалось переключить камеру: " + clError(e), false); }
 };
 $("#clSave").onclick = () => run("#clPMsg", async () => {
-  await post("/api/settings", JSON.stringify({call: {adminRes: $("#clAdminRes").value, deviceRes: $("#clDeviceRes").value}}));
+  await post("/api/settings", JSON.stringify({call: {adminRes: $("#clAdminRes").value, deviceRes: $("#clDeviceRes").value},
+    screen: {brightness: {call: $("#clBright").value.trim() === "" ? "" : Number($("#clBright").value)}}}));
   await loadCall(); return "сохранено";
 });
 // перетаскивание окошка своего видео (мышь и палец)
@@ -1763,13 +1768,14 @@ async function loadSettings() {
     const s = (await api("/api/settings")).json;
     $("#sLevel").value = s.logLevel; $("#sApp").value = s.appRestartCron; $("#sReboot").value = s.rebootCron;
     $("#sPort").value = s.webPort; $("#sPortS").value = s.httpsPort; $("#sTmo").value = s.netTimeoutSec; $("#sBoot").checked = !!s.autostart; $("#sPass").value = "";
-    $("#sCity").value = s.weather.city; $("#sWx").value = s.weather.everyMin;
+    $("#sBright").value = s.screen.brightness.kiosk; $("#sCity").value = s.weather.city; $("#sWx").value = s.weather.everyMin;
     say("#sMsg", ""); rebase("sSave");
   } catch (e) { say("#sMsg", e.message, false); }
 }
 $("#sSave").onclick = () => run("#sMsg", async () => {
   const p = {logLevel: $("#sLevel").value, appRestartCron: $("#sApp").value, rebootCron: $("#sReboot").value,
              webPort: Number($("#sPort").value), httpsPort: Number($("#sPortS").value), netTimeoutSec: Number($("#sTmo").value), autostart: $("#sBoot").checked,
+             screen: {brightness: {kiosk: $("#sBright").value.trim() === "" ? "" : Number($("#sBright").value)}},
              weather: {city: $("#sCity").value.trim(), everyMin: Number($("#sWx").value === "" ? 60 : $("#sWx").value)}};
   if ($("#sPass").value) p.password = $("#sPass").value;
   const r = (await post("/api/settings", JSON.stringify(p))).json;

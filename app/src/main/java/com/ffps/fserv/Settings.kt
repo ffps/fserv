@@ -298,8 +298,13 @@ object Settings {
         "weather" to obj("city" to weatherCity, "everyMin" to weatherEveryMin),
         "listen" to obj("hours" to listenHours, "prefix" to listenPrefix, "level" to listenLevel, "tail" to listenTail, "ack" to listenAck, "miss" to listenMiss),
         "chat" to chat().put("defaultRules", Chat.DEFAULT_RULES),
-        "call" to call()
+        "call" to call(),
+        "screen" to obj("brightness" to obj("kiosk" to (screenBrightness("kiosk") ?: ""), "call" to (screenBrightness("call") ?: "")))
     )
+
+    /** Яркость окна киоска или звонка из настроек (1..100) либо null: не задана, действует системная. */
+    @Synchronized
+    fun screenBrightness(kind: String): Int? = Brightness.toInt(o.optJSONObject("screen")?.optJSONObject("brightness")?.opt(kind))
 
     /** Взводится при изменении города или периода погоды: Weather обновит данные сразу. */
     @Volatile var weatherChanged = false
@@ -327,6 +332,9 @@ object Settings {
         }
         patch.optJSONObject("call")?.let { c ->
             for (k in listOf("adminRes", "deviceRes")) if (c.has(k) && !Regex("""\d{3,4}x\d{3,4}""").matches(c.optString(k))) errors.add("call.$k: вида 640x480")
+        }
+        patch.optJSONObject("screen")?.optJSONObject("brightness")?.let { b ->
+            for (k in listOf("kiosk", "call")) if (b.has(k) && !Brightness.valid(b.opt(k))) errors.add("screen.brightness.$k: число от 1 до 100 или пусто (не задано)")
         }
         val crons = listOf("appRestartCron" to patch.optString("appRestartCron"), "rebootCron" to patch.optString("rebootCron"), "update.cron" to patch.optJSONObject("update")?.optString("cron"))
         for ((k, raw) in crons) {
@@ -420,6 +428,15 @@ object Settings {
             restart = true
         }
         patch.optJSONObject("call")?.let { c -> o.put("call", JSONObject(call().toString()).also { n -> for (k in listOf("adminRes", "deviceRes")) if (c.has(k)) n.put(k, c.optString(k)) }) }
+        patch.optJSONObject("screen")?.optJSONObject("brightness")?.let { b ->
+            val scr = JSONObject((o.optJSONObject("screen") ?: JSONObject()).toString())
+            val br = scr.optJSONObject("brightness") ?: JSONObject().also { scr.put("brightness", it) }
+            for (k in listOf("kiosk", "call")) if (b.has(k)) {
+                val v = Brightness.toInt(b.opt(k))
+                if (v == null) br.remove(k) else br.put(k, v)
+            }
+            o.put("screen", scr)
+        }
         for (k in listOf("appRestartCron", "rebootCron")) {
             if (patch.has(k)) o.put(k, patch.optString(k).trim())
         }
